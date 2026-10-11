@@ -56,6 +56,9 @@ export function SettingsModal({ settings, setSettings, camMode, onCamMode, onClo
           <OptRow k="Дождь и снег" hint="осадки в кадре; погода в мире не меняется">
             <Toggle on={settings.gfx.precip} onChange={(v) => setGfx({ precip: v })} />
           </OptRow>
+          <OptRow k="3D-модели судов" hint="объёмные корпуса с анимациями вместо рисунков; при смене — короткий переход">
+            <Toggle on={settings.model3d} onChange={(v) => set({ model3d: v })} />
+          </OptRow>
         </Sect>
 
         <Sect name="Камера">

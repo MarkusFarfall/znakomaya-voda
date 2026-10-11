@@ -26,7 +26,7 @@ import { FriendsModal, useFriends } from "./Friends";
 
 const CAM_NAMES: Record<CamMode, string> = { auto: "авто", surface: "поверхность", hook: "за снастью", bottom: "дно" };
 const SETTINGS_KEY = "zv_settings";
-const DEFAULT_SETTINGS: Settings = { quality: 2, sound: true, music: true, volume: 0.8, zoom: 1, gfx: { refl: true, shafts: true, caustics: true, foam: true, precip: true } };
+const DEFAULT_SETTINGS: Settings = { quality: 2, sound: true, music: true, volume: 0.8, zoom: 1, gfx: { refl: true, shafts: true, caustics: true, foam: true, precip: true }, model3d: true };
 
 type Boot = { state: "loading" } | { state: "auth" } | { state: "title"; save: SaveData | null };
 
@@ -116,7 +116,7 @@ export default function Game() {
     let st = DEFAULT_SETTINGS;
     try {
       const a = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null") as Partial<Settings> | null;
-      if (a) st = { ...DEFAULT_SETTINGS, ...a, gfx: { ...DEFAULT_SETTINGS.gfx, ...(a.gfx ?? {}) }, zoom: Math.min(2, Math.max(1, Number(a.zoom) || 1)) };
+      if (a) st = { ...DEFAULT_SETTINGS, ...a, gfx: { ...DEFAULT_SETTINGS.gfx, ...(a.gfx ?? {}) }, zoom: Math.min(2, Math.max(1, Number(a.zoom) || 1)), model3d: a.model3d !== false };
       else if ((navigator.hardwareConcurrency ?? 8) <= 4 || window.matchMedia("(pointer: coarse)").matches) st = { ...st, quality: 1 };
     } catch { /* ignore */ }
     setSettingsState(st);
@@ -182,7 +182,8 @@ export default function Game() {
   useEffect(() => {
     sceneRef.current.zoom = settings.zoom;
     sceneRef.current.gfx = { ...settings.gfx };
-  }, [settings.zoom, settings.gfx]);
+    sceneRef.current.boat3dOn = settings.model3d;
+  }, [settings.zoom, settings.gfx, settings.model3d]);
 
   // колесо мыши над водой — приближение камеры к лодке
   useEffect(() => {

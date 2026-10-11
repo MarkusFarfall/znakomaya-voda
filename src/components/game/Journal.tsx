@@ -32,6 +32,8 @@ export interface Settings {
   /** приближение камеры к лодке, 1–2 */
   zoom: number;
   gfx: GfxSettings;
+  /** 3D-модели судов вместо рисунков */
+  model3d: boolean;
 }
 
 export function XpBar({ engine }: { engine: Engine }) {

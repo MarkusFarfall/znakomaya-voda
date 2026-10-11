@@ -4,6 +4,7 @@ import { drawFish, drawFishGlow, fishScreenLen } from "../fishDraw";
 import type { FishDef } from "../types";
 import { BAIT_BY_ID } from "../world";
 import { drawBoat } from "./boat";
+import { Boat3D } from "./boats3d/boat3d";
 import type { Frame } from "./frame";
 import { drawBobberPointer, drawFightPanel, drawPower, drawRuler, drawSonar } from "./hud";
 import { LandRenderer } from "./land";
@@ -44,6 +45,9 @@ export class Scene {
   quality = 2;
   /** зум камеры: 1 — обычный вид, до 2 — приближение к лодке */
   zoom = 1;
+  /** 3D-модели судов (переключается в настройках) */
+  boat3dOn = false;
+  private boat3d: Boat3D | null = null;
   /** детальная графика: отдельные слои можно отключать */
   gfx = { refl: true, shafts: true, caustics: true, foam: true, precip: true };
   private schools: School[] = [];
@@ -262,7 +266,27 @@ export class Scene {
     this.land.drawFront(f);
     const bx = W * 0.3;
     const flowPx = this.voyage ?? 0;
-    const tip = drawBoat(f, bx, this.voyage ? "helm" : "fish", Math.min(1, flowPx / 230), flowPx);
+    const speed01 = Math.min(1, flowPx / 230);
+    const pose = this.voyage ? "helm" : "fish";
+    if (!this.boat3d && typeof window !== "undefined") this.boat3d = new Boat3D();
+    this.boat3d?.setEnabled(this.boat3dOn);
+    const r3 = this.boat3d?.draw(ctx, f, bx, pose, speed01) ?? null;
+    let tip: [number, number];
+    if (r3) {
+      // кроссфейд 2D↔3D: старая модель тонет, новая всплывает
+      if (r3.k < 0.99) {
+        ctx.save();
+        ctx.globalAlpha *= 1 - r3.k;
+        ctx.translate(0, r3.k * 10);
+        tip = drawBoat(f, bx, pose, speed01, flowPx);
+        ctx.restore();
+        if (r3.k > 0.5) tip = r3.tip;
+      } else {
+        tip = r3.tip;
+      }
+    } else {
+      tip = drawBoat(f, bx, pose, speed01, flowPx);
+    }
     if (this.gfx.foam) drawSurfaceFront(f, this.rings);
     this.rings = this.rings.filter((r) => r.t < 0.7);
     if (atmo.ice > 0.02) {
