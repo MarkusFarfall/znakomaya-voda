@@ -12,6 +12,7 @@ import { fetchFriendProfile, fetchFriends, friendAction, searchPlayers } from "@
 import type { BoatDef, Variant } from "@/game/types";
 import { fmt, fmtW, Modal } from "./Panels";
 import { Icon, WEATHER_ICON } from "./Icons";
+import { BoatPreview } from "./Panels";
 import { FishIcon } from "./FishIcon";
 
 /**
@@ -25,153 +26,6 @@ import { FishIcon } from "./FishIcon";
 // ───────────────────────── судно по классу ─────────────────────────
 
 /** Силуэт судна: те же цвета корпуса и отделки, что в игре. */
-function Hull({ boat }: { boat: BoatDef }) {
-  const hull = boat.hull;
-  const trim = boat.trim;
-  const glass = "rgba(190,225,240,0.55)";
-  switch (boat.style) {
-    case "kayak":
-      return (
-        <g>
-          <path d="M12 44 Q80 33 148 44 Q80 53 12 44 Z" fill={hull} stroke={trim} strokeWidth="1" />
-          <path d="M12 44 Q80 39 148 44" fill="none" stroke={trim} strokeWidth="1.2" opacity="0.8" />
-          <ellipse cx="80" cy="41" rx="11" ry="3.4" fill="#12202a" stroke={trim} strokeWidth="0.8" />
-          <path d="M60 30 L100 46" stroke={trim} strokeWidth="2" strokeLinecap="round" />
-          <ellipse cx="58" cy="29" rx="5" ry="2.2" fill={trim} transform="rotate(22 58 29)" />
-          <ellipse cx="102" cy="47" rx="5" ry="2.2" fill={trim} transform="rotate(22 102 47)" />
-        </g>
-      );
-    case "dinghy":
-      return (
-        <g>
-          <path d="M30 38 L128 38 L142 43 L120 51 L42 51 Z" fill={hull} stroke={trim} strokeWidth="1" />
-          <path d="M30 38 L128 38" stroke={trim} strokeWidth="2" />
-          <path d="M92 38 L100 29 L112 38 Z" fill={glass} stroke={trim} strokeWidth="1" />
-          <rect x="20" y="36" width="10" height="9" rx="1.5" fill="#2a2f36" stroke={trim} strokeWidth="0.8" />
-          <path d="M25 45 L25 54" stroke="#2a2f36" strokeWidth="2.4" />
-          <circle cx="25" cy="55" r="2.6" fill="none" stroke="#2a2f36" strokeWidth="1.4" />
-        </g>
-      );
-    case "barkas":
-      return (
-        <g>
-          <path d="M22 38 L134 38 L144 43 L126 53 L34 53 Z" fill={hull} stroke={trim} strokeWidth="1" />
-          <path d="M22 38 L134 38" stroke={trim} strokeWidth="2" />
-          <rect x="52" y="25" width="36" height="13" rx="1.5" fill={hull} stroke={trim} strokeWidth="1" />
-          <rect x="56" y="28" width="7" height="6" fill={glass} /><rect x="66" y="28" width="7" height="6" fill={glass} /><rect x="76" y="28" width="7" height="6" fill={glass} />
-          <path d="M98 38 L98 15" stroke={trim} strokeWidth="1.4" />
-          <path d="M98 16 L110 20 L98 23 Z" fill={trim} opacity="0.85" />
-          <rect x="104" y="33" width="18" height="5" rx="1" fill="#1b2730" stroke={trim} strokeWidth="0.7" />
-        </g>
-      );
-    case "cutter":
-      return (
-        <g>
-          <path d="M18 40 L132 40 L146 45 L128 54 L30 54 Z" fill={hull} stroke={trim} strokeWidth="1" />
-          <path d="M18 40 L132 40" stroke={trim} strokeWidth="2" />
-          <rect x="54" y="24" width="46" height="16" rx="2" fill={hull} stroke={trim} strokeWidth="1" />
-          <rect x="50" y="21" width="54" height="3.4" rx="1" fill={trim} />
-          <rect x="58" y="28" width="9" height="7" fill={glass} /><rect x="70" y="28" width="9" height="7" fill={glass} /><rect x="82" y="28" width="9" height="7" fill={glass} />
-          <path d="M100 21 L106 7" stroke={trim} strokeWidth="1.2" />
-          <rect x="103" y="9" width="8" height="2" rx="1" fill={trim} />
-          <path d="M18 40 L30 54" stroke={trim} strokeWidth="0.8" opacity="0.6" />
-        </g>
-      );
-    case "yacht":
-      return (
-        <g>
-          <path d="M22 44 L136 44 L124 53 L36 53 Z" fill={hull} stroke={trim} strokeWidth="1" />
-          <path d="M22 44 L136 44" stroke={trim} strokeWidth="1.8" />
-          <path d="M84 44 L84 5" stroke={trim} strokeWidth="1.6" />
-          <path d="M87 9 L122 42 L87 42 Z" fill="#f4f1e8" stroke={trim} strokeWidth="0.8" opacity="0.92" />
-          <path d="M81 13 L52 42 L81 42 Z" fill="#e6e0d2" stroke={trim} strokeWidth="0.8" opacity="0.88" />
-          <path d="M84 42 L124 42" stroke={trim} strokeWidth="1.2" />
-          <path d="M84 6 L96 10 L84 13 Z" fill={trim} />
-        </g>
-      );
-    case "seiner":
-      return (
-        <g>
-          <path d="M14 38 L140 38 L148 44 L132 56 L26 56 Z" fill={hull} stroke={trim} strokeWidth="1" />
-          <path d="M14 38 L140 38" stroke={trim} strokeWidth="2" />
-          <rect x="30" y="22" width="32" height="16" rx="1.5" fill="#2f353c" stroke={trim} strokeWidth="1" />
-          <rect x="34" y="26" width="7" height="6" fill={glass} /><rect x="44" y="26" width="7" height="6" fill={glass} />
-          <rect x="38" y="12" width="9" height="10" rx="1" fill={trim} />
-          <path d="M112 38 L136 16 M136 38 L136 16" stroke={trim} strokeWidth="1.8" />
-          <path d="M112 38 L136 16 L146 22" stroke={trim} strokeWidth="1.2" fill="none" />
-          <circle cx="90" cy="33" r="6.5" fill="none" stroke={trim} strokeWidth="1.6" />
-          <path d="M84 33 L96 33 M90 27 L90 39" stroke={trim} strokeWidth="0.9" />
-          <path d="M66 38 L104 38" stroke={trim} strokeWidth="0.7" opacity="0.5" />
-        </g>
-      );
-    case "trawler":
-      return (
-        <g>
-          <path d="M12 38 L142 38 L150 45 L134 58 L24 58 Z" fill={hull} stroke={trim} strokeWidth="1" />
-          <path d="M12 38 L142 38" stroke={trim} strokeWidth="2" />
-          <rect x="26" y="18" width="36" height="20" rx="1.5" fill="#e9e4d8" stroke={trim} strokeWidth="1" />
-          <rect x="30" y="22" width="8" height="6" fill={glass} /><rect x="40" y="22" width="8" height="6" fill={glass} /><rect x="50" y="22" width="8" height="6" fill={glass} />
-          <rect x="22" y="15" width="44" height="3.4" rx="1" fill={trim} />
-          <rect x="68" y="16" width="11" height="12" rx="1" fill="#3a3a3a" stroke={trim} strokeWidth="0.8" />
-          <path d="M116 38 L142 18 L148 38" stroke={trim} strokeWidth="2" fill="none" />
-          <path d="M92 38 L92 10 L120 22" stroke={trim} strokeWidth="1.4" fill="none" />
-          <path d="M92 12 L104 16 L92 19 Z" fill={trim} />
-        </g>
-      );
-    case "research":
-      return (
-        <g>
-          <path d="M12 40 L144 40 L152 46 L136 58 L24 58 Z" fill={hull} stroke={trim} strokeWidth="1" />
-          <path d="M12 40 L144 40" stroke={trim} strokeWidth="2" />
-          <rect x="26" y="20" width="28" height="20" rx="1.5" fill="#f2f2f2" stroke={trim} strokeWidth="1" />
-          <rect x="30" y="24" width="8" height="6" fill={glass} /><rect x="41" y="24" width="8" height="6" fill={glass} />
-          <rect x="58" y="28" width="30" height="12" rx="1" fill="#dfe3e6" stroke={trim} strokeWidth="0.9" />
-          <rect x="92" y="28" width="22" height="12" rx="1" fill="#dfe3e6" stroke={trim} strokeWidth="0.9" />
-          <path d="M62 32 L84 32 M62 36 L84 36" stroke={trim} strokeWidth="0.7" opacity="0.7" />
-          <path d="M118 40 L132 20 L150 26" stroke={trim} strokeWidth="1.8" fill="none" />
-          <path d="M146 26 L146 34" stroke={trim} strokeWidth="1" /><rect x="143" y="34" width="6" height="4" rx="1" fill={trim} />
-          <path d="M104 28 L104 8" stroke={trim} strokeWidth="1.4" />
-          <circle cx="104" cy="8" r="3.4" fill="none" stroke={trim} strokeWidth="1.2" />
-        </g>
-      );
-    default: // «row» — плоскодонка
-      return (
-        <g>
-          <path d="M26 40 L134 40 L124 51 Q80 55 36 51 Z" fill={hull} stroke={trim} strokeWidth="1" />
-          <path d="M26 40 L134 40" stroke={trim} strokeWidth="2" />
-          <rect x="70" y="36" width="20" height="3.4" rx="1" fill={trim} opacity="0.9" />
-          <path d="M58 39 L34 54 M102 39 L126 54" stroke={trim} strokeWidth="1.8" strokeLinecap="round" />
-          <ellipse cx="32" cy="55" rx="5" ry="2" fill={trim} transform="rotate(-30 32 55)" />
-          <ellipse cx="128" cy="55" rx="5" ry="2" fill={trim} transform="rotate(30 128 55)" />
-        </g>
-      );
-  }
-}
-
-export function BoatSketch({ boat, width = 160, className }: { boat: BoatDef; width?: number; className?: string }) {
-  const id = `bs-${boat.id}`;
-  return (
-    <svg viewBox="0 0 160 64" width={width} height={Math.round(width * 0.4)} className={className} role="img" aria-label={boat.name}>
-      <defs>
-        <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#14404f" /><stop offset="1" stopColor="#06151f" />
-        </linearGradient>
-        <clipPath id={`${id}-c`}><rect x="0" y="46" width="160" height="18" /></clipPath>
-      </defs>
-      <rect x="0" y="46" width="160" height="18" fill={`url(#${id})`} />
-      <g clipPath={`url(#${id}-c)`} opacity="0.22" transform="matrix(1 0 0 -1 0 92)">
-        <Hull boat={boat} />
-      </g>
-      <g opacity="0.5" stroke="#8fc3d6" fill="none" strokeWidth="0.8">
-        <path d="M4 49 q10 -2.4 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0" />
-        <path d="M0 55 q10 -2.4 20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0 t20 0" opacity="0.6" />
-      </g>
-      <Hull boat={boat} />
-      <path d="M0 46 L160 46" stroke="rgba(200,230,240,0.28)" strokeWidth="0.7" />
-    </svg>
-  );
-}
-
 // ───────────────────────── карта акваторий ─────────────────────────
 
 /**
@@ -344,7 +198,7 @@ function FriendCard({ f, onOpen, onRemove, onUi }: { f: FriendSummary; onOpen: (
         <div className="flex flex-col justify-between border border-[var(--line)] bg-[rgba(6,13,19,0.6)] p-1.5">
           {boat ? (
             <>
-              <BoatSketch boat={boat} width={150} className="w-full" />
+              <BoatPreview hull={boat.hull} trim={boat.trim} tier={boat.tier} style={boat.style} className="w-full" />
               <div className="mt-1 min-w-0">
                 <div className="truncate text-[11.5px] text-[#e6e0d2]">{boat.name}</div>
                 <div className="num truncate text-[10px] dim">класс {boat.tier} · трюм {boat.cooler}{boat.stormSafe ? " · штормовое" : ""}</div>
@@ -523,6 +377,16 @@ export function FriendsModal({ state, onClose, onUi, me }: { state: FriendsState
 
           {tab === "friends" && (
             <>
+              {me && (
+                <button className="cell mb-4 flex w-full items-center gap-3 p-3 text-left transition hover:!border-[rgba(200,164,106,0.55)]" onClick={() => { onUi("paper"); setOpenProfile(me); }}>
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[var(--brass)] text-[var(--brass)]"><Icon name="friends" size={18} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] text-[#ece6d8]">Мой профиль</span>
+                    <span className="block truncate text-[11px] dim">статистика, судно и излюбленные точки — как у друзей</span>
+                  </span>
+                  <span className="dim">→</span>
+                </button>
+              )}
               {friends.length === 0 && d ? (
                 <div className="py-10 text-center">
                   <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full border border-[var(--line-2)] text-[var(--brass)]"><Icon name="friends" size={22} /></div>
@@ -619,14 +483,14 @@ export function FriendsModal({ state, onClose, onUi, me }: { state: FriendsState
         </div>
       </Modal>
 
-      {openProfile && <FriendProfileModal key={openProfile} userId={openProfile} onClose={() => { onUi("close"); setOpenProfile(null); }} onUi={onUi} onChanged={state.reload} />}
+      {openProfile && <FriendProfileModal key={openProfile} userId={openProfile} self={openProfile === me} onClose={() => { onUi("close"); setOpenProfile(null); }} onUi={onUi} onChanged={state.reload} />}
     </>
   );
 }
 
 // ───────────────────────── профиль друга ─────────────────────────
 
-export function FriendProfileModal({ userId, onClose, onUi, onChanged }: { userId: string; onClose: () => void; onUi: (k?: "click" | "open" | "close" | "paper") => void; onChanged: () => Promise<void> }) {
+export function FriendProfileModal({ userId, self = false, onClose, onUi, onChanged }: { userId: string; self?: boolean; onClose: () => void; onUi: (k?: "click" | "open" | "close" | "paper") => void; onChanged: () => Promise<void> }) {
   const [p, setP] = useState<FriendProfile | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -645,13 +509,13 @@ export function FriendProfileModal({ userId, onClose, onUi, onChanged }: { userI
   }, [userId]);
 
   return (
-    <Modal label="Профиль друга" title={p?.username ?? "Загрузка"} above onClose={() => { onUi("close"); onClose(); }}
-      right={p ? <div className="hidden text-right sm:block"><div className="label">Друзья с</div><div className="num text-[13px] text-[#ece6d8]">{p.friendsSince ? new Date(p.friendsSince).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "2-digit" }) : "—"}</div></div> : undefined}>
+    <Modal label={self ? "Ваша карточка" : "Профиль друга"} title={p?.username ?? "Загрузка"} above onClose={() => { onUi("close"); onClose(); }}
+      right={p && !self ? <div className="hidden text-right sm:block"><div className="label">Друзья с</div><div className="num text-[13px] text-[#ece6d8]">{p.friendsSince ? new Date(p.friendsSince).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "2-digit" }) : "—"}</div></div> : undefined}>
       <div className="px-4 pb-7 pt-4 sm:px-7">
         {err && <div className="border-l-2 border-[var(--color-bad)] px-3 py-2 text-[12px] text-[#f0c8bc]">{err}</div>}
         {!p && !err && <div className="label pulse-soft py-12 text-center">Загрузка профиля</div>}
         {p && <ProfileBody p={p} busy={busy} onUi={onUi}
-          onRemove={async () => {
+          onRemove={self ? undefined : async () => {
             if (!confirm(`Удалить ${p.username} из друзей?`)) return;
             setBusy(true);
             await friendAction("remove", { userId: p.userId });
@@ -664,7 +528,7 @@ export function FriendProfileModal({ userId, onClose, onUi, onChanged }: { userI
   );
 }
 
-function ProfileBody({ p, busy, onUi, onRemove }: { p: FriendProfile; busy: boolean; onUi: (k?: "click" | "open" | "close" | "paper") => void; onRemove: () => void }) {
+function ProfileBody({ p, busy, onUi, onRemove }: { p: FriendProfile; busy: boolean; onUi: (k?: "click" | "open" | "close" | "paper") => void; onRemove?: () => void }) {
   const boat = boatOf(p.where?.boat ?? null);
   const online = isOnline(p.lastSeenAt);
   const w = p.where;
@@ -701,7 +565,7 @@ function ProfileBody({ p, busy, onUi, onRemove }: { p: FriendProfile; busy: bool
             </span>
           </div>
         </div>
-        <button className="btn btn-sm btn-danger" disabled={busy} onClick={() => { onUi(); onRemove(); }}>Удалить из друзей</button>
+        {onRemove && <button className="btn btn-sm btn-danger" disabled={busy} onClick={() => { onUi(); onRemove(); }}>Удалить из друзей</button>}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
@@ -722,7 +586,7 @@ function ProfileBody({ p, busy, onUi, onRemove }: { p: FriendProfile; busy: bool
             <div className="label mb-2">Судно</div>
             {boat ? (
               <div className="border border-[var(--line)] bg-[rgba(6,13,19,0.55)] p-3">
-                <BoatSketch boat={boat} width={320} className="mx-auto w-full max-w-[340px]" />
+                <BoatPreview hull={boat.hull} trim={boat.trim} tier={boat.tier} style={boat.style} className="h-28 w-full" />
                 <div className="mt-2 flex flex-wrap items-baseline justify-between gap-2">
                   <div className="font-serif text-[19px] text-[#f1ebdd]">{boat.name}</div>
                   <div className="num text-[11px] text-[var(--brass-2,#e3c996)]">класс {boat.tier}</div>

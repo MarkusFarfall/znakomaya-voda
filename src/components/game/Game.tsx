@@ -731,7 +731,6 @@ export default function Game() {
             <div className="flex justify-end gap-1.5">
               <button className="iconbtn" onClick={cycleCam} title={`Камера: ${CAM_NAMES[camMode]} [V]`}><Icon name="target" size={15} /><span className="normal-case tracking-normal">{CAM_NAMES[camMode]}</span></button>
               <button className="iconbtn" onClick={() => setSettings({ ...settings, sound: !settings.sound })} title="Звук [M]"><Icon name={settings.sound ? "speaker" : "mute"} size={16} /></button>
-              <button className="iconbtn" onClick={() => setSettingsOpen(true)} title="Настройки"><Icon name="gear" size={16} /></button>
               <AccountBadge account={account} compact onClick={() => setAuthOpen("profile")} />
               <button className="iconbtn" onClick={() => openPanel("journal")} title="Журнал [J]"><Icon name="journal" size={16} />{(engine.perkPoints > 0 || engine.hasLetter || engine.daily.tasks.some((t) => t.done && !t.claimed)) && <span className="dot" />}</button>
               <button className="iconbtn" onClick={() => openPanel("codex")} title="Кодекс [C]"><Icon name="book" size={16} /></button>
@@ -818,7 +817,6 @@ export default function Game() {
                     <div className="mt-3"><XpBar engine={engine} /></div>
                     <div className="mt-4 flex gap-2">
                       <button className="iconbtn flex-1" onClick={() => setSettings({ ...settings, sound: !settings.sound })}><Icon name={settings.sound ? "speaker" : "mute"} size={15} />{settings.sound ? "Звук" : "Без звука"}</button>
-                      <button className="iconbtn flex-1" onClick={() => { setInfo(false); setSettingsOpen(true); }}><Icon name="gear" size={15} />Настройки</button>
                     </div>
                     <div className="label mt-4">Камера</div>
                     <div className="seg mt-1.5 w-full">
@@ -1011,11 +1009,15 @@ export default function Game() {
             </div>
           )}
 
+          <div className="pointer-events-none absolute inset-0 z-50">
+            <button style={{ position: "absolute", bottom: 12, right: 12 }} className="iconbtn pointer-events-auto !bg-[rgba(6,12,18,0.72)]" onClick={() => setSettingsOpen(true)} title="Настройки" aria-label="Настройки"><Icon name="gear" size={16} /></button>
+          </div>
+
           {engine.phase === "caught" && engine.lastCatch && <CatchModal engine={engine} />}
           {engine.phase === "caught" && engine.lastFind && <FindModal engine={engine} />}
           {panel === "codex" && <Codex codex={engine.s.codex} onClose={closePanel} />}
-          {panel === "journal" && <JournalModal engine={engine} onClose={closePanel} settings={settings} setSettings={setSettings} />}
-          {settingsOpen && <SettingsModal settings={settings} setSettings={setSettings} onClose={() => setSettingsOpen(false)} />}
+          {panel === "journal" && <JournalModal engine={engine} onClose={closePanel} />}
+          {settingsOpen && <SettingsModal settings={settings} setSettings={setSettings} camMode={camMode} onCamMode={setCamMode} onClose={() => setSettingsOpen(false)} />}
           {panel === "port" && <PortModal key={portTab} engine={engine} cloud={cloud} initialTab={portTab} mapOnly={!engine.s.atPort && portTab === "map"} onClose={closePanel} onTravel={requestTrip} onRest={startRest} onReset={reset} />}
           {letter !== null && <LetterModal engine={engine} index={letter} onClose={() => { audio.ui("paper"); setLetter(null); }} />}
         </>

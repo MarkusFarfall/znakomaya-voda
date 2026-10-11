@@ -9,7 +9,7 @@ import { streakBonus } from "@/game/daily";
 import { FIND_ICON, Icon, PERK_ICON } from "./Icons";
 import { fmt, fmtW, Modal } from "./Panels";
 
-type Tab = "daily" | "story" | "perks" | "ach" | "finds" | "stats" | "settings";
+type Tab = "daily" | "story" | "perks" | "ach" | "finds" | "stats";
 
 export interface GfxSettings {
   /** отражения берега и неба на воде */
@@ -118,7 +118,7 @@ export function FindModal({ engine }: { engine: Engine }) {
   );
 }
 
-export function JournalModal({ engine, onClose, settings, setSettings, initial = "daily" }: { engine: Engine; onClose: () => void; settings: Settings; setSettings: (s: Settings) => void; initial?: Tab }) {
+export function JournalModal({ engine, onClose, initial = "daily" }: { engine: Engine; onClose: () => void; initial?: Tab }) {
   const [tab, setTab] = useState<Tab>(initial);
   const s = engine.s;
   const tabs: [Tab, string, string][] = [
@@ -128,7 +128,6 @@ export function JournalModal({ engine, onClose, settings, setSettings, initial =
     ["ach", "Достижения", `${s.achievements.length}/${ACHIEVEMENTS.length}`],
     ["finds", "Находки", `${FINDS.filter((f) => s.finds[f.id]).length}/${FINDS.length}`],
     ["stats", "Статистика", ""],
-    ["settings", "Настройки", ""],
   ];
   return (
     <Modal
@@ -297,63 +296,6 @@ export function JournalModal({ engine, onClose, settings, setSettings, initial =
           </div>
         )}
 
-        {tab === "settings" && (
-          <div className="grid gap-8 md:grid-cols-2 md:gap-10">
-            <section>
-              <div className="label mb-3">Графика</div>
-              <div className="seg w-full">
-                {["Низкое", "Среднее", "Высокое"].map((n, i) => (
-                  <button key={n} className={`flex-1 ${settings.quality === i ? "on" : ""}`} onClick={() => setSettings({ ...settings, quality: i })}>{n}</button>
-                ))}
-              </div>
-              <ul className="mt-3 space-y-1 text-[12px] dim">
-                <li>Низкое — без отражений, световых столбов и каустики</li>
-                <li>Среднее — без бликов объектива, пониженная чёткость</li>
-                <li>Высокое — все эффекты, полная чёткость</li>
-              </ul>
-              <div className="label mb-3 mt-8">Камера по умолчанию</div>
-              <p className="-mt-1 mb-2 text-[12px] dim">Переключается клавишей V или кнопкой на экране.</p>
-              <ul className="space-y-1 text-[12px] muted">
-                <li><span className="text-[#ddd7ca]">Авто</span> — следит за снастью, при поклёвке показывает поплавок</li>
-                <li><span className="text-[#ddd7ca]">Поверхность</span> — всегда лодка и горизонт</li>
-                <li><span className="text-[#ddd7ca]">За снастью</span> — всегда рядом с крючком</li>
-                <li><span className="text-[#ddd7ca]">Дно</span> — рельеф и донные обитатели</li>
-              </ul>
-              <div className="label mb-3 mt-8">Управление</div>
-              <dl className="text-[12px]">
-                {[
-                  ["Заброс, подсечка, подмотка", "ЛКМ / Пробел"],
-                  ["Противодействие рывку", "A · D / курсор к краю"],
-                  ["Глубина", "Колесо / W · S"],
-                  ["Наживка", "1 – 9, 0"],
-                  ["Камера", "V"],
-                  ["Кодекс · Журнал · Порт", "C · J · P"],
-                  ["Звук", "M"],
-                ].map(([k, v]) => (
-                  <div key={k} className="flex justify-between border-b border-[var(--line)] py-2"><span className="muted">{k}</span><span className="text-[#ddd7ca]">{v}</span></div>
-                ))}
-              </dl>
-            </section>
-            <section>
-              <div className="label mb-3">Звук</div>
-              <div className="space-y-4">
-                <label className="flex items-center justify-between border-b border-[var(--line)] pb-3 text-[13px]">
-                  <span className="text-[#ddd7ca]">Громкость</span>
-                  <input type="range" min={0} max={100} value={Math.round(settings.volume * 100)} onChange={(e) => setSettings({ ...settings, volume: Number(e.target.value) / 100 })} className="depth-range w-48" />
-                </label>
-                <label className="flex cursor-pointer items-center justify-between border-b border-[var(--line)] pb-3 text-[13px]">
-                  <span className="text-[#ddd7ca]">Звуки мира и снасти</span>
-                  <Toggle on={settings.sound} onChange={(v) => setSettings({ ...settings, sound: v })} />
-                </label>
-                <label className="flex cursor-pointer items-center justify-between border-b border-[var(--line)] pb-3 text-[13px]">
-                  <span className="text-[#ddd7ca]">Музыка</span>
-                  <Toggle on={settings.music} onChange={(v) => setSettings({ ...settings, music: v })} />
-                </label>
-              </div>
-              <p className="mt-4 text-[12px] leading-relaxed dim">Звук синтезируется в реальном времени: прибой, ветер, дождь, скрип корпуса, трещотка фрикциона. Лучше всего слушать в наушниках.</p>
-            </section>
-          </div>
-        )}
       </div>
     </Modal>
   );

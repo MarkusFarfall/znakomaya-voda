@@ -25,15 +25,16 @@ function OptRow({ k, hint, children }: { k: string; hint?: string; children: Rea
 }
 
 const QN = ["Низкое", "Среднее", "Высокое"];
+const CAMS: [string, string][] = [["auto", "Авто"], ["surface", "Поверхность"], ["hook", "За снастью"], ["bottom", "Дно"]];
 
-export function SettingsModal({ settings, setSettings, onClose }: { settings: Settings; setSettings: (s: Settings) => void; onClose: () => void }) {
+export function SettingsModal({ settings, setSettings, camMode, onCamMode, onClose }: { settings: Settings; setSettings: (s: Settings) => void; camMode: string; onCamMode: (m: "auto" | "surface" | "hook" | "bottom") => void; onClose: () => void }) {
   const set = (patch: Partial<Settings>) => setSettings({ ...settings, ...patch });
   const setGfx = (patch: Partial<Settings["gfx"]>) => setSettings({ ...settings, gfx: { ...settings.gfx, ...patch } });
   return (
     <Modal label="Игра" title="Настройки" onClose={onClose} wide={false}>
       <div className="flex flex-col gap-7 p-4 sm:p-7">
         <Sect name="Графика">
-          <OptRow k="Качество" hint="общий уровень детализации и разрешение">
+          <OptRow k="Качество" hint="низкое — без отражений и каустики; высокое — все эффекты">
             <div className="seg flex w-56">
               {QN.map((n, i) => (
                 <button key={n} className={`flex-1 ${settings.quality === i ? "on" : ""}`} onClick={() => set({ quality: i })}>{n}</button>
@@ -58,6 +59,13 @@ export function SettingsModal({ settings, setSettings, onClose }: { settings: Se
         </Sect>
 
         <Sect name="Камера">
+          <OptRow k="Режим по умолчанию" hint="авто следит за снастью; переключается клавишей V">
+            <div className="seg flex w-56">
+              {CAMS.map(([id, n]) => (
+                <button key={id} className={`flex-1 ${camMode === id ? "on" : ""}`} onClick={() => onCamMode(id as "auto")}>{n}</button>
+              ))}
+            </div>
+          </OptRow>
           <OptRow k="Приближение" hint="камера подходит к лодке; колесо мыши над водой тоже работает">
             <input
               type="range"
@@ -70,6 +78,22 @@ export function SettingsModal({ settings, setSettings, onClose }: { settings: Se
             />
             <span className="num w-12 text-right text-[13px] text-[#ece6d8]">{Math.round(settings.zoom * 100)}%</span>
           </OptRow>
+        </Sect>
+
+        <Sect name="Управление">
+          <div className="text-[12px]">
+            {[
+              ["Заброс, подсечка, подмотка", "ЛКМ / Пробел"],
+              ["Противодействие рывку", "A · D / курсор к краю"],
+              ["Глубина", "Колесо / W · S"],
+              ["Наживка", "1 – 9, 0"],
+              ["Камера", "V"],
+              ["Кодекс · Журнал · Порт", "C · J · P"],
+              ["Звук", "M"],
+            ].map(([k, v]) => (
+              <div key={k} className="flex justify-between border-b border-[var(--line)] py-2"><span className="muted">{k}</span><span className="text-[#ddd7ca]">{v}</span></div>
+            ))}
+          </div>
         </Sect>
 
         <Sect name="Звук">

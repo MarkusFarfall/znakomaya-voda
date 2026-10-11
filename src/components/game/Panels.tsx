@@ -649,7 +649,7 @@ function StatBar({ k, v, t }: { k: string; v: number; t: string }) {
 }
 
 /** Превью судна в верфи: настоящий рисунок из игровой сцены, в масштабе длин */
-function BoatPreview(p: { hull: string; trim: string; tier: number; style?: string }) {
+export function BoatPreview(p: { hull: string; trim: string; tier: number; style?: string; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const cv = ref.current;
@@ -695,5 +695,5 @@ function BoatPreview(p: { hull: string; trim: string; tier: number; style?: stri
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
   }, [p.style]);
-  return <canvas ref={ref} className="my-2 h-24 w-full" />;
+  return <canvas ref={ref} className={p.className ?? "my-2 h-24 w-full"} />;
 }

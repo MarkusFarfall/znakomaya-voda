@@ -329,11 +329,15 @@ export async function searchPlayers(me: string, rawQuery: unknown): Promise<Sear
 // ─────────── профиль друга ───────────
 
 export async function friendProfile(me: string, otherId: string): Promise<FriendProfile | { error: string; status: number }> {
-  const row = await findPair(me, otherId);
-  if (!row) return { error: "Профиль доступен только друзьям", status: 403 };
-  if (row.status !== "accepted") return { error: "Профиль доступен только друзьям", status: 403 };
+  // свой профиль доступен всегда: пара дружбы для него не нужна
+  const self = me === otherId;
+  if (!self) {
+    const row = await findPair(me, otherId);
+    if (!row) return { error: "Профиль доступен только друзьям", status: 403 };
+    if (row.status !== "accepted") return { error: "Профиль доступен только друзьям", status: 403 };
+  }
 
-  const rows = await db
+  const rows = !self ? await db
     .select({
       status: friendships.status,
       requestedBy: friendships.requestedBy,
@@ -366,7 +370,36 @@ export async function friendProfile(me: string, otherId: string): Promise<Friend
     .leftJoin(players, eq(players.userId, users.id))
     .leftJoin(saves, eq(saves.playerId, players.id))
     .where(and(or(eq(friendships.aUserId, me), eq(friendships.bUserId, me)), eq(users.id, otherId), eq(friendships.status, "accepted")))
-    .limit(1);
+    .limit(1)
+    : await db
+        .select({
+          userId: users.id,
+          username: users.username,
+          accountSince: users.createdAt,
+          playerId: players.id,
+          lastSeenAt: players.lastSeenAt,
+          hideLocation: players.hideLocation,
+          level: saves.level,
+          codexCount: saves.codexCount,
+          totalCaught: saves.totalCaught,
+          money: saves.money,
+          achievements: saves.achievements,
+          playSeconds: saves.playSeconds,
+          location: saves.location,
+          spot: saves.spot,
+          port: saves.port,
+          atPort: saves.atPort,
+          weather: saves.weather,
+          boat: saves.boat,
+          gameDay: saves.gameDay,
+          saveUpdatedAt: saves.updatedAt,
+          data: saves.data,
+        })
+        .from(users)
+        .leftJoin(players, eq(players.userId, users.id))
+        .leftJoin(saves, eq(saves.playerId, players.id))
+        .where(eq(users.id, otherId))
+        .limit(1);
   const r = rows[0] as unknown as (Row & { accountSince: Date; data: unknown }) | undefined;
   if (!r) return { error: "Профиль не найден", status: 404 };
 
