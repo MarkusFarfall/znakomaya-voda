@@ -16,6 +16,7 @@ import { BAITS, PORT_BY_ID, SEASONS, WEATHER_INFO, spotsOf } from "@/game/world"
 import { BaitIcon, Icon, MoonIcon } from "./Icons";
 import { EventFeed } from "./EventFeed";
 import { DailyTracker, FindModal, JournalModal, LetterModal, QuestTracker, XpBar, type Settings } from "./Journal";
+import { SettingsModal } from "./SettingsModal";
 import { CatchModal, fmt, PortModal, type PortTab } from "./Panels";
 import { Codex } from "./Codex";
 import { TravelChoice, TravelOverlay } from "./Travel";
@@ -25,7 +26,7 @@ import { FriendsModal, useFriends } from "./Friends";
 
 const CAM_NAMES: Record<CamMode, string> = { auto: "авто", surface: "поверхность", hook: "за снастью", bottom: "дно" };
 const SETTINGS_KEY = "zv_settings";
-const DEFAULT_SETTINGS: Settings = { quality: 2, sound: true, music: true, volume: 0.8 };
+const DEFAULT_SETTINGS: Settings = { quality: 2, sound: true, music: true, volume: 0.8, zoom: 1, gfx: { refl: true, shafts: true, caustics: true, foam: true, precip: true } };
 
 type Boot = { state: "loading" } | { state: "auth" } | { state: "title"; save: SaveData | null };
 
@@ -55,6 +56,7 @@ export default function Game() {
   const [account, setAccount] = useState<AccountState>({ user: null, stats: null, offline: false });
   const [authOpen, setAuthOpen] = useState<null | "profile">(null);
   const [camMode, setCamModeState] = useState<CamMode>("auto");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [cloud, setCloud] = useState<string>("проверка…");
   /** Друзья: список, заявки и значок на кнопке. Работает и до начала игры. */
   const friends = useFriends(account.user?.id ?? null);
@@ -114,7 +116,7 @@ export default function Game() {
     let st = DEFAULT_SETTINGS;
     try {
       const a = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null") as Partial<Settings> | null;
-      if (a) st = { ...DEFAULT_SETTINGS, ...a };
+      if (a) st = { ...DEFAULT_SETTINGS, ...a, gfx: { ...DEFAULT_SETTINGS.gfx, ...(a.gfx ?? {}) }, zoom: Math.min(2, Math.max(1, Number(a.zoom) || 1)) };
       else if ((navigator.hardwareConcurrency ?? 8) <= 4 || window.matchMedia("(pointer: coarse)").matches) st = { ...st, quality: 1 };
     } catch { /* ignore */ }
     setSettingsState(st);
@@ -176,6 +178,25 @@ export default function Game() {
     audioRef.current.setQuality(st.quality);
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(st));
   }, []);
+
+  useEffect(() => {
+    sceneRef.current.zoom = settings.zoom;
+    sceneRef.current.gfx = { ...settings.gfx };
+  }, [settings.zoom, settings.gfx]);
+
+  // колесо мыши над водой — приближение камеры к лодке
+  useEffect(() => {
+    const cv = canvasRef.current;
+    if (!cv) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!playing || panel) return;
+      e.preventDefault();
+      const z = Math.min(2, Math.max(1, Math.round((settings.zoom - e.deltaY * 0.0012) * 20) / 20));
+      if (z !== settings.zoom) setSettings({ ...settings, zoom: z });
+    };
+    cv.addEventListener("wheel", onWheel, { passive: false });
+    return () => cv.removeEventListener("wheel", onWheel);
+  }, [settings, playing, panel, setSettings]);
 
   const persist = useCallback(async (remote: boolean) => {
     const e = engineRef.current;
@@ -710,6 +731,7 @@ export default function Game() {
             <div className="flex justify-end gap-1.5">
               <button className="iconbtn" onClick={cycleCam} title={`Камера: ${CAM_NAMES[camMode]} [V]`}><Icon name="target" size={15} /><span className="normal-case tracking-normal">{CAM_NAMES[camMode]}</span></button>
               <button className="iconbtn" onClick={() => setSettings({ ...settings, sound: !settings.sound })} title="Звук [M]"><Icon name={settings.sound ? "speaker" : "mute"} size={16} /></button>
+              <button className="iconbtn" onClick={() => setSettingsOpen(true)} title="Настройки"><Icon name="gear" size={16} /></button>
               <AccountBadge account={account} compact onClick={() => setAuthOpen("profile")} />
               <button className="iconbtn" onClick={() => openPanel("journal")} title="Журнал [J]"><Icon name="journal" size={16} />{(engine.perkPoints > 0 || engine.hasLetter || engine.daily.tasks.some((t) => t.done && !t.claimed)) && <span className="dot" />}</button>
               <button className="iconbtn" onClick={() => openPanel("codex")} title="Кодекс [C]"><Icon name="book" size={16} /></button>
@@ -796,6 +818,7 @@ export default function Game() {
                     <div className="mt-3"><XpBar engine={engine} /></div>
                     <div className="mt-4 flex gap-2">
                       <button className="iconbtn flex-1" onClick={() => setSettings({ ...settings, sound: !settings.sound })}><Icon name={settings.sound ? "speaker" : "mute"} size={15} />{settings.sound ? "Звук" : "Без звука"}</button>
+                      <button className="iconbtn flex-1" onClick={() => { setInfo(false); setSettingsOpen(true); }}><Icon name="gear" size={15} />Настройки</button>
                     </div>
                     <div className="label mt-4">Камера</div>
                     <div className="seg mt-1.5 w-full">
@@ -992,6 +1015,7 @@ export default function Game() {
           {engine.phase === "caught" && engine.lastFind && <FindModal engine={engine} />}
           {panel === "codex" && <Codex codex={engine.s.codex} onClose={closePanel} />}
           {panel === "journal" && <JournalModal engine={engine} onClose={closePanel} settings={settings} setSettings={setSettings} />}
+          {settingsOpen && <SettingsModal settings={settings} setSettings={setSettings} onClose={() => setSettingsOpen(false)} />}
           {panel === "port" && <PortModal key={portTab} engine={engine} cloud={cloud} initialTab={portTab} mapOnly={!engine.s.atPort && portTab === "map"} onClose={closePanel} onTravel={requestTrip} onRest={startRest} onReset={reset} />}
           {letter !== null && <LetterModal engine={engine} index={letter} onClose={() => { audio.ui("paper"); setLetter(null); }} />}
         </>

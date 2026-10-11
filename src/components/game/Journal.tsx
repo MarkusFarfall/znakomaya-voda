@@ -11,11 +11,27 @@ import { fmt, fmtW, Modal } from "./Panels";
 
 type Tab = "daily" | "story" | "perks" | "ach" | "finds" | "stats" | "settings";
 
+export interface GfxSettings {
+  /** отражения берега и неба на воде */
+  refl: boolean;
+  /** световые лучи под водой */
+  shafts: boolean;
+  /** блики-каустика у поверхности */
+  caustics: boolean;
+  /** пена, брызги и кольца следа */
+  foam: boolean;
+  /** дождь и снег */
+  precip: boolean;
+}
+
 export interface Settings {
   quality: number;
   sound: boolean;
   music: boolean;
   volume: number;
+  /** приближение камеры к лодке, 1–2 */
+  zoom: number;
+  gfx: GfxSettings;
 }
 
 export function XpBar({ engine }: { engine: Engine }) {
@@ -343,7 +359,7 @@ export function JournalModal({ engine, onClose, settings, setSettings, initial =
   );
 }
 
-function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+export function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
     <button type="button" onClick={() => onChange(!on)} className={`relative h-5 w-9 border transition ${on ? "border-[var(--brass)] bg-[var(--brass-soft)]" : "border-[var(--line-2)]"}`} aria-pressed={on}>
       <span className={`absolute top-[3px] h-3 w-3 transition-all ${on ? "left-[19px] bg-[var(--brass)]" : "left-[3px] bg-white/30"}`} />

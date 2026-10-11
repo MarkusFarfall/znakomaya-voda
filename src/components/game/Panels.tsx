@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ART } from "@/game/render/boats/art";
+import { getSprite } from "@/game/render/boats/sprites";
+import type { BoatStyle } from "@/game/types";
 import { gearList, isJumper, type Engine, type Trip } from "@/game/engine";
 import type { GearKind } from "@/game/world";
 import { availableNow, conditionsNow, fishNotes } from "@/game/lore";
@@ -645,25 +648,52 @@ function StatBar({ k, v, t }: { k: string; v: number; t: string }) {
   );
 }
 
-function BoatPreview({ hull, trim, tier, style }: { hull: string; trim: string; tier: number; style?: string }) {
-  const w = { kayak: 78, row: 70, dinghy: 84, barkas: 96, cutter: 112, yacht: 124, seiner: 140, trawler: 150, research: 156 }[style ?? ""] ?? 70 + tier * 20;
-  const x0 = 100 - w / 2;
-  const low = style === "kayak";
-  const deckY = low ? 51 : 47;
-  return (
-    <svg viewBox="0 0 200 76" className="my-2 h-20 w-full">
-      <line x1="0" y1="56" x2="200" y2="56" stroke="rgba(143,179,200,0.35)" strokeWidth="0.8" />
-      <path d="M0 60 Q 25 58 50 60 T 100 60 T 150 60 T 200 60" fill="none" stroke="rgba(143,179,200,0.15)" strokeWidth="0.8" />
-      {style === "yacht" && <><line x1={100} y1={6} x2={100} y2={46} stroke={trim} strokeWidth="1.3" /><path d="M101 8 L101 44 L128 44 Z" fill="#f4f2ec" opacity="0.9" /><path d="M99 12 L99 44 L80 44 Z" fill="#e8e4da" opacity="0.8" /></>}
-      {style === "barkas" && <><rect x={100 - 12} y={37} width={22} height={10} fill={trim} /><line x1={112} y1={14} x2={112} y2={37} stroke={trim} strokeWidth="1.4" /><path d="M112 16 Q120 24 112 34" fill="none" stroke="#c8b890" strokeWidth="2" /></>}
-      {(style === "cutter" || style === "seiner" || style === "trawler" || style === "research") && <path d={`M${100 - w * 0.22} 47 V${36 - tier * 3} H${100 + w * 0.08} L${100 + w * 0.14} 47 Z`} fill={trim} opacity="0.92" />}
-      {(style === "seiner" || style === "trawler" || style === "research") && <line x1={100 - w * 0.05} y1={14 - tier} x2={100 - w * 0.05} y2={36 - tier * 3} stroke={trim} strokeWidth="1.4" />}
-      {style === "trawler" && <path d={`M${x0 + 8} 47 L${x0 + 12} 20 L${x0 + 30} 20 L${x0 + 34} 47`} fill="none" stroke="#e8e4dc" strokeWidth="2" />}
-      {style === "research" && <path d={`M${x0 + 6} 47 L${x0 + 12} 22 L${x0 + 26} 47`} fill="none" stroke="#e08a30" strokeWidth="2" />}
-      {style === "row" && <line x1={x0 + 18} y1="47" x2={x0 - 4} y2="64" stroke={trim} strokeWidth="1.4" />}
-      {style === "kayak" && <><line x1={80} y1={40} x2={120} y2={58} stroke="#2a2a2a" strokeWidth="1.4" /><circle cx={100} cy={44} r={3} fill="#3a4a3a" /></>}
-      {style === "dinghy" && <rect x={x0 - 8} y="42" width="8" height="10" fill="#333" />}
-      <path d={low ? `M${x0} ${deckY} Q100 ${deckY - 4} ${x0 + w} ${deckY} Q100 ${deckY + 8} ${x0} ${deckY} Z` : `M${x0} ${deckY} L${x0 + w} 44 Q${x0 + w * 0.94} 58 ${x0 + w * 0.78} 60 L${x0 + w * 0.08} 60 Q${x0} 54 ${x0} ${deckY} Z`} fill={hull} stroke={trim} strokeWidth="1.2" />
-    </svg>
-  );
+/** Превью судна в верфи: настоящий рисунок из игровой сцены, в масштабе длин */
+function BoatPreview(p: { hull: string; trim: string; tier: number; style?: string }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const st = (p.style ?? "row") as BoatStyle;
+    let raf = 0;
+    const draw = () => {
+      const ctx = cv.getContext("2d");
+      if (!ctx) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const W = Math.max(1, Math.floor(cv.clientWidth * dpr));
+      const H = Math.max(1, Math.floor(cv.clientHeight * dpr));
+      if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+      ctx.clearRect(0, 0, W, H);
+      const wl = H * 0.66;
+      ctx.fillStyle = "rgba(143,179,200,0.10)";
+      ctx.fillRect(0, wl, W, H - wl);
+      ctx.strokeStyle = "rgba(143,179,200,0.35)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, wl + 0.5);
+      ctx.lineTo(W, wl + 0.5);
+      ctx.stroke();
+      const sp = getSprite(st);
+      if (!sp) { raf = requestAnimationFrame(draw); return; }
+      const A = ART[st];
+      const pxm = (W * 0.92) / 14.5;
+      const bw = A.w * pxm;
+      const bh = (bw * sp.h) / sp.w;
+      const x = (W - bw) / 2;
+      const y = wl - A.wl * bh;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+      // лёгкое отражение в воде
+      ctx.save();
+      ctx.globalAlpha = 0.12;
+      ctx.translate(0, 2 * wl);
+      ctx.scale(1, -1);
+      ctx.drawImage(sp.mips[0], x, y, bw, bh);
+      ctx.restore();
+      ctx.drawImage(sp.mips[0], x, y, bw, bh);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [p.style]);
+  return <canvas ref={ref} className="my-2 h-24 w-full" />;
 }

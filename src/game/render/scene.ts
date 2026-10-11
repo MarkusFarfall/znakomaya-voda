@@ -42,6 +42,10 @@ export class Scene {
   voyage: number | null = null;
   private flow = 0;
   quality = 2;
+  /** зум камеры: 1 — обычный вид, до 2 — приближение к лодке */
+  zoom = 1;
+  /** детальная графика: отдельные слои можно отключать */
+  gfx = { refl: true, shafts: true, caustics: true, foam: true, precip: true };
   private schools: School[] = [];
   private schoolT = 3;
   private sky = new SkyRenderer();
@@ -196,6 +200,12 @@ export class Scene {
     const shake = e.shake * 4;
     ctx.save();
     ctx.clearRect(0, 0, W, H);
+    // приближение камеры: масштабируем вокруг точки у воды возле лодки
+    const z = clamp(this.zoom, 1, 2);
+    if (z > 1.001) {
+      ctx.translate(W * 0.3 * (1 - z), sY * (1 - z));
+      ctx.scale(z, z);
+    }
     ctx.translate(shake ? (Math.random() - 0.5) * shake : 0, -cam + (shake ? (Math.random() - 0.5) * shake : 0));
 
     // ───── НАД ВОДОЙ ─────
@@ -206,7 +216,7 @@ export class Scene {
       this.life.drawSky(f);
       this.land.drawAbove(f);
       if (fxCalls.length) drawEventFx(this.fxScene(f, fxBoatX), "horizon", fxCalls);
-      drawSeaBand(f, () => { if (this.quality > 0) this.land.drawReflection(f, seaSurfaceColor(f)); });
+      drawSeaBand(f, () => { if (this.quality > 0 && this.gfx.refl) this.land.drawReflection(f, seaSurfaceColor(f)); });
       if (fxCalls.length) drawEventFx(this.fxScene(f, fxBoatX), "surface", fxCalls);
       this.land.drawSea(f);
       if (!this.voyage) this.life.drawSea(f);
@@ -225,8 +235,8 @@ export class Scene {
     const bobX = W * e.castNX();
     const fishPos = this.drawHooked(f, bobX, hookY, false);
     drawDepthOverlay(f);
-    if (this.quality > 0) drawShafts(f);
-    if (this.quality > 1) drawSurfaceCaustics(f);
+    if (this.quality > 0 && this.gfx.shafts) drawShafts(f);
+    if (this.quality > 1 && this.gfx.caustics) drawSurfaceCaustics(f);
     // светящийся проход
     this.bed.drawGlow(f);
     this.glowPass(f);
@@ -253,7 +263,7 @@ export class Scene {
     const bx = W * 0.3;
     const flowPx = this.voyage ?? 0;
     const tip = drawBoat(f, bx, this.voyage ? "helm" : "fish", Math.min(1, flowPx / 230), flowPx);
-    drawSurfaceFront(f, this.rings);
+    if (this.gfx.foam) drawSurfaceFront(f, this.rings);
     this.rings = this.rings.filter((r) => r.t < 0.7);
     if (atmo.ice > 0.02) {
       drawIce(ctx, t, W, (x) => waveY(x), atmo.ice, atmo.wind * atmo.windDir * 26 * sc, sc, atmo.palette.seaNear);
@@ -680,6 +690,7 @@ export class Scene {
 
   private drawSprays(f: Frame) {
     const { ctx } = f;
+    if (!this.gfx.foam) { this.sprays.length = 0; return; }
     ctx.fillStyle = "rgba(235,245,255,0.8)";
     for (const s of this.sprays) {
       s.t += f.dt;
@@ -741,10 +752,10 @@ export class Scene {
         ctx.restore();
         for (let i = 0; i < 2; i++) {
           const rp = (t * 1.4 + i / 2) % 1;
-          ctx.strokeStyle = `rgba(240,230,210,${0.45 * (1 - rp)})`;
+          ctx.strokeStyle = `rgba(240,230,210,${0.35 * (1 - rp)})`;
           ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.ellipse(bobX, bobWaveY + 2, 6 + rp * 34, 1.5 + rp * 6, 0, 0, Math.PI * 2);
+          ctx.ellipse(bobX, bobWaveY + 1.5, 3 + rp * 15, 1 + rp * 2.6, 0, 0, Math.PI * 2);
           ctx.stroke();
         }
       }
@@ -804,17 +815,18 @@ export class Scene {
     ctx.save();
     ctx.translate(x, y);
     if (tilt) ctx.rotate(tilt);
-    if (this.W < 820) ctx.scale(1.35, 1.35);
+    if (this.W < 820) ctx.scale(1.2, 1.2);
+    // тело ~4.5px в ширину: поплавок заметно меньше борта судна
     ctx.fillStyle = "#f4f4f0";
     ctx.beginPath();
-    ctx.ellipse(0, 2, 3.6, 5, 0, 0, Math.PI * 2);
+    ctx.ellipse(0, 1.2, 2.2, 3, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = bite ? "#ff3020" : "#e83a2a";
     ctx.beginPath();
-    ctx.ellipse(0, -2, 3.6, 4, 0, Math.PI, 0);
+    ctx.ellipse(0, -1.4, 2.2, 2.5, 0, Math.PI, 0);
     ctx.fill();
-    ctx.fillRect(-0.7, -11, 1.4, 7);
-    if (bite) glow(ctx, 0, -11, 2 + Math.sin(t * 20), "#ff6040", 1);
+    ctx.fillRect(-0.5, -7, 1, 4);
+    if (bite) glow(ctx, 0, -7, 1.4 + Math.sin(t * 20) * 0.6, "#ff6040", 1);
     ctx.restore();
   }
 
@@ -883,17 +895,17 @@ export class Scene {
       ctx.beginPath();
       ctx.rect(0, 0, W, Math.min(H, surf + 6));
       ctx.clip();
-      if (atmo.rain > 0.02) {
+      if (this.gfx.precip && atmo.rain > 0.02) {
         const color = atmo.palette.cloud;
         drawRain(ctx, { ...opts, intensity: atmo.rain, color });
         drawRain(ctx, { ...opts, near: true, intensity: atmo.rain, color });
       }
-      if (atmo.snow > 0.02) {
+      if (this.gfx.precip && atmo.snow > 0.02) {
         drawSnow(ctx, { ...opts, intensity: atmo.snow, color: [245, 249, 255] });
         drawSnow(ctx, { ...opts, near: true, intensity: atmo.snow, color: [252, 254, 255] });
       }
       ctx.restore();
-      if (atmo.rain > 0.02) drawRainRings(ctx, t, 0, W, (x) => f.waveY(x) - cam, atmo.rain, sc, q);
+      if (this.gfx.precip && atmo.rain > 0.02) drawRainRings(ctx, t, 0, W, (x) => f.waveY(x) - cam, atmo.rain, sc, q);
       if (atmo.leaves > 0.02 && surf > 8) drawLeaves(ctx, t, 0, W, 0, Math.min(H, surf), windPx, atmo.leaves, "leaf", sc);
       if (atmo.petals > 0.02 && surf > 8) drawLeaves(ctx, t, 0, W, 0, Math.min(H, surf), windPx * 0.6, atmo.petals, "petal", sc);
     }
