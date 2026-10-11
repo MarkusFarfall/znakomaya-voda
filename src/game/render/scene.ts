@@ -270,7 +270,7 @@ export class Scene {
     const pose = this.voyage ? "helm" : "fish";
     if (!this.boat3d && typeof window !== "undefined") this.boat3d = new Boat3D();
     this.boat3d?.setEnabled(this.boat3dOn);
-    const r3 = this.boat3d?.draw(ctx, f, bx, pose, speed01) ?? null;
+    const r3 = this.boat3d?.draw(ctx, f, bx, pose, speed01, ctx.getTransform().a || 1) ?? null;
     let tip: [number, number];
     if (r3) {
       // кроссфейд 2D↔3D: старая модель тонет, новая всплывает

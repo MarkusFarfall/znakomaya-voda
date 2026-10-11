@@ -1,6 +1,7 @@
 import { TIME_SCALE, type Engine } from "../engine";
 import type { PortId } from "../types";
 import { drawBoat } from "./boat";
+import { Boat3D } from "./boats3d/boat3d";
 import type { Frame } from "./frame";
 import { drawBolt, drawIce, drawLeaves, drawRainbow, drawRain, drawSnow, makeBolt, type Bolt } from "./weatherFx";
 import { drawEventFx, type FxCall, type FxScene } from "./eventFx";
@@ -40,6 +41,8 @@ export const isFairDay = (d = new Date()) => d.getDay() === 0 || d.getDay() === 
 interface Puff { x: number; y: number; t: number; r: number }
 
 export class PortScene {
+  boat3dOn = false;
+  private boat3d: Boat3D | null = null;
   hot: Hotspot[] = [];
   private t = 0;
   private walkers: Walker[] = [];
@@ -382,11 +385,22 @@ export class PortScene {
       ctx.fillRect(dockX + dx * sc, quayY, 5 * sc, waterY - quayY + 30 * sc);
     }
     this.mooredBoats(ctx, pid, W, waterY, sc, night, t, dim);
-    const f = { ctx, e, t, dt, night, sc: sc * 0.9, golden, weather, waveY, W, H, atmo, wind: Math.min(1.5, atmo.wind / 18) } as unknown as Frame;
+    const f = { ctx, e, t, dt, night, sc: sc * 0.9, golden, weather, waveY, W, H, atmo, wind: Math.min(1.5, atmo.wind / 18), sY: waterY + 4 * sc, day: atmo.day, fogK: atmo.fog } as unknown as Frame;
     if (atmo.ice > 0.02) drawIce(ctx, t, W, waveY, atmo.ice, atmo.wind * atmo.windDir * 26 * sc, sc, atmo.palette.seaNear);
-    ctx.save();
-    fxRodTip = drawBoat(f, dockX + 40 * sc, "moored");
-    ctx.restore();
+    if (!this.boat3d && typeof window !== "undefined") this.boat3d = new Boat3D();
+    this.boat3d?.setEnabled(this.boat3dOn);
+    const r3 = this.boat3d?.draw(ctx, f, dockX + 40 * sc, "moored", 0, ctx.getTransform().a || 1) ?? null;
+    if (r3 && r3.k < 0.99) {
+      ctx.save();
+      ctx.globalAlpha *= 1 - r3.k;
+      ctx.translate(0, r3.k * 10);
+      fxRodTip = drawBoat(f, dockX + 40 * sc, "moored");
+      ctx.restore();
+    } else if (!r3) {
+      ctx.save();
+      fxRodTip = drawBoat(f, dockX + 40 * sc, "moored");
+      ctx.restore();
+    }
     if (fxCalls.length) {
       drawEventFx(fxScene(), "surface", fxCalls);
       drawEventFx(fxScene(), "front", fxCalls);

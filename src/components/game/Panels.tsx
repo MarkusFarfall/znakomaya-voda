@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ART } from "@/game/render/boats/art";
 import { getSprite } from "@/game/render/boats/sprites";
+import { boat3dSnapshot, getBoat3dPref } from "@/game/render/boats3d/boat3d";
 import type { BoatStyle } from "@/game/types";
 import { gearList, isJumper, type Engine, type Trip } from "@/game/engine";
 import type { GearKind } from "@/game/world";
@@ -651,6 +652,7 @@ function StatBar({ k, v, t }: { k: string; v: number; t: string }) {
 /** Превью судна в верфи: настоящий рисунок из игровой сцены, в масштабе длин */
 export function BoatPreview(p: { hull: string; trim: string; tier: number; style?: string; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const use3d = getBoat3dPref();
   useEffect(() => {
     const cv = ref.current;
     if (!cv) return;
@@ -673,6 +675,14 @@ export function BoatPreview(p: { hull: string; trim: string; tier: number; style
       ctx.moveTo(0, wl + 0.5);
       ctx.lineTo(W, wl + 0.5);
       ctx.stroke();
+      // 3D-режим: снимок общей WebGL-сцены; нет WebGL — прежний рисунок
+      if (use3d) {
+        const sn = boat3dSnapshot(st, W, H);
+        if (sn) {
+          ctx.drawImage(sn, 0, 0, W, H);
+          return;
+        }
+      }
       const sp = getSprite(st);
       if (!sp) { raf = requestAnimationFrame(draw); return; }
       const A = ART[st];
@@ -694,6 +704,6 @@ export function BoatPreview(p: { hull: string; trim: string; tier: number; style
     };
     raf = requestAnimationFrame(draw);
     return () => cancelAnimationFrame(raf);
-  }, [p.style]);
+  }, [p.style, use3d]);
   return <canvas ref={ref} className={p.className ?? "my-2 h-24 w-full"} />;
 }

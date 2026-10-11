@@ -39,6 +39,17 @@ export class VesselStage {
   private key = '';
   private v = new THREE.Vector3();
 
+  private pr = 1;
+
+  /** плотность рендера под dpr основной сцены — без «пикселей» при приближении */
+  setPixelRatio(dpr: number) {
+    const pr = Math.min(2, Math.max(1, dpr));
+    if (pr === this.pr) return;
+    this.pr = pr;
+    this.renderer.setPixelRatio(pr);
+    this.renderer.setSize(CW, CH, false);
+  }
+
   constructor() {
     this.canvas.width = CW;
     this.canvas.height = CH;
@@ -48,7 +59,7 @@ export class VesselStage {
     r.setClearColor(0x000000, 0);
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.NeutralToneMapping;
-    r.toneMappingExposure = 1.0;
+    r.toneMappingExposure = 1.12;
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFShadowMap;
     this.renderer = r;
@@ -136,12 +147,12 @@ export class VesselStage {
     } else if (w.moonElev > 0) {
       el = w.moonElev;
       az = w.moonAz;
-      inten = 0.9 * w.moonVis * w.moonIllum + 0.05;
+      inten = 1.1 * w.moonVis * w.moonIllum + 0.14;
       col.set(0xb8c8ff);
     } else {
       el = 25;
       az = 180;
-      inten = 0.05;
+      inten = 0.16;
       col.set(0x8090c0);
     }
     const elc = (clamp(el, 14, 80) * Math.PI) / 180;
@@ -153,8 +164,8 @@ export class VesselStage {
     this.sun.intensity = inten;
     this.hemi.color.copy(rgb(w.palette.skyMid).lerp(new THREE.Color(0xffffff), 0.25));
     this.hemi.groundColor.copy(rgb(w.palette.seaNear).multiplyScalar(0.75));
-    this.hemi.intensity = 0.3 + 0.55 * w.daylight + 0.1 * (1 - w.night);
-    this.scene.environmentIntensity = 0.1 + 0.75 * w.daylight * (0.7 + 0.3 * (1 - w.cover)) + 0.08 * f.golden;
+    this.hemi.intensity = 0.42 + 0.55 * w.daylight + 0.14 * (1 - w.night);
+    this.scene.environmentIntensity = 0.26 + 0.75 * w.daylight * (0.7 + 0.3 * (1 - w.cover)) + 0.08 * f.golden;
 
     /* ───── камера: 1 м = ppm пикселей по обеим осям ───── */
     const want = f.PXM * f.dpr * 1.2;

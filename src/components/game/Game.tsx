@@ -17,6 +17,7 @@ import { BaitIcon, Icon, MoonIcon } from "./Icons";
 import { EventFeed } from "./EventFeed";
 import { DailyTracker, FindModal, JournalModal, LetterModal, QuestTracker, XpBar, type Settings } from "./Journal";
 import { SettingsModal } from "./SettingsModal";
+import { setBoat3dPref } from "@/game/render/boats3d/boat3d";
 import { CatchModal, fmt, PortModal, type PortTab } from "./Panels";
 import { Codex } from "./Codex";
 import { TravelChoice, TravelOverlay } from "./Travel";
@@ -183,6 +184,8 @@ export default function Game() {
     sceneRef.current.zoom = settings.zoom;
     sceneRef.current.gfx = { ...settings.gfx };
     sceneRef.current.boat3dOn = settings.model3d;
+    portSceneRef.current.boat3dOn = settings.model3d;
+    setBoat3dPref(settings.model3d);
   }, [settings.zoom, settings.gfx, settings.model3d]);
 
   // колесо мыши над водой — приближение камеры к лодке
@@ -659,7 +662,7 @@ export default function Game() {
         <PortHub engine={engine} hot={portScene0.hot} compact={view.compact} onOpen={openBuilding} onTravel={requestTrip} onJournal={() => openPanel("journal")} onCodex={() => openPanel("codex")} account={account} onAccount={() => setAuthOpen("profile")} />
       )}
       {tripReq && <TravelChoice engine={engine} trip={tripReq} onCancel={() => setTripReq(null)} onGo={startTrip} />}
-      {travelling && <TravelOverlay engine={engine} trip={travelling.trip} mode={travelling.mode} onDone={finishTrip} quality={settings.quality} />}
+      {travelling && <TravelOverlay engine={engine} trip={travelling.trip} mode={travelling.mode} onDone={finishTrip} quality={settings.quality} model3d={settings.model3d} />}
 
       {playing && (
         <>

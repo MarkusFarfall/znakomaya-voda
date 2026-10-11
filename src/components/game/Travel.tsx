@@ -66,7 +66,7 @@ export function TravelChoice({ engine, trip, onCancel, onGo }: { engine: Engine;
   );
 }
 
-export function TravelOverlay({ engine, trip, mode, onDone, quality = 1 }: { engine: Engine; trip: Trip; mode: TravelMode; onDone: () => void; quality?: number }) {
+export function TravelOverlay({ engine, trip, mode, onDone, quality = 1, model3d = true }: { engine: Engine; trip: Trip; mode: TravelMode; onDone: () => void; quality?: number; model3d?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [p, setP] = useState(0);
   const doneRef = useRef(false);
@@ -101,6 +101,7 @@ export function TravelOverlay({ engine, trip, mode, onDone, quality = 1 }: { eng
     const scene = new Scene();
     scene.quality = Math.min(quality, 1);
     scene.camMode = "surface";
+    scene.boat3dOn = model3d;
     const dpr = Math.min(quality >= 2 ? 2 : 1.5, window.devicePixelRatio || 1);
     let W = 0, H = 0;
     const resize = () => {
