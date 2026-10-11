@@ -188,6 +188,7 @@ export class Scene {
       wind: this.voyage ? Math.min(3, atmo.wind / 18 + this.voyage / 90) : Math.min(1.5, atmo.wind / 18),
       clarity: loc.clarity ?? 0.6, quality: this.quality, compact, land,
       topRes: compact ? (land ? 64 : 118) : 210, botRes: compact ? (land ? 70 : 146) : 150, depthPx, waveY,
+      light: { dx: clamp((sunX / W) * 2 - 1, -1, 1), k: sunVis * (1 - night * 0.7) },
     };
     const fxCalls = this.eventFxCalls(e);
     const fxBoatX = W * 0.3;
@@ -250,8 +251,8 @@ export class Scene {
     // ───── ПОВЕРХНОСТЬ ─────
     this.land.drawFront(f);
     const bx = W * 0.3;
-    if (this.voyage) this.drawWake(f, bx);
-    const tip = drawBoat(f, bx, this.voyage ? "helm" : "fish");
+    const flowPx = this.voyage ?? 0;
+    const tip = drawBoat(f, bx, this.voyage ? "helm" : "fish", Math.min(1, flowPx / 230), flowPx);
     drawSurfaceFront(f, this.rings);
     this.rings = this.rings.filter((r) => r.t < 0.7);
     if (atmo.ice > 0.02) {
@@ -366,51 +367,6 @@ export class Scene {
   }
 
   /** Кильватер и бурун при переходе */
-  private drawWake(f: Frame, bx: number) {
-    const { ctx, W, t, sc, night } = f;
-    const sp = this.voyage ?? 0;
-    const fast = sp > 150;
-    const len = W * (fast ? 0.55 : 0.32);
-    const stern = bx - (60 + f.e.boat.tier * 18) * sc;
-    const bow = bx + (60 + f.e.boat.tier * 20) * sc;
-    const a = 0.55 * (1 - night * 0.4);
-    // две расходящиеся пенные полосы
-    for (let side = -1; side <= 1; side += 2) {
-      ctx.beginPath();
-      for (let i = 0; i <= 40; i++) {
-        const q = i / 40;
-        const x = stern - q * len;
-        const y = f.waveY(x) + side * q * (fast ? 8 : 5) * sc + 1;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      const g = ctx.createLinearGradient(stern, 0, stern - len, 0);
-      g.addColorStop(0, `rgba(255,255,255,${a.toFixed(3)})`);
-      g.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.strokeStyle = g;
-      ctx.lineWidth = (fast ? 3 : 2) * sc;
-      ctx.stroke();
-    }
-    // турбулентная пена за кормой
-    for (let i = 0; i < (fast ? 26 : 12); i++) {
-      const q = ((i * 0.37 + t * (fast ? 1.6 : 0.6)) % 1);
-      const x = stern - q * len * 0.6 + Math.sin(i * 7.1 + t * 3) * 4;
-      const y = f.waveY(x) + Math.sin(i * 3.3) * 3 * sc;
-      ctx.fillStyle = `rgba(255,255,255,${(a * (1 - q) * 0.9).toFixed(3)})`;
-      ctx.beginPath();
-      ctx.ellipse(x, y, (3 + q * 14) * sc, (1 + q * 2) * sc, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    // бурун у форштевня
-    if (fast) {
-      for (let i = 0; i < 3; i++) this.sprays.push({ x: bow + Math.random() * 6, y: f.waveY(bow) - 2, vx: 20 + Math.random() * 60, vy: -40 - Math.random() * 70, t: 0 });
-      ctx.fillStyle = `rgba(255,255,255,${(a * 0.9).toFixed(3)})`;
-      ctx.beginPath();
-      ctx.ellipse(bow, f.waveY(bow) + 1, 14 * sc, 3 * sc, 0, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
   private drawWhale(f: Frame) {
     const { ctx, e, W, sY, t, sc } = f;
     if (!e.activeEvents.some((a) => a.id === "whale")) return;

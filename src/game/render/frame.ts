@@ -2,6 +2,18 @@ import type { Engine } from "../engine";
 import type { AtmosphereState } from "../atmosphere/types";
 import type { LocationDef, SpotDef, WeatherId } from "../types";
 
+/** Что drawBoat читает из Engine (все эти поля есть в настоящем engine.ts) */
+export interface EngineView {
+  boat: import("../types").BoatDef;
+  temperature: number;
+  phase: string;
+  power: number;
+  castT: number;
+  reeling: boolean;
+  pullDir: number;
+  hooked: { tension: number; jump: number } | null;
+}
+
 export interface Frame {
   ctx: CanvasRenderingContext2D;
   e: Engine;
@@ -47,4 +59,6 @@ export interface Frame {
   botRes: number;
   depthPx: (m: number) => number;
   waveY: (x: number) => number;
+  /** откуда светит солнце/луна: dx −1 (слева) … 1 (справа), k — сила 0..1 */
+  light?: { dx: number; k: number };
 }
