@@ -23,21 +23,21 @@ const fmtLen = (cm: number) => (cm >= 100 ? `${(cm / 100).toFixed(2)} м` : `${M
 /** `above` поднимает окно выше титульной заставки (z-50) — нужно панелям, доступным до начала игры. */
 export function Modal({ label, title, onClose, children, tabs, right, wide = true, above = false }: { label?: string; title: string; onClose: () => void; children: ReactNode; tabs?: ReactNode; right?: ReactNode; wide?: boolean; above?: boolean }) {
   return (
-    <div className={`fade-in absolute inset-0 ${above ? "z-[60]" : "z-40"} flex items-stretch justify-center bg-[#02050a]/72 backdrop-blur-[3px] sm:items-center sm:p-3`} onPointerDown={(e) => e.stopPropagation()}>
-      <div className={`sheet reveal safe-pad flex h-full max-h-[100dvh] w-full flex-col overflow-hidden !rounded-none sm:h-auto sm:max-h-[94vh] sm:!rounded-[3px] ${wide ? "max-w-[1180px]" : "max-w-3xl"}`}>
-        <div className="flex shrink-0 items-end justify-between gap-4 px-4 pt-4 sm:px-7 sm:pt-6">
-          <div>
-            {label && <div className="label-brass">{label}</div>}
-            <h2 className="font-serif mt-1 truncate text-[26px] font-medium leading-none text-[#f1ebdd] sm:text-[34px]">{title}</h2>
+    <div className={`fade-in absolute inset-0 ${above ? "z-[60]" : "z-40"} flex min-w-0 max-w-[100vw] items-stretch justify-center overflow-x-hidden bg-[#02050a]/72 backdrop-blur-[3px] sm:items-center sm:p-3`} onPointerDown={(e) => e.stopPropagation()}>
+      <div className={`sheet reveal safe-pad flex min-w-0 h-full max-h-[100dvh] w-full max-w-full flex-col overflow-hidden !rounded-none sm:h-auto sm:max-h-[94vh] sm:!rounded-[3px] ${wide ? "max-w-[1180px]" : "max-w-3xl"}`}>
+        <div className="flex min-w-0 shrink-0 items-end justify-between gap-4 px-4 pt-4 sm:px-7 sm:pt-6">
+          <div className="min-w-0 flex-1">
+            {label && <div className="truncate label-brass">{label}</div>}
+            <h2 className="font-serif mt-1 min-w-0 truncate text-[26px] font-medium leading-none text-[#f1ebdd] sm:text-[34px]">{title}</h2>
           </div>
-          <div className="flex shrink-0 items-center gap-3 sm:gap-5">
+          <div className="flex min-w-0 shrink-0 items-center gap-3 sm:gap-5">
             {right}
-            <button onClick={onClose} className="iconbtn" aria-label="Закрыть"><Icon name="close" size={16} /></button>
+            <button onClick={onClose} className="iconbtn shrink-0" aria-label="Закрыть"><Icon name="close" size={16} /></button>
           </div>
         </div>
-        {tabs && <div className="shrink-0 border-b border-[var(--line)]"><div className="no-scrollbar zv-fade-x mt-3 flex gap-5 overflow-x-auto px-4 sm:mt-4 sm:gap-6 sm:px-7">{tabs}</div></div>}
+        {tabs && <div className="min-w-0 shrink-0 border-b border-[var(--line)]"><div className="no-scrollbar zv-fade-x mt-3 flex min-w-0 gap-5 overflow-x-auto px-4 sm:mt-4 sm:gap-6 sm:px-7">{tabs}</div></div>}
         {!tabs && <div className="rule mx-4 mt-4 shrink-0 sm:mx-7 sm:mt-5" />}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{children}</div>
+        <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">{children}</div>
       </div>
     </div>
   );
@@ -45,9 +45,9 @@ export function Modal({ label, title, onClose, children, tabs, right, wide = tru
 
 function Row({ k, v, strong }: { k: string; v: ReactNode; strong?: boolean }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 border-b border-[var(--line)] py-1.5">
-      <dt className="text-[12px] muted">{k}</dt>
-      <dd className={`num text-right ${strong ? "text-[15px] text-[#f1ebdd]" : "text-[13px] text-[#ddd7ca]"}`}>{v}</dd>
+    <div className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[var(--line)] py-1.5">
+      <dt className="muted text-[12px]">{k}</dt>
+      <dd className={`num min-w-0 max-w-full break-words text-right ${strong ? "text-[15px] text-[#f1ebdd]" : "text-[13px] text-[#ddd7ca]"}`}>{v}</dd>
     </div>
   );
 }
@@ -68,9 +68,9 @@ export function CatchModal({ engine }: { engine: Engine }) {
   if (c.perfect) notes.push(["target", "Точная подсечка"]);
   if (order) notes.push(["order", `Подходит для заказа: ${order.client}`]);
   return (
-    <div className="fade-in absolute inset-0 z-30 flex items-stretch justify-center bg-[#02050a]/55 sm:items-center sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="sheet reveal safe-pad grid max-h-[100dvh] w-full max-w-[880px] overflow-y-auto overscroll-contain !rounded-none sm:!rounded-[3px] md:grid-cols-[1.15fr_1fr] sm:max-h-[94vh]">
-        <div className="plate relative flex min-h-[190px] flex-col justify-between p-4 sm:p-6 [@media(min-height:560px)]:min-h-[300px]">
+    <div className="fade-in absolute inset-0 z-30 flex min-w-0 max-w-[100vw] items-stretch justify-center overflow-x-hidden bg-[#02050a]/55 sm:items-center sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="sheet reveal safe-pad grid min-w-0 max-w-full max-h-[100dvh] w-full overflow-x-hidden overflow-y-auto overscroll-contain !rounded-none sm:!rounded-[3px] md:grid-cols-[1.15fr_1fr] sm:max-h-[94vh] sm:max-w-[880px]">
+        <div className="plate relative flex min-w-0 min-h-[190px] flex-col justify-between overflow-hidden p-4 sm:p-6 [@media(min-height:560px)]:min-h-[300px]">
           <div className="flex items-center justify-between">
             <span className="label" style={{ color: r.color }}>{r.name}</span>
             <span className="label num">№ {String(FISH.indexOf(f) + 1).padStart(3, "0")} / {FISH.length}</span>
@@ -78,18 +78,18 @@ export function CatchModal({ engine }: { engine: Engine }) {
           <div className="flex flex-1 items-center justify-center py-2 sm:py-4">
             <FishIcon fish={f} size={420} height={210} variant={c.item.variant} animate />
           </div>
-          <div className="flex items-end justify-between">
-            <div className="flex items-center gap-2 text-[11px] dim">
+          <div className="flex min-w-0 items-end justify-between gap-2">
+            <div className="flex shrink-0 items-center gap-2 text-[11px] dim">
               <span className="inline-block h-px w-16 bg-[var(--line-2)]" />
               <span className="num">≈ {fmtLen(fishLength(f, c.item.weight))}</span>
             </div>
-            <span className="truncate pl-2 text-[11px] dim">{LOC_BY_ID[c.item.loc].name} · {engine.spot.name} · день {c.item.day}</span>
+            <span className="min-w-0 truncate pl-2 text-right text-[11px] dim">{LOC_BY_ID[c.item.loc].name} · {engine.spot.name} · день {c.item.day}</span>
           </div>
         </div>
-        <div className="flex flex-col p-5 sm:p-7">
+        <div className="flex min-w-0 flex-col overflow-hidden p-5 sm:p-7">
           <div className="label">{c.isNew ? "Впервые пойман" : "Улов"}</div>
-          <h3 className="font-serif mt-1 text-[32px] font-medium leading-[1.05] text-[#f4eee0] sm:text-[40px]">{f.name}</h3>
-          <div className="font-serif text-[17px] italic muted">{f.latin}</div>
+          <h3 className="font-serif mt-1 break-words text-[32px] font-medium leading-[1.05] text-[#f4eee0] sm:text-[40px]">{f.name}</h3>
+          <div className="font-serif break-words text-[17px] italic muted">{f.latin}</div>
           {v && <div className="mt-2 text-[12px] tracking-wide" style={{ color: v.color }}>Вариация: {v.name.toLowerCase()} · ×{v.mult}</div>}
           <dl className="mt-5">
             <Row k="Вес" v={fmtW(c.item.weight)} strong />
@@ -101,14 +101,14 @@ export function CatchModal({ engine }: { engine: Engine }) {
           {notes.length > 0 && (
             <ul className="mt-4 space-y-1.5">
               {notes.map(([ic, t]) => (
-                <li key={t} className="flex items-center gap-2 text-[12px] text-[#ddd2b8]"><Icon name={ic} size={14} className="text-[var(--brass)]" />{t}</li>
+                <li key={t} className="flex min-w-0 items-center gap-2 text-[12px] text-[#ddd2b8]"><Icon name={ic} size={14} className="shrink-0 text-[var(--brass)]" /><span className="min-w-0 break-words">{t}</span></li>
               ))}
             </ul>
           )}
           <p className="mt-4 text-[13px] leading-relaxed muted">{f.desc}</p>
-          <div className="sticky bottom-0 -mx-5 mt-auto flex gap-3 border-t border-[var(--line)] bg-[#0a121c] px-5 pb-[max(4px,env(safe-area-inset-bottom))] pt-4 sm:-mx-7 sm:px-7 md:mt-6">
-            <button className="btn btn-quiet flex-1" onClick={() => engine.releaseCatch()}>Отпустить</button>
-            <button className="btn btn-solid flex-1" disabled={engine.coolerFull} onClick={() => engine.keepCatch()}>
+          <div className="sticky bottom-0 -mx-5 mt-auto flex flex-col gap-2 border-t border-[var(--line)] bg-[#0a121c] px-5 pb-[max(4px,env(safe-area-inset-bottom))] pt-4 min-[400px]:flex-row min-[400px]:gap-3 sm:-mx-7 sm:px-7 md:mt-6">
+            <button className="btn btn-quiet min-w-0 flex-1" onClick={() => engine.releaseCatch()}>Отпустить</button>
+            <button className="btn btn-solid min-w-0 flex-1" disabled={engine.coolerFull} onClick={() => engine.keepCatch()}>
               {engine.coolerFull ? "Садок полон" : `В садок · ${engine.s.cooler.length}/${engine.coolerCap}`}
             </button>
           </div>
@@ -161,7 +161,7 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
       }
     >
       {flash && <div className="fade-in mx-4 mt-4 sm:mx-7 border-l-2 border-[var(--color-ok)] bg-[rgba(134,180,148,0.08)] px-4 py-2 text-[13px] text-[#cfe3d4]">{flash}</div>}
-      <div className="p-4 sm:p-7">
+      <div className="min-w-0 p-4 sm:p-7">
         {tab === "market" && (
           <div>
             <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
@@ -486,8 +486,8 @@ function ChartMap({ engine, onGo, onSail }: { engine: Engine; onGo: (l: LocId, s
   const inCurrentLocation = !s.atPort && sel === s.location;
   const Y = (p: number) => p * 0.625;
   return (
-    <div className="grid gap-6 lg:grid-cols-[1.55fr_1fr]">
-      <div className="relative aspect-[16/10] overflow-hidden border border-[var(--line-2)] bg-[#0b1824]">
+    <div className="grid min-w-0 gap-6 lg:grid-cols-[1.55fr_1fr]">
+      <div className="relative min-w-0 aspect-[16/10] overflow-hidden border border-[var(--line-2)] bg-[#0b1824]">
         <svg viewBox="0 0 100 62.5" className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
           <defs>
             <radialGradient id="deepA" cx="86%" cy="36%" r="22%"><stop offset="0" stopColor="#03080f" /><stop offset="1" stopColor="#0b1824" stopOpacity="0" /></radialGradient>
@@ -560,7 +560,7 @@ function ChartMap({ engine, onGo, onSail }: { engine: Engine; onGo: (l: LocId, s
         })}
         <div className="absolute bottom-2 left-3 hidden text-[9px] tracking-[0.2em] text-white/30 sm:block">КАРТА АКВАТОРИЙ · МАСШТАБ УСЛОВНЫЙ</div>
       </div>
-      <div className="flex flex-col">
+      <div className="flex min-w-0 flex-col">
         <div className="mb-5">
             <div className="label mb-2">Порты · переход от {originName}</div>
           <div className="space-y-1.5">

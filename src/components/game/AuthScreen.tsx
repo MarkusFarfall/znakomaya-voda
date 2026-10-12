@@ -280,7 +280,7 @@ export function AuthScreen({ onReady, offline = false }: AuthScreenProps) {
             leaving ? 'zv-panel-out' : 'zv-panel-in'
           }`}
         >
-          <div ref={panel} className="sheet zv-sheet relative flex min-h-0 w-full flex-col overflow-hidden rounded-t-[14px] min-[820px]:rounded-[4px]">
+          <div ref={panel} className="sheet zv-sheet relative flex min-h-0 min-w-0 max-w-full w-full flex-col overflow-x-hidden overflow-y-hidden rounded-t-[14px] min-[820px]:rounded-[4px]">
             {/* световая кромка */}
             <div className="zv-edge pointer-events-none absolute inset-x-0 top-0 h-px" />
             {/* вкладки */}
@@ -302,14 +302,14 @@ export function AuthScreen({ onReady, offline = false }: AuthScreenProps) {
               />
             </div>
 
-            <div className="zv-auth-content min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-9 sm:py-8">
+            <div className="zv-auth-content min-h-0 min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-6 pt-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:px-9 sm:py-8">
               {done ? (
                 <Caught user={done.user} isNew={done.mode === "register"} />
               ) : (
                 <>
                   <div key={mode} className="zv-mode-in">
                     <p className="label-brass">{mode === 'login' ? 'Вход в аккаунт' : 'Новая учётная запись'}</p>
-                    <h2 className="zv-auth-heading font-serif mt-1 text-[2rem] leading-tight text-[#f1ead9]">
+                    <h2 className="zv-auth-heading font-serif mt-1 break-words text-[2rem] leading-tight text-[#f1ead9]">
                       {mode === 'login' ? 'С возвращением на воду' : 'Первый выход в море'}
                     </h2>
                   </div>

@@ -135,9 +135,9 @@ function Avatar({ id, name, size = 44, online }: { id: string; name: string; siz
 
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className="border border-[var(--line)] px-3 py-2">
-      <div className="label !text-[9px]">{label}</div>
-      <div className={`num mt-0.5 text-[16px] leading-none ${accent ? "text-[var(--brass-2,#e3c996)]" : "text-[#ece6d8]"}`}>{value}</div>
+    <div className="min-w-0 border border-[var(--line)] px-3 py-2">
+      <div className="break-words label !text-[9px]">{label}</div>
+      <div className={`num mt-0.5 break-words text-[16px] leading-none ${accent ? "text-[var(--brass-2,#e3c996)]" : "text-[#ece6d8]"}`}>{value}</div>
     </div>
   );
 }
@@ -223,14 +223,14 @@ function FriendCard({ f, onOpen, onRemove, onUi }: { f: FriendSummary; onOpen: (
 
 function RequestCard({ r, onAccept, onDecline, onUi }: { r: FriendRequestRow; onAccept?: () => void; onDecline: () => void; onUi: () => void }) {
   return (
-    <div className="flex items-center gap-3 border border-[var(--line)] bg-[rgba(9,17,24,0.5)] px-3 py-2.5">
+    <div className="flex min-w-0 items-center gap-3 border border-[var(--line)] bg-[rgba(9,17,24,0.5)] px-3 py-2.5">
       <Avatar id={r.userId} name={r.username} size={38} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[15px] text-[#f1ebdd]">{r.username}</div>
         <div className="num truncate text-[10.5px] dim">уровень {r.level} · {r.codexCount} видов · {lastSeenLabel(r.createdAt)} заявка</div>
       </div>
-      {onAccept && <button className="btn btn-sm btn-solid" onClick={() => { onUi(); onAccept(); }}>Принять</button>}
-      <button className="btn btn-sm btn-quiet" onClick={() => { onUi(); onDecline(); }}>{onAccept ? "Отклонить" : "Отозвать"}</button>
+      {onAccept && <button className="btn btn-sm btn-solid shrink-0" onClick={() => { onUi(); onAccept(); }}>Принять</button>}
+      <button className="btn btn-sm btn-quiet shrink-0" onClick={() => { onUi(); onDecline(); }}>{onAccept ? "Отклонить" : "Отозвать"}</button>
     </div>
   );
 }
@@ -356,7 +356,7 @@ export function FriendsModal({ state, onClose, onUi, me }: { state: FriendsState
         ))}
         right={<div className="hidden text-right sm:block"><div className="label">Предел</div><div className="num text-[15px] text-[#ece6d8]">{friends.length}/{FRIEND_LIMIT}</div></div>}
       >
-        <div className="px-4 pb-6 pt-4 sm:px-7">
+        <div className="min-w-0 px-4 pb-6 pt-4 sm:px-7">
           {msg && <div className={`mb-4 border-l-2 px-3 py-2 text-[12px] ${msg.ok ? "border-[var(--color-ok)] text-[#cfe3d4]" : "border-[var(--color-bad)] text-[#f0c8bc]"}`}>{msg.text}</div>}
           {!d && !me && (
             <div className="py-10 text-center">
@@ -450,9 +450,9 @@ export function FriendsModal({ state, onClose, onUi, me }: { state: FriendsState
           {tab === "search" && (
             <div>
               <div className="label mb-2">Поиск по имени</div>
-              <div className="flex gap-2">
+              <div className="flex min-w-0 gap-2">
                 <input
-                  className="field flex-1 !text-left" value={q} maxLength={24} placeholder="Имя пользователя" autoComplete="off"
+                  className="field min-w-0 flex-1 !text-left" value={q} maxLength={24} placeholder="Имя пользователя" autoComplete="off"
                   onChange={(e) => onQuery(e.target.value)}
                 />
                 <button className="btn btn-sm btn-quiet" disabled={!normalizeQuery(q) || !me} onClick={async () => { onUi(); const r = await searchPlayers(q); if (r.ok) { setResults(r.data.results ?? []); setHint(r.data.hint ?? null); } }}>Найти</button>
@@ -511,7 +511,7 @@ export function FriendProfileModal({ userId, self = false, onClose, onUi, onChan
   return (
     <Modal label={self ? "Ваша карточка" : "Профиль друга"} title={p?.username ?? "Загрузка"} above onClose={() => { onUi("close"); onClose(); }}
       right={p && !self ? <div className="hidden text-right sm:block"><div className="label">Друзья с</div><div className="num text-[13px] text-[#ece6d8]">{p.friendsSince ? new Date(p.friendsSince).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "2-digit" }) : "—"}</div></div> : undefined}>
-      <div className="px-4 pb-7 pt-4 sm:px-7">
+      <div className="min-w-0 px-4 pb-7 pt-4 sm:px-7">
         {err && <div className="border-l-2 border-[var(--color-bad)] px-3 py-2 text-[12px] text-[#f0c8bc]">{err}</div>}
         {!p && !err && <div className="label pulse-soft py-12 text-center">Загрузка профиля</div>}
         {p && <ProfileBody p={p} busy={busy} onUi={onUi}
@@ -547,11 +547,11 @@ function ProfileBody({ p, busy, onUi, onRemove }: { p: FriendProfile; busy: bool
   ], [p]);
 
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       {/* шапка */}
-      <div className="flex flex-wrap items-center gap-4">
+      <div className="flex min-w-0 flex-wrap items-center gap-4">
         <Avatar id={p.userId} name={p.username} size={62} online={online} />
-        <div className="min-w-[210px] flex-1">
+        <div className="min-w-0 flex-1">
           <h3 className="font-serif truncate text-[28px] leading-tight text-[#f4eee0]">{p.username}</h3>
           <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px]">
             <span className={online ? "text-[var(--color-ok)]" : "dim"}>
@@ -595,7 +595,7 @@ function ProfileBody({ p, busy, onUi, onRemove }: { p: FriendProfile; busy: bool
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-[11.5px] sm:grid-cols-3">
                   {[["Трюм", `${boat.cooler}`], ["Остойчивость", `${Math.round(boat.stability * 100)}%`], ["Ход", `×${boat.travelMult}`],
                     ["Топливо", boat.fuel ? `${boat.fuel} ₽/ч` : "не нужно"], ["Шторм", boat.stormSafe ? "выдерживает" : "не для шторма"], ["Редкие", boat.rareBonus ? `+${Math.round(boat.rareBonus * 100)}%` : "—"]].map(([k, v]) => (
-                    <div key={k} className="flex justify-between border-b border-[var(--line)] py-1"><dt className="dim">{k}</dt><dd className="num text-[#ddd7ca]">{v}</dd></div>
+                    <div key={k} className="flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1 border-b border-[var(--line)] py-1"><dt className="dim">{k}</dt><dd className="num break-words text-right text-[#ddd7ca]">{v}</dd></div>
                   ))}
                 </dl>
                 <div className="mt-2 text-[11px] dim">Особое: {boat.special}</div>
@@ -621,9 +621,9 @@ function ProfileBody({ p, busy, onUi, onRemove }: { p: FriendProfile; busy: bool
             <div>
               <div className="label mb-2">Промысел</div>
               <div className="space-y-1.5 text-[12px]">
-                {p.favoriteLocation && <div className="flex justify-between border-b border-[var(--line)] py-1.5"><span className="dim">Чаще всего ловит</span><span className="text-[#ddd7ca]">{p.favoriteLocation.name} <span className="num dim">· {p.favoriteLocation.count}</span></span></div>}
-                {biggestFish && p.biggest && <div className="flex justify-between border-b border-[var(--line)] py-1.5"><span className="dim">Самая крупная</span><span className="text-[#ddd7ca]">{biggestFish.name} <span className="num">· {fmtW(p.biggest.weight)}</span></span></div>}
-                {p.recordsHeld > 0 && <div className="flex justify-between border-b border-[var(--line)] py-1.5"><span className="dim">Рекорды</span><span className="text-[var(--brass-2,#e3c996)]">держит {p.recordsHeld} мировых</span></div>}
+                {p.favoriteLocation && <div className="flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1 border-b border-[var(--line)] py-1.5"><span className="dim">Чаще всего ловит</span><span className="break-words text-right text-[#ddd7ca]">{p.favoriteLocation.name} <span className="num dim">· {p.favoriteLocation.count}</span></span></div>}
+                {biggestFish && p.biggest && <div className="flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1 border-b border-[var(--line)] py-1.5"><span className="dim">Самая крупная</span><span className="break-words text-right text-[#ddd7ca]">{biggestFish.name} <span className="num">· {fmtW(p.biggest.weight)}</span></span></div>}
+                {p.recordsHeld > 0 && <div className="flex min-w-0 flex-wrap justify-between gap-x-3 gap-y-1 border-b border-[var(--line)] py-1.5"><span className="dim">Рекорды</span><span className="break-words text-right text-[var(--brass-2,#e3c996)]">держит {p.recordsHeld} мировых</span></div>}
               </div>
             </div>
           )}

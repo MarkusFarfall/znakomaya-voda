@@ -79,20 +79,20 @@ export function LetterModal({ engine, index, onClose }: { engine: Engine; index:
   const q = QUESTS[index];
   if (!q) return null;
   return (
-    <div className="fade-in absolute inset-0 z-50 flex items-center justify-center bg-[#02050a]/70 p-0 backdrop-blur-[2px] sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="paper reveal max-h-[100dvh] w-full max-w-[560px] overflow-y-auto px-6 py-7 sm:max-h-[94vh] sm:px-12 sm:py-10">
-        <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.3em] text-[#6b5530]">
-          <span>Письмо {index + 1} из {QUESTS.length}</span>
-          <span>{engine.s.name}</span>
+    <div className="fade-in absolute inset-0 z-50 flex min-w-0 max-w-[100vw] items-center justify-center overflow-x-hidden bg-[#02050a]/70 p-0 backdrop-blur-[2px] sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="paper reveal min-w-0 max-w-full max-h-[100dvh] w-full overflow-x-hidden overflow-y-auto px-6 py-7 sm:max-h-[94vh] sm:max-w-[560px] sm:px-12 sm:py-10">
+        <div className="flex min-w-0 items-center justify-between gap-4 text-[10px] uppercase tracking-[0.3em] text-[#6b5530]">
+          <span className="shrink-0">Письмо {index + 1} из {QUESTS.length}</span>
+          <span className="min-w-0 truncate text-right">{engine.s.name}</span>
         </div>
         <div className="mt-3 h-px bg-[#6b5530]/30" />
-        <h3 className="font-serif mt-5 text-center text-[30px] font-medium leading-none text-[#2b2012] sm:mt-6 sm:text-[36px]">{q.title}</h3>
-        <p className="font-serif mt-5 text-[18px] italic leading-[1.55] text-[#3a2c18] sm:mt-7 sm:text-[21px]">{q.letter}</p>
+        <h3 className="font-serif mt-5 break-words text-center text-[30px] font-medium leading-none text-[#2b2012] sm:mt-6 sm:text-[36px]">{q.title}</h3>
+        <p className="font-serif mt-5 break-words text-[18px] italic leading-[1.55] text-[#3a2c18] sm:mt-7 sm:text-[21px]">{q.letter}</p>
         <p className="font-serif mt-4 text-right text-[19px] italic text-[#3a2c18]">— Отец</p>
         <div className="mt-7 h-px bg-[#6b5530]/30" />
-        <div className="mt-4 flex items-baseline justify-between text-[13px] text-[#3a2c18]">
-          <span><span className="text-[10px] uppercase tracking-[0.22em] text-[#6b5530]">Задание</span><br />{q.goal}</span>
-          <span className="text-right"><span className="text-[10px] uppercase tracking-[0.22em] text-[#6b5530]">Награда</span><br /><span className="num">{fmt(q.reward)} ₽</span></span>
+        <div className="mt-4 flex flex-wrap items-baseline justify-between gap-4 text-[13px] text-[#3a2c18]">
+          <span className="min-w-0 flex-1 break-words"><span className="text-[10px] uppercase tracking-[0.22em] text-[#6b5530]">Задание</span><br />{q.goal}</span>
+          <span className="shrink-0 text-right"><span className="text-[10px] uppercase tracking-[0.22em] text-[#6b5530]">Награда</span><br /><span className="num">{fmt(q.reward)} ₽</span></span>
         </div>
         <button className="mt-8 h-10 w-full border border-[#6b5530]/50 text-[11px] font-semibold uppercase tracking-[0.2em] text-[#3a2c18] transition hover:bg-[#6b5530]/10" onClick={onClose}>Сложить письмо</button>
       </div>
@@ -105,8 +105,8 @@ export function FindModal({ engine }: { engine: Engine }) {
   if (!f) return null;
   const count = FINDS.filter((x) => engine.s.finds[x.id]).length;
   return (
-    <div className="fade-in absolute inset-0 z-30 flex items-center justify-center bg-[#02050a]/55 p-4" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="sheet reveal w-full max-w-[420px] p-8 text-center">
+    <div className="fade-in absolute inset-0 z-30 flex min-w-0 max-w-[100vw] items-center justify-center overflow-x-hidden bg-[#02050a]/55 p-4" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="sheet reveal min-w-0 max-w-full w-full overflow-x-hidden p-8 text-center sm:max-w-[420px]">
         <div className="label-brass">{f.isNew ? `Новая находка · ${count} из ${FINDS.length}` : "Находка со дна"}</div>
         <div className="plate mx-auto my-6 flex h-36 w-36 items-center justify-center rounded-full">
           <Icon name={FIND_ICON[f.def.id]} size={64} strokeWidth={1} className="text-[#e3c996]" />
@@ -143,7 +143,7 @@ export function JournalModal({ engine, onClose, initial = "daily" }: { engine: E
       ))}
       right={<div className="hidden w-64 md:block"><XpBar engine={engine} /></div>}
     >
-      <div className="p-4 sm:p-7">
+      <div className="min-w-0 p-4 sm:p-7">
         {tab === "daily" && <DailyPanel engine={engine} />}
 
         {tab === "story" && (
@@ -160,11 +160,11 @@ export function JournalModal({ engine, onClose, initial = "daily" }: { engine: E
               const [a, b] = q.progress(s);
               return (
                 <details key={q.id} open={cur} className={`border-b border-[var(--line)] ${cur ? "bg-[rgba(200,164,106,0.04)]" : ""}`}>
-                  <summary className="flex cursor-pointer items-center gap-3 py-3 sm:gap-4">
-                    <span className="num w-8 text-[12px] dim">{romanNum(i + 1)}</span>
-                    <span className="font-serif flex-1 text-[19px] text-[#f1ebdd]">{q.title}</span>
+                  <summary className="flex min-w-0 cursor-pointer items-center gap-3 py-3 sm:gap-4">
+                    <span className="num w-8 shrink-0 text-[12px] dim">{romanNum(i + 1)}</span>
+                    <span className="font-serif min-w-0 flex-1 break-words text-[19px] text-[#f1ebdd]">{q.title}</span>
                     <span className="hidden text-[12px] muted md:inline">{q.goal}</span>
-                    <span className="w-28 text-right text-[11px]">{done ? <span className="inline-flex items-center gap-1 text-[var(--color-ok)]"><Icon name="check" size={13} />выполнено</span> : b > 1 ? <span className="num text-[var(--brass)]">{fmt(a)} / {fmt(b)}</span> : <span className="text-[var(--brass)]">в работе</span>}</span>
+                    <span className="w-28 shrink-0 text-right text-[11px]">{done ? <span className="inline-flex items-center gap-1 text-[var(--color-ok)]"><Icon name="check" size={13} />выполнено</span> : b > 1 ? <span className="num text-[var(--brass)]">{fmt(a)} / {fmt(b)}</span> : <span className="text-[var(--brass)]">в работе</span>}</span>
                   </summary>
                   <div className="pb-5 pl-4 pr-2 sm:pl-12 sm:pr-4">
                     <p className="font-serif border-l border-[var(--brass)]/40 pl-4 text-[17px] italic leading-relaxed text-[#d8cfbd]">{q.letter}</p>
@@ -178,7 +178,7 @@ export function JournalModal({ engine, onClose, initial = "daily" }: { engine: E
 
         {tab === "perks" && (
           <div>
-            <div className="mb-6 grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+            <div className="mb-6 grid min-w-0 gap-4 md:grid-cols-[1fr_auto] md:items-end">
               <p className="max-w-2xl text-[13px] leading-relaxed muted">
                 Каждый уровень даёт очко навыка, каждый десятый — ещё два. Ранг стоит столько очков, какой он по счёту, и открывается с определённого уровня:
                 {" "}<span className="text-[#ddd7ca]">II — 8, III — 16, IV — 27, V — 40</span>. Всех навыков не освоить — выбирайте специализацию.
@@ -198,10 +198,10 @@ export function JournalModal({ engine, onClose, initial = "daily" }: { engine: E
                     const next = l + 1;
                     return (
                       <div key={p.id} className="flex flex-col border-b border-r border-[var(--line)] bg-[#0a121c] p-5">
-                        <div className="flex items-center gap-3">
-                          <Icon name={PERK_ICON[p.id] ?? "sparkle"} size={20} className="text-[var(--brass)]" />
-                          <span className="font-serif flex-1 text-[19px] text-[#f1ebdd]">{p.name}</span>
-                          <span className="num text-[11px] dim">{l}/{p.max}</span>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <Icon name={PERK_ICON[p.id] ?? "sparkle"} size={20} className="shrink-0 text-[var(--brass)]" />
+                          <span className="font-serif min-w-0 flex-1 break-words text-[19px] text-[#f1ebdd]">{p.name}</span>
+                          <span className="num shrink-0 text-[11px] dim">{l}/{p.max}</span>
                         </div>
                         <div className="mt-3 flex gap-1">
                           {Array.from({ length: p.max }, (_, i) => (
@@ -234,13 +234,13 @@ export function JournalModal({ engine, onClose, initial = "daily" }: { engine: E
             {ACHIEVEMENTS.map((a) => {
               const got = s.achievements.includes(a.id);
               return (
-                <div key={a.id} className={`flex items-center gap-4 border-b border-[var(--line)] py-3 ${got ? "" : "opacity-50"}`}>
+                <div key={a.id} className={`flex min-w-0 items-center gap-4 border-b border-[var(--line)] py-3 ${got ? "" : "opacity-50"}`}>
                   <span className={`flex h-9 w-9 shrink-0 items-center justify-center border ${got ? "border-[var(--brass)] text-[var(--brass)]" : "border-[var(--line-2)] dim"}`}><Icon name={got ? "medal" : "lock"} size={16} /></span>
                   <div className="min-w-0 flex-1">
                     <div className="text-[14px] text-[#ece6d8]">{a.name}</div>
                     <div className="text-[12px] dim">{a.desc}</div>
                   </div>
-                  <span className={`num text-[11px] ${got ? "text-[var(--color-ok)]" : "dim"}`}>{got ? "получено" : `${fmt(a.reward)} ₽`}</span>
+                  <span className={`num shrink-0 text-[11px] ${got ? "text-[var(--color-ok)]" : "dim"}`}>{got ? "получено" : `${fmt(a.reward)} ₽`}</span>
                 </div>
               );
             })}
@@ -290,9 +290,9 @@ export function JournalModal({ engine, onClose, initial = "daily" }: { engine: E
               ["Дней в море", fmt(engine.day)],
               ["Время в игре", `${Math.floor(s.stats.playSeconds / 3600)} ч ${Math.floor((s.stats.playSeconds % 3600) / 60)} мин`],
             ] as [string, string][]).map(([k, v]) => (
-              <div key={k} className="flex items-baseline justify-between border-b border-[var(--line)] py-2.5">
-                <span className="text-[13px] muted">{k}</span>
-                <span className="num text-[14px] text-[#ece6d8]">{v}</span>
+              <div key={k} className="flex min-w-0 flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-b border-[var(--line)] py-2.5">
+                <span className="muted text-[13px]">{k}</span>
+                <span className="num min-w-0 max-w-full break-words text-right text-[14px] text-[#ece6d8]">{v}</span>
               </div>
             ))}
           </div>
@@ -358,8 +358,8 @@ export function DailyPanel({ engine }: { engine: Engine }) {
               <Icon name={t.claimed ? "check" : i === 2 ? "star" : "target"} size={18} />
             </span>
             <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-2">
-                <span className="text-[14px] text-[#f1ebdd]">{t.title}</span>
+              <div className="flex min-w-0 flex-wrap items-baseline gap-2">
+                <span className="min-w-0 break-words text-[14px] text-[#f1ebdd]">{t.title}</span>
                 {i === 2 && <span className="label-brass !text-[9px]">сложное</span>}
               </div>
               <div className="mt-2 flex items-center gap-3">

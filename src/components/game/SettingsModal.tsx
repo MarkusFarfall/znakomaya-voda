@@ -14,12 +14,12 @@ function Sect({ name, children }: { name: string; children: React.ReactNode }) {
 
 function OptRow({ k, hint, children }: { k: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-[var(--line)] py-2">
-      <div>
+    <div className="flex min-w-0 flex-col items-stretch justify-between gap-3 border-b border-[var(--line)] py-2 sm:flex-row sm:items-center sm:gap-4">
+      <div className="min-w-0">
         <div className="text-[13px] text-[#ddd7ca]">{k}</div>
-        {hint && <div className="text-[11px] dim">{hint}</div>}
+        {hint && <div className="text-[11px] leading-snug dim">{hint}</div>}
       </div>
-      <div className="flex shrink-0 items-center gap-2">{children}</div>
+      <div className="flex w-full shrink-0 items-center justify-end gap-2 sm:w-auto">{children}</div>
     </div>
   );
 }
@@ -32,10 +32,10 @@ export function SettingsModal({ settings, setSettings, camMode, onCamMode, onClo
   const setGfx = (patch: Partial<Settings["gfx"]>) => setSettings({ ...settings, gfx: { ...settings.gfx, ...patch } });
   return (
     <Modal label="Игра" title="Настройки" onClose={onClose} wide={false}>
-      <div className="flex flex-col gap-7 p-4 sm:p-7">
+      <div className="flex min-w-0 flex-col gap-7 p-4 sm:p-7">
         <Sect name="Графика">
           <OptRow k="Качество" hint="низкое — без отражений и каустики; высокое — все эффекты">
-            <div className="seg flex w-56">
+            <div className="seg flex w-full sm:w-56">
               {QN.map((n, i) => (
                 <button key={n} className={`flex-1 ${settings.quality === i ? "on" : ""}`} onClick={() => set({ quality: i })}>{n}</button>
               ))}
@@ -63,7 +63,7 @@ export function SettingsModal({ settings, setSettings, camMode, onCamMode, onClo
 
         <Sect name="Камера">
           <OptRow k="Режим по умолчанию" hint="авто следит за снастью; переключается клавишей V">
-            <div className="seg flex w-56">
+            <div className="seg flex w-full sm:w-56">
               {CAMS.map(([id, n]) => (
                 <button key={id} className={`flex-1 ${camMode === id ? "on" : ""}`} onClick={() => onCamMode(id as "auto")}>{n}</button>
               ))}
@@ -77,7 +77,7 @@ export function SettingsModal({ settings, setSettings, camMode, onCamMode, onClo
               step={5}
               value={Math.round(settings.zoom * 100)}
               onChange={(e) => set({ zoom: Number(e.target.value) / 100 })}
-              className="depth-range w-48"
+              className="depth-range w-full max-w-48 sm:w-48"
             />
             <span className="num w-12 text-right text-[13px] text-[#ece6d8]">{Math.round(settings.zoom * 100)}%</span>
           </OptRow>
@@ -107,7 +107,7 @@ export function SettingsModal({ settings, setSettings, camMode, onCamMode, onClo
             <Toggle on={settings.music} onChange={(v) => set({ music: v })} />
           </OptRow>
           <OptRow k="Громкость">
-            <input type="range" min={0} max={100} value={Math.round(settings.volume * 100)} onChange={(e) => set({ volume: Number(e.target.value) / 100 })} className="depth-range w-48" />
+            <input type="range" min={0} max={100} value={Math.round(settings.volume * 100)} onChange={(e) => set({ volume: Number(e.target.value) / 100 })} className="depth-range w-full max-w-48 sm:w-48" />
             <span className="num w-12 text-right text-[13px] text-[#ece6d8]">{Math.round(settings.volume * 100)}%</span>
           </OptRow>
         </Sect>

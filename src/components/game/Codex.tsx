@@ -72,16 +72,16 @@ export function Codex({ codex, onClose }: { codex?: Record<string, CodexEntry>; 
   }, [list, selId, onClose]);
 
   return (
-    <div className="zv-codex fixed inset-0 z-50 flex flex-col overflow-hidden bg-[#050b12] text-[var(--color-ink)]">
+    <div className="zv-codex fixed inset-0 z-50 flex min-w-0 max-w-[100vw] flex-col overflow-hidden bg-[#050b12] text-[var(--color-ink)]">
       {/* шапка */}
-      <header className="flex flex-wrap items-center gap-3 border-b border-[var(--line)] px-4 py-3 min-[820px]:px-6">
+      <header className="flex min-w-0 flex-wrap items-center gap-3 overflow-x-hidden border-b border-[var(--line)] px-4 py-3 min-[820px]:px-6">
         {onClose && (
           <button onClick={onClose} className="btn btn-quiet btn-sm">
             ← Назад
           </button>
         )}
-        <div className="mr-auto">
-          <p className="label-brass">Кодекс рыб</p>
+        <div className="mr-auto min-w-0">
+          <p className="label-brass truncate">Кодекс рыб</p>
           <div className="mt-1 flex items-center gap-2">
             <span className="num text-[11px] dim">
               Открыто {knownCount} из {FISH.length}
@@ -93,7 +93,7 @@ export function Codex({ codex, onClose }: { codex?: Record<string, CodexEntry>; 
             )}
           </div>
         </div>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Название или латынь…" className="field !h-9 !w-[220px] !text-[13px]" />
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Название или латынь…" className="field !h-9 !w-full min-[520px]:!w-[220px] !text-[13px]" />
       </header>
 
       {/* фильтры */}
@@ -120,9 +120,9 @@ export function Codex({ codex, onClose }: { codex?: Record<string, CodexEntry>; 
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 min-w-0 flex-1">
         {/* сетка */}
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 min-[820px]:p-5">
+        <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3 min-[820px]:p-5">
           {list.length === 0 && <p className="py-16 text-center text-sm dim">Ничего не нашлось. Попробуйте другую акваторию.</p>}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2.5">
             {list.map((f) => {
@@ -171,8 +171,8 @@ function MobileCard({ fish, known, entry }: { fish: FishDef; known: boolean; ent
   }
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-[rgba(3,8,14,0.6)] backdrop-blur-sm min-[980px]:hidden" onClick={() => setOpen(false)}>
-      <div className="sheet zv-sheet-up mt-auto max-h-[88dvh] overflow-hidden rounded-t-[14px]" onClick={(e) => e.stopPropagation()}>
+    <div className="fixed inset-0 z-[60] flex min-w-0 max-w-[100vw] flex-col overflow-x-hidden bg-[rgba(3,8,14,0.6)] backdrop-blur-sm min-[980px]:hidden" onClick={() => setOpen(false)}>
+      <div className="sheet zv-sheet-up mt-auto min-w-0 max-w-full max-h-[88dvh] w-full overflow-hidden rounded-t-[14px]" onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-end px-3 pt-2">
           <button onClick={() => setOpen(false)} className="dim px-2 text-xl hover:text-white" aria-label="Закрыть">
             ×
@@ -193,7 +193,7 @@ function FishCard({ fish: f, known, entry }: { fish: FishDef; known: boolean; en
   const mult = variant ? VARIANT_INFO[variant].mult : 1;
 
   return (
-    <div className="flex h-full max-h-[inherit] flex-col overflow-y-auto overscroll-contain">
+    <div className="flex h-full min-w-0 max-w-full flex-col overflow-x-hidden overflow-y-auto overscroll-contain">
       <div className="relative">
         <Aquarium fish={f} variant={variant} silhouette={!known} depth={depth} animate={animate} className="h-[250px] w-full" />
         <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2">
@@ -211,8 +211,8 @@ function FishCard({ fish: f, known, entry }: { fish: FishDef; known: boolean; en
 
       <div className="space-y-4 px-5 py-4">
         <div>
-          <h2 className="font-serif text-[28px] leading-tight text-[#f1ead9]">{known ? f.name : 'Неизвестный вид'}</h2>
-          <p className="text-[13px] italic muted">{known ? f.latin : 'Поймайте, чтобы узнать'}</p>
+          <h2 className="font-serif break-words text-[28px] leading-tight text-[#f1ead9]">{known ? f.name : 'Неизвестный вид'}</h2>
+          <p className="break-words text-[13px] italic muted">{known ? f.latin : 'Поймайте, чтобы узнать'}</p>
         </div>
 
         {known && entry && (

@@ -776,12 +776,12 @@ export default function Game() {
               {info && (
                 <>
                   <div className="fixed inset-0 z-0" onPointerDown={(e) => { e.stopPropagation(); setInfo(false); }} />
-                  <div className="sheet-up glass relative z-10 mt-2 max-h-[calc(100dvh-150px)] w-[min(360px,100%)] overflow-y-auto overscroll-contain p-4" onPointerDown={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-between">
-                      <span className="label-brass">{engine.loc.name}</span>
-                      <span className="text-[11px] dim">{SEASONS[engine.season]}, день {engine.dayOfSeason}/7 · год {engine.year}</span>
+                  <div className="sheet-up glass relative z-10 mt-2 min-w-0 max-w-full max-h-[calc(100dvh-150px)] w-[min(360px,100%)] overflow-x-hidden overflow-y-auto overscroll-contain p-4" onPointerDown={(e) => e.stopPropagation()}>
+                    <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                      <span className="label-brass truncate">{engine.loc.name}</span>
+                      <span className="truncate text-[11px] dim">{SEASONS[engine.season]}, день {engine.dayOfSeason}/7 · год {engine.year}</span>
                     </div>
-                    <div className="mt-2 flex items-center justify-between text-[12px] text-[#ddd7ca]">
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[12px] text-[#ddd7ca]">
                       <span className="flex items-center gap-1.5"><span aria-hidden="true" className="text-base leading-none">{atmo.icon}</span>{atmo.weatherName}</span>
                       <span className="num flex items-center gap-1"><Icon name="wind" size={14} className="opacity-60" />{atmo.wind} м/с</span>
                       <span className="flex items-center gap-1.5"><MoonIcon phase={moonPhase} size={15} />{atmo.moonName}</span>
@@ -796,9 +796,9 @@ export default function Game() {
                       {spotsOf(s.location).map((sp) => {
                         const on = s.spot === sp.id;
                         return (
-                          <button key={sp.id} disabled={busy || on} onClick={() => { audio.ui("click"); engine.moveSpot(sp.id); setInfo(false); }} className={`flex w-full items-center gap-2 border-b border-[var(--line)] py-2.5 text-left text-[13px] ${on ? "text-[#f1ebdd]" : "muted"}`}>
-                            <span className={`h-1.5 w-1.5 rotate-45 ${on ? "bg-[var(--brass)]" : "border border-white/30"}`} />
-                            <span className="flex-1">{sp.name}</span>
+                          <button key={sp.id} disabled={busy || on} onClick={() => { audio.ui("click"); engine.moveSpot(sp.id); setInfo(false); }} className={`flex min-w-0 w-full items-center gap-2 border-b border-[var(--line)] py-2.5 text-left text-[13px] ${on ? "text-[#f1ebdd]" : "muted"}`}>
+                            <span className={`h-1.5 w-1.5 shrink-0 rotate-45 ${on ? "bg-[var(--brass)]" : "border border-white/30"}`} />
+                            <span className="min-w-0 flex-1 truncate">{sp.name}</span>
                             <span className={`num text-[11px] ${sp.maxDepth > engine.line.value ? "text-[var(--color-bad)]" : "dim"}`}>{sp.maxDepth} м</span>
                           </button>
                         );
@@ -808,10 +808,10 @@ export default function Game() {
                       <>
                         <div className="label mt-4">На воде сейчас</div>
                         {events.map((entry) => (
-                          <div key={entry.live.uid} className="flex items-center gap-2 border-b border-[var(--line)] py-2 text-[12px]">
-                            <span>{entry.live.phase === "omen" ? "❔" : entry.def.icon}</span>
-                            <span className="flex-1 text-[#ece6d8]">{entry.live.phase === "omen" ? `Предвестие: ${entry.def.name}` : entry.def.name}</span>
-                            <span className="num dim">{Math.max(0, Math.ceil(entry.left))} мин</span>
+                          <div key={entry.live.uid} className="flex min-w-0 items-center gap-2 border-b border-[var(--line)] py-2 text-[12px]">
+                            <span className="shrink-0">{entry.live.phase === "omen" ? "❔" : entry.def.icon}</span>
+                            <span className="min-w-0 flex-1 truncate text-[#ece6d8]">{entry.live.phase === "omen" ? `Предвестие: ${entry.def.name}` : entry.def.name}</span>
+                            <span className="num shrink-0 dim">{Math.max(0, Math.ceil(entry.left))} мин</span>
                           </div>
                         ))}
                       </>

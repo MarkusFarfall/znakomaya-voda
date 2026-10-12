@@ -14,17 +14,17 @@ export interface AccountState {
 
 function Shell({ children, onClose, label, title }: { children: ReactNode; onClose: () => void; label: string; title: string }) {
   return (
-    <div className="fade-in absolute inset-0 z-[60] flex items-stretch justify-center bg-[#02050a]/78 backdrop-blur-[3px] sm:items-center sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="sheet reveal safe-pad flex h-full max-h-[100dvh] w-full max-w-[460px] flex-col overflow-y-auto !rounded-none sm:h-auto sm:max-h-[94vh] sm:!rounded-[3px]">
-        <div className="flex items-end justify-between px-6 pt-6 sm:px-8 sm:pt-7">
-          <div>
-            <div className="label-brass">{label}</div>
-            <h2 className="font-serif mt-1 text-[30px] font-medium leading-none text-[#f1ebdd]">{title}</h2>
+    <div className="fade-in absolute inset-0 z-[60] flex min-w-0 max-w-[100vw] items-stretch justify-center overflow-x-hidden bg-[#02050a]/78 backdrop-blur-[3px] sm:items-center sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="sheet reveal safe-pad flex min-w-0 max-w-full h-full max-h-[100dvh] w-full flex-col overflow-x-hidden overflow-y-auto !rounded-none sm:h-auto sm:max-h-[94vh] sm:max-w-[460px] sm:!rounded-[3px]">
+        <div className="flex min-w-0 items-end justify-between gap-4 px-6 pt-6 sm:px-8 sm:pt-7">
+          <div className="min-w-0 flex-1">
+            <div className="truncate label-brass">{label}</div>
+            <h2 className="font-serif mt-1 min-w-0 truncate text-[30px] font-medium leading-none text-[#f1ebdd]">{title}</h2>
           </div>
-          <button onClick={onClose} className="iconbtn" aria-label="Закрыть"><Icon name="close" size={16} /></button>
+          <button onClick={onClose} className="iconbtn shrink-0" aria-label="Закрыть"><Icon name="close" size={16} /></button>
         </div>
         <div className="rule mx-6 mt-5 sm:mx-8" />
-        <div className="px-6 pb-7 pt-5 sm:px-8">{children}</div>
+        <div className="min-w-0 px-6 pb-7 pt-5 sm:px-8">{children}</div>
       </div>
     </div>
   );
@@ -70,7 +70,7 @@ export function ProfileModal({ account, onClose, onLogout, onDeleted, sync }: { 
           ["Поймано рыб", st ? fmt(st.totalCaught) : "—"],
           ["Синхронизация", sync],
         ].map(([k, v]) => (
-          <div key={k} className="flex justify-between border-b border-[var(--line)] py-2"><dt className="muted">{k}</dt><dd className="text-[#ece6d8]">{v}</dd></div>
+          <div key={k} className="flex min-w-0 flex-wrap justify-between gap-x-4 gap-y-1 border-b border-[var(--line)] py-2"><dt className="muted">{k}</dt><dd className="min-w-0 max-w-full break-words text-right text-[#ece6d8]">{v}</dd></div>
         ))}
       </dl>
       {msg && <div className={`mt-4 border-l-2 px-3 py-2 text-[12px] ${msg.ok ? "border-[var(--color-ok)] text-[#cfe3d4]" : "border-[var(--color-bad)] text-[#f0c8bc]"}`}>{msg.text}</div>}

@@ -33,14 +33,14 @@ function DepartSheet({ engine, onClose, onTravel, onMap }: { engine: Engine; onC
   const lastOk = LOC_BY_ID[s.location].boatTier <= engine.boat.tier;
   const quote = (t: Trip) => engine.tripQuote(t, engine.canMotor ? "motor" : "sail");
   return (
-    <div className="fade-in absolute inset-0 z-30 flex items-end justify-center bg-[#02050a]/60 backdrop-blur-[2px] sm:items-center sm:p-4" onPointerDown={(e) => { e.stopPropagation(); onClose(); }}>
-      <div className="sheet reveal safe-bottom max-h-[88dvh] w-full max-w-[620px] overflow-y-auto !rounded-none p-5 sm:!rounded-[3px] sm:p-7" onPointerDown={(e) => e.stopPropagation()}>
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="label-brass">Отплытие · {engine.boat.name}</div>
-            <h2 className="font-serif mt-1 text-[30px] leading-none text-[#f1ebdd]">Куда выходим?</h2>
+    <div className="fade-in absolute inset-0 z-30 flex min-w-0 max-w-[100vw] items-end justify-center overflow-x-hidden bg-[#02050a]/60 backdrop-blur-[2px] sm:items-center sm:p-4" onPointerDown={(e) => { e.stopPropagation(); onClose(); }}>
+      <div className="sheet reveal safe-bottom min-w-0 max-w-full max-h-[88dvh] w-full overflow-x-hidden overflow-y-auto !rounded-none p-5 sm:!rounded-[3px] sm:max-w-[620px] sm:p-7" onPointerDown={(e) => e.stopPropagation()}>
+        <div className="flex min-w-0 items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="truncate label-brass">Отплытие · {engine.boat.name}</div>
+            <h2 className="font-serif mt-1 truncate text-[30px] leading-none text-[#f1ebdd]">Куда выходим?</h2>
           </div>
-          <button className="iconbtn" onClick={onClose} aria-label="Закрыть"><Icon name="close" size={16} /></button>
+          <button className="iconbtn shrink-0" onClick={onClose} aria-label="Закрыть"><Icon name="close" size={16} /></button>
         </div>
         {lastOk && (
           <button onClick={() => onTravel(last)} className="cell cell-hover mt-5 flex w-full items-center gap-4 !border-[rgba(200,164,106,0.55)] p-4 text-left">

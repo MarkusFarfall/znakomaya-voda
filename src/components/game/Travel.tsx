@@ -27,23 +27,23 @@ export function TravelChoice({ engine, trip, onCancel, onGo }: { engine: Engine;
     : [{ mode: "sail", title: b.style === "yacht" ? "Под парусом" : "На вёслах", sub: "Судно без мотора — только своим ходом", icon: "wave" }];
   const cooler = engine.s.cooler.length;
   return (
-    <div className="fade-in absolute inset-0 z-[55] flex items-end justify-center bg-[#02050a]/70 backdrop-blur-[3px] sm:items-center sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="sheet reveal safe-pad w-full max-w-[560px] !rounded-none p-6 sm:!rounded-[3px] sm:p-8">
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="label-brass">{trip.kind === "port" ? "Курс в порт" : "Выход в море"}</div>
-            <h2 className="font-serif mt-1 text-[32px] font-medium leading-none text-[#f1ebdd]">{tripName(trip)}</h2>
-            <div className="mt-1 text-[12px] muted">{b.name}{cooler ? ` · в трюме ${cooler} рыб` : ""}</div>
+    <div className="fade-in absolute inset-0 z-[55] flex min-w-0 max-w-[100vw] items-end justify-center overflow-x-hidden bg-[#02050a]/70 backdrop-blur-[3px] sm:items-center sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="sheet reveal safe-pad min-w-0 max-w-full w-full !rounded-none overflow-x-hidden p-6 sm:!rounded-[3px] sm:max-w-[560px] sm:p-8">
+        <div className="flex min-w-0 items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="truncate label-brass">{trip.kind === "port" ? "Курс в порт" : "Выход в море"}</div>
+            <h2 className="font-serif mt-1 truncate text-[32px] font-medium leading-none text-[#f1ebdd]">{tripName(trip)}</h2>
+            <div className="mt-1 truncate text-[12px] muted">{b.name}{cooler ? ` · в трюме ${cooler} рыб` : ""}</div>
           </div>
-          <button className="iconbtn" onClick={onCancel} aria-label="Отмена"><Icon name="close" size={16} /></button>
+          <button className="iconbtn shrink-0" onClick={onCancel} aria-label="Отмена"><Icon name="close" size={16} /></button>
         </div>
-        <div className="mt-6 grid gap-3">
+        <div className="mt-6 grid min-w-0 gap-3">
           {opts.map((o) => {
             const q = engine.tripQuote(trip, o.mode);
             const block = engine.tripBlock(trip, o.mode);
             const secs = Math.round(animSeconds(engine, trip, o.mode));
             return (
-              <button key={o.mode} disabled={!!block} onClick={() => onGo(o.mode)} className="cell cell-hover group flex items-center gap-4 p-4 text-left disabled:cursor-not-allowed disabled:opacity-45">
+              <button key={o.mode} disabled={!!block} onClick={() => onGo(o.mode)} className="cell cell-hover group flex min-w-0 items-center gap-4 p-4 text-left disabled:cursor-not-allowed disabled:opacity-45">
                 <span className="flex h-12 w-12 shrink-0 items-center justify-center border border-[var(--line-2)] text-[var(--brass)] group-hover:border-[var(--brass)]">
                   {o.icon === "fuel" ? <MiscIcon name="fuel" size={24} /> : <Icon name="wave" size={24} />}
                 </span>

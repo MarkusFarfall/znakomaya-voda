@@ -64,5 +64,5 @@ export function FishIcon({
     draw();
     return () => cancelAnimationFrame(raf);
   }, [fish, size, h, known, variant, animate]);
-  return <canvas ref={ref} style={{ width: size, height: h }} className="block" aria-hidden="true" />;
+  return <canvas ref={ref} style={{ width: `min(${size}px, 100%)`, height: 'auto', aspectRatio: `${size} / ${h}` }} className="block max-w-full" aria-hidden="true" />;
 }
