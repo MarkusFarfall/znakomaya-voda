@@ -231,3 +231,8 @@ supabase/*                 SQL для схемы и безопасности
   офлайн не зависят от Google Fonts.
 - Иконка приложения — `public/icon.jpg` (1024×1024), на неё ссылаются манифест и OpenGraph.
 - `BLOB`/S3 не используются: и сохранения, и рейтинги живут в обычном Postgres.
+
+---
+
+Выделено из монорепозитория [MarkusFarfall/apps](https://github.com/MarkusFarfall/apps) (коммит 46863ca):
+полная история папки сохранена через git filter-repo.
