@@ -1013,9 +1013,11 @@ export default function Game() {
             </div>
           )}
 
-          <div className="pointer-events-none absolute inset-0 z-50">
-            <button style={{ position: "absolute", bottom: 12, right: 12 }} className="iconbtn pointer-events-auto !bg-[rgba(6,12,18,0.72)]" onClick={() => setSettingsOpen(true)} title="Настройки" aria-label="Настройки"><Icon name="gear" size={16} /></button>
-          </div>
+          {!panel && !tripReq && !travelling && !settingsOpen && letter === null && !authOpen && engine.phase !== "caught" && (
+            <div className="pointer-events-none absolute inset-0 z-[25]">
+              <button style={{ position: "absolute", bottom: 12, right: 12 }} className="iconbtn pointer-events-auto !bg-[rgba(6,12,18,0.72)]" onClick={() => setSettingsOpen(true)} title="Настройки" aria-label="Настройки"><Icon name="gear" size={16} /></button>
+            </div>
+          )}
 
           {engine.phase === "caught" && engine.lastCatch && <CatchModal engine={engine} />}
           {engine.phase === "caught" && engine.lastFind && <FindModal engine={engine} />}

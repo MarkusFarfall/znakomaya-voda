@@ -63,6 +63,8 @@ body {
   box-shadow: 0 40px 120px rgba(0, 0, 0, 0.65);
 }
 .cell {
+  min-width: 0;
+  box-sizing: border-box;
   background: rgba(230, 225, 214, 0.028);
   border: 1px solid var(--line);
   border-radius: 2px;

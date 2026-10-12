@@ -106,9 +106,9 @@ export function CatchModal({ engine }: { engine: Engine }) {
             </ul>
           )}
           <p className="mt-4 text-[13px] leading-relaxed muted">{f.desc}</p>
-          <div className="sticky bottom-0 -mx-5 mt-auto flex flex-col gap-2 border-t border-[var(--line)] bg-[#0a121c] px-5 pb-[max(4px,env(safe-area-inset-bottom))] pt-4 min-[400px]:flex-row min-[400px]:gap-3 sm:-mx-7 sm:px-7 md:mt-6">
-            <button className="btn btn-quiet min-w-0 flex-1" onClick={() => engine.releaseCatch()}>Отпустить</button>
-            <button className="btn btn-solid min-w-0 flex-1" disabled={engine.coolerFull} onClick={() => engine.keepCatch()}>
+          <div className="sticky bottom-0 -mx-5 mt-auto flex flex-col gap-2 border-t border-[var(--line)] bg-[#0a121c] px-5 pb-[max(4px,env(safe-area-inset-bottom))] pt-4 min-[360px]:flex-row min-[360px]:gap-2 sm:-mx-7 sm:px-7 md:mt-6">
+            <button className="btn btn-quiet min-w-0 flex-1 !px-2 !text-[10px] !tracking-[0.12em]" onClick={() => engine.releaseCatch()}>Отпустить</button>
+            <button className="btn btn-solid min-w-0 flex-1 !px-2 !text-[10px] !tracking-[0.12em]" disabled={engine.coolerFull} onClick={() => engine.keepCatch()}>
               {engine.coolerFull ? "Садок полон" : `В садок · ${engine.s.cooler.length}/${engine.coolerCap}`}
             </button>
           </div>
@@ -275,41 +275,41 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
                 const block = engine.gearBlock(k);
                 const mods = k === "sonar" ? [] : engine.modsOf(k);
                 return (
-                  <div key={k} className="cell grid gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1.4fr)]">
-                    <div className="flex gap-4">
+                  <div key={k} className="cell grid min-w-0 gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1.4fr)]">
+                    <div className="flex min-w-0 gap-4">
                       <span className="flex h-16 w-16 shrink-0 items-center justify-center border border-[var(--line-2)] bg-[#081019] text-[var(--brass)]"><GearIcon kind={k} size={38} /></span>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline justify-between gap-2">
-                          <span className="label">{name}</span>
-                          <span className="num text-[10px] dim">класс {lvl + 1}/{list.length}</span>
+                        <div className="flex min-w-0 items-baseline justify-between gap-2">
+                          <span className="min-w-0 truncate label">{name}</span>
+                          <span className="num shrink-0 text-[10px] dim">класс {lvl + 1}/{list.length}</span>
                         </div>
-                        <div className="font-serif text-[22px] leading-tight text-[#f1ebdd]">{cur.name}</div>
-                        <div className="text-[12px] muted">{what}: <span className="num text-[#ece6d8]">{gearValue(k, cur.value, cur.desc)}</span></div>
+                        <div className="font-serif break-words text-[22px] leading-tight text-[#f1ebdd]">{cur.name}</div>
+                        <div className="break-words text-[12px] muted">{what}: <span className="num text-[#ece6d8]">{gearValue(k, cur.value, cur.desc)}</span></div>
                         <div className="mt-2 flex gap-1">{list.map((_, i) => <div key={i} className={`h-[3px] flex-1 ${i <= lvl ? "bg-[var(--brass)]" : i <= engine.port.gearMax[k] ? "bg-white/25" : "bg-white/8"}`} />)}</div>
                         {next ? (
-                          <div className="mt-3 flex flex-wrap items-center gap-3">
+                          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-3">
                             <div className="min-w-0 flex-1">
-                              <div className="text-[13px] text-[#ece6d8]">→ {next.name}</div>
-                              <div className="text-[11px] dim">{next.desc}{k !== "hook" && k !== "sonar" ? ` · ${gearValue(k, next.value, next.desc)}` : ""}</div>
+                              <div className="break-words text-[13px] text-[#ece6d8]">→ {next.name}</div>
+                              <div className="break-words text-[11px] dim">{next.desc}{k !== "hook" && k !== "sonar" ? ` · ${gearValue(k, next.value, next.desc)}` : ""}</div>
                             </div>
-                            <button className="btn btn-sm btn-solid" disabled={!!block} onClick={() => engine.buyGear(k) && say(`Приобретено: ${next.name}`)}>{block ?? `${fmt(engine.gearPrice(k))} ₽`}</button>
+                            <button className="btn btn-sm btn-solid shrink-0" disabled={!!block} onClick={() => engine.buyGear(k) && say(`Приобретено: ${next.name}`)}>{block ?? `${fmt(engine.gearPrice(k))} ₽`}</button>
                           </div>
                         ) : <div className="mt-3 text-[12px] text-[var(--color-ok)]">Лучшее из доступного</div>}
                       </div>
                     </div>
                     {mods.length > 0 ? (
-                      <div className="grid gap-2 border-t border-[var(--line)] pt-3 sm:grid-cols-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
+                      <div className="grid min-w-0 gap-2 border-t border-[var(--line)] pt-3 lg:grid-cols-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
                         {mods.map((m) => {
                           const ml = engine.mod(m.id);
                           const mb = engine.modBlock(m.id);
                           return (
-                            <div key={m.id} className="flex flex-col border border-[var(--line)] bg-[#0a121c] p-3">
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-[12.5px] leading-tight text-[#ece6d8]">{m.name}</span>
-                                <span className="flex gap-[3px]">{Array.from({ length: m.max }, (_, i) => <span key={i} className={`h-2 w-2 rotate-45 ${i < ml ? "bg-[var(--brass)]" : i < lvl ? "border border-[var(--brass)]/50" : "border border-white/15"}`} />)}</span>
+                            <div key={m.id} className="flex min-w-0 flex-col border border-[var(--line)] bg-[#0a121c] p-3">
+                              <div className="flex min-w-0 items-center justify-between gap-2">
+                                <span className="min-w-0 break-words text-[12.5px] leading-tight text-[#ece6d8]">{m.name}</span>
+                                <span className="flex shrink-0 gap-[3px]">{Array.from({ length: m.max }, (_, i) => <span key={i} className={`h-2 w-2 rotate-45 ${i < ml ? "bg-[var(--brass)]" : i < lvl ? "border border-[var(--brass)]/50" : "border border-white/15"}`} />)}</span>
                               </div>
-                              <div className="mt-1 text-[11px] text-[#cfc6b3]">{ml > 0 ? m.desc(ml) : "Не установлено"}</div>
-                              {ml < m.max && <div className="text-[10.5px] dim">Ур. {ml + 1}: {m.desc(ml + 1)}</div>}
+                              <div className="mt-1 break-words text-[11px] text-[#cfc6b3]">{ml > 0 ? m.desc(ml) : "Не установлено"}</div>
+                              {ml < m.max && <div className="break-words text-[10.5px] dim">Ур. {ml + 1}: {m.desc(ml + 1)}</div>}
                               <button className="btn btn-sm mt-auto w-full !h-7 !text-[9.5px]" style={{ marginTop: 10 }} disabled={!!mb} onClick={() => engine.buyMod(m.id) && say(`${m.name}: уровень ${ml + 1}`)}>{mb ?? `${fmt(engine.modPrice(m.id))} ₽`}</button>
                             </div>
                           );
