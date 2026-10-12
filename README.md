@@ -7,7 +7,7 @@
 Postgres через Drizzle ORM · canvas-рендер сцены и WebAudio-звук.
 
 **Играть:** https://znakomaya-voda.vercel.app — прод собирается автоматически из ветки `main`
-(проект Vercel `water-import`, Root Directory `projects/water-import`).
+(проект Vercel `water-import`, корень репозитория `znakomaya-voda`).
 
 ## Что есть в игре
 
@@ -216,12 +216,12 @@ supabase/*                 SQL для схемы и безопасности
 | Variable | `SITE_URL` | публичный адрес для OpenGraph (необязательно) |
 
 Дальше: **Actions → «Знакомая вода — боевая база и деплой» → Run workflow**. Каждый push в `main`,
-затрагивающий `projects/water-import`, повторяет тот же процесс. Если нужно только подготовить базу,
+повторяет тот же процесс. Если нужно только подготовить базу,
 у запуска вручную снимите галочку `deploy`.
 
 ### Вручную в панели Vercel
 
-1. Импортируйте репозиторий `MarkusFarfall/apps`, **Root Directory** = `projects/water-import`.
+1. Импортируйте этот репозиторий (Root Directory не нужен — проект в корне).
 2. Добавьте переменную окружения `DATABASE_URL` (строка Supabase).
 3. Примените схему: `node scripts/db-migrate.mjs` (или `supabase/schema.sql`, затем `supabase/security.sql`).
 
@@ -234,5 +234,5 @@ supabase/*                 SQL для схемы и безопасности
 
 ---
 
-Выделено из монорепозитория [MarkusFarfall/apps](https://github.com/MarkusFarfall/apps) (коммит 46863ca):
-полная история папки сохранена через git filter-repo.
+До октября 2026 проект жил в монорепозитории `MarkusFarfall/apps` (папка `projects/water-import`);
+при разделении монорепозитория полная история перенесена в этот репозиторий (git filter-repo).
