@@ -19,7 +19,7 @@
 # Секреты можно не заводить: значения принимаются и параметрами запуска
 # (database_url, vercel_token) — удобно для разового деплоя, но они остаются
 # в записи запуска, поэтому для постоянного пользования лучше секреты.
-# Любой push в main, затрагивающий projects/water-import, повторяет этот же процесс.
+# Любой push в main повторяет этот же процесс.
 
 name: Знакомая вода — боевая база и деплой
 
@@ -44,15 +44,9 @@ on:
         required: false
   push:
     branches: [main]
-    paths:
-      - "projects/water-import/**"
-      - ".github/workflows/water-production.yml"
   # На запросе на слияние прогон тот же, но без деплоя: деплой включается
   # только ручным запуском (workflow_dispatch + inputs.deploy).
   pull_request:
-    paths:
-      - "projects/water-import/**"
-      - ".github/workflows/water-production.yml"
 
 concurrency:
   group: water-production
