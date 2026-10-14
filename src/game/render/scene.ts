@@ -13,7 +13,7 @@ import { SeabedRenderer } from "./seabed";
 import { SkyRenderer } from "./sky";
 import { drawBolt, drawIce, drawLeaves, drawRain, drawRainRings, drawSnow, makeBolt, type Bolt } from "./weatherFx";
 import { drawEventFx, type FxCall, type FxScene, type Layer } from "./eventFx";
-import { clamp, glow, hexA, mix, rng, smooth, af, rgbHex } from "./util";
+import { clamp, glow, hexA, mix, rng, smooth, af, rgbHex, FONTS, roundRect } from "./util";
 import {
   drawDepthOverlay,
   drawSeaBand,
@@ -181,7 +181,7 @@ export class Scene {
       default:
         target = inWater ? hookY - H * 0.55 : 0;
         // при поклёвке поплавок обязан быть в кадре
-        if (e.phase === "bite") {
+        if (e.phase === "bite" || e.nibbling) {
           target = Math.min(target, sY - topRes - 70);
           speed = 6;
         }
@@ -676,6 +676,15 @@ export class Scene {
           ctx.restore();
         }
       } else {
+        if (h.surgeWarning > 0) {
+          ctx.save();
+          ctx.strokeStyle = `rgba(227,201,150,${0.35 + Math.sin(t * 16) * 0.15})`;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.ellipse(fishX + dir * len * 0.4, fishY, len * 0.6 + 8, len * 0.23 + 6, 0, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.restore();
+        }
         drawFish(ctx, h.fish, fishX + dir * len * 0.4, fishY, len, dir, { wag: t * (6 + h.intensity * 14), variant: h.variant });
         if (Math.random() < f.dt * 8 * h.intensity) this.bubbles.push({ x: fishX, y: fishY, r: 1 + Math.random() * 3, v: 40 + Math.random() * 40 });
       }
@@ -744,7 +753,9 @@ export class Scene {
       this.drawBobber(ctx, x, y, false, t);
     } else if (["sinking", "waiting", "bite"].includes(e.phase)) {
       const bite = e.phase === "bite";
-      const bobY = bobWaveY + (bite ? 2.5 + Math.abs(Math.sin(t * 14)) * 3 : Math.sin(t * 2) * 1.2);
+      const nibble = e.nibbling;
+      const tap = nibble ? Math.pow(Math.max(0, Math.sin(e.nibbleProgress * Math.PI * 5)), 4) : 0;
+      const bobY = bobWaveY + (bite ? 4 + Math.abs(Math.sin(t * 14)) * 4 : nibble ? tap * 2.8 : Math.sin(t * 2) * 1.2);
       ctx.beginPath();
       ctx.moveTo(tip[0], tip[1]);
       ctx.quadraticCurveTo((tip[0] + bobX) / 2, Math.max(tip[1], bobY) + 20, bobX, bobY);
@@ -755,10 +766,33 @@ export class Scene {
       ctx.strokeStyle = "rgba(230,240,250,0.4)";
       ctx.stroke();
       this.drawHook(ctx, e, bobX + Math.sin(t) * 3, hookY);
-      this.drawBobber(ctx, bobX, bobY, bite, t);
+      this.drawBobber(ctx, bobX, bobY, bite, t, nibble ? tap * 0.3 : bite ? Math.sin(t * 9) * 0.18 : 0);
+      if (nibble || bite) {
+        ctx.save();
+        const cue = bite ? "Подсекайте!" : e.pendingFind ? "Снасть дрогнула…" : "Пробует — ждите";
+        const cueY = bobY - (bite ? 59 : 34);
+        ctx.font = `500 11px ${FONTS.sans}`;
+        const cueW = ctx.measureText(cue).width + 24;
+        roundRect(ctx, bobX - cueW / 2, cueY - 14, cueW, 23, 3);
+        ctx.fillStyle = "rgba(7,13,21,0.86)";
+        ctx.fill();
+        ctx.strokeStyle = bite ? "rgba(227,201,150,0.75)" : "rgba(227,201,150,0.25)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = bite ? "#f3dcac" : "#e6e1d6";
+        ctx.textAlign = "center";
+        ctx.fillText(cue, bobX, cueY + 1);
+        if (nibble) for (let i = 0; i < 3; i++) {
+          ctx.globalAlpha = 0.3 + 0.6 * Math.max(0, Math.sin(e.nibbleProgress * Math.PI * 5 - i));
+          ctx.beginPath();
+          ctx.arc(bobX - 8 + i * 8, bobY - 16, 1.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
       if (bite) {
         const p = e.biteProgress;
-        const perfect = p < 0.42;
+        const perfect = e.inPerfectHookWindow;
         ctx.save();
         ctx.lineWidth = perfect ? 2 : 1.2;
         ctx.strokeStyle = perfect ? "rgba(227,201,150,0.95)" : "rgba(230,225,214,0.35)";

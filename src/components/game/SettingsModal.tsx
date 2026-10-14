@@ -69,7 +69,7 @@ export function SettingsModal({ settings, setSettings, camMode, onCamMode, onClo
               ))}
             </div>
           </OptRow>
-          <OptRow k="Приближение" hint="камера подходит к лодке; колесо мыши над водой тоже работает">
+          <OptRow k="Приближение" hint="камера подходит к лодке; Shift + колесо мыши над водой">
             <input
               type="range"
               min={100}
@@ -89,6 +89,7 @@ export function SettingsModal({ settings, setSettings, camMode, onCamMode, onClo
               ["Заброс, подсечка, подмотка", "ЛКМ / Пробел"],
               ["Противодействие рывку", "A · D / курсор к краю"],
               ["Глубина", "Колесо / W · S"],
+              ["Приближение", "Shift + колесо"],
               ["Наживка", "1 – 9, 0"],
               ["Камера", "V"],
               ["Кодекс · Журнал · Порт", "C · J · P"],

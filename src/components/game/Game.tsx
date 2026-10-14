@@ -4,6 +4,7 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { GameAudio } from "@/game/audio";
 import { depthToU, Engine, newSave, uToDepth, type TravelMode, type Trip } from "@/game/engine";
 import { FISH } from "@/game/fish";
+import { FIGHT_PANEL_HEIGHT } from "@/game/fishing";
 import { clearLocal, deleteRemote, fetchMe, flushCatches, forgetRememberedAccount, loadLocal, loadRemote, loadRememberedAccount, logCatch, logout as apiLogout, pickNewest, rememberAccount, saveLocal, saveRemote, type AccountUser } from "@/game/persist";
 import { AccountBadge, ProfileModal, type AccountState } from "./Account";
 import { AuthScreen } from "./AuthScreen";
@@ -81,13 +82,20 @@ export default function Game() {
       // Срез состояния звука — для поддержки и автотестов.
       w.__zvSound = () => ({ ...audioRef.current.debug(), audioFails: audioFails.current, frameFails: frameFails.current });
     }
-    const vis = () => audioRef.current.setHidden(document.visibilityState === "hidden");
+    const vis = () => {
+      const hidden = document.visibilityState === "hidden";
+      audioRef.current.setHidden(hidden);
+      if (hidden) engine.cancelInput();
+    };
+    const cancelInput = () => engine.cancelInput();
+    window.addEventListener("blur", cancelInput);
     // Связь вернулась — досылаем уловы, пойманные офлайн.
     const onOnline = () => { if (pidRef.current) void flushCatches(pidRef.current); };
     document.addEventListener("visibilitychange", vis);
     window.addEventListener("online", onOnline);
     return () => {
       document.removeEventListener("visibilitychange", vis);
+      window.removeEventListener("blur", cancelInput);
       window.removeEventListener("online", onOnline);
     };
   }, [engine]);
@@ -188,15 +196,20 @@ export default function Game() {
     setBoat3dPref(settings.model3d);
   }, [settings.zoom, settings.gfx, settings.model3d]);
 
-  // колесо мыши над водой — приближение камеры к лодке
+  // Один обработчик: колесо — глубина, Shift + колесо — камера. Не оба сразу.
   useEffect(() => {
     const cv = canvasRef.current;
     if (!cv) return;
     const onWheel = (e: WheelEvent) => {
-      if (!playing || panel) return;
+      if (!playing || engineRef.current.paused || e.ctrlKey || e.deltaY === 0) return;
       e.preventDefault();
-      const z = Math.min(2, Math.max(1, Math.round((settings.zoom - e.deltaY * 0.0012) * 20) / 20));
-      if (z !== settings.zoom) setSettings({ ...settings, zoom: z });
+      if (e.shiftKey) {
+        const z = Math.min(2, Math.max(1, Math.round((settings.zoom - e.deltaY * 0.0012) * 20) / 20));
+        if (z !== settings.zoom) setSettings({ ...settings, zoom: z });
+      } else {
+        const engine = engineRef.current;
+        engine.setDepth(uToDepth(depthToU(engine.s.targetDepth) + (e.deltaY > 0 ? 0.06 : -0.06)));
+      }
     };
     cv.addEventListener("wheel", onWheel, { passive: false });
     return () => cv.removeEventListener("wheel", onWheel);
@@ -435,11 +448,12 @@ export default function Game() {
   }, [quality, playing, boot.state]);
 
   useEffect(() => {
-    engineRef.current.paused = !playing || panel !== null || letter !== null || authOpen !== null || boot.state === "auth" || engine.s.atPort || !!travelling || !!tripReq;
+    engineRef.current.paused = !playing || panel !== null || settingsOpen || letter !== null || authOpen !== null || boot.state === "auth" || engine.s.atPort || !!travelling || !!tripReq;
+    if (engineRef.current.paused) engineRef.current.cancelInput();
     audioRef.current.setActive(playing);
     audioRef.current.setUiActive(boot.state !== "loading");
-    audioRef.current.setMuffled(playing && (panel !== null || letter !== null || authOpen !== null));
-  }, [engine, playing, panel, letter, authOpen, travelling, tripReq, engine.s.atPort, boot.state]);
+    audioRef.current.setMuffled(playing && (panel !== null || settingsOpen || letter !== null || authOpen !== null));
+  }, [engine, playing, panel, settingsOpen, letter, authOpen, travelling, tripReq, engine.s.atPort, boot.state]);
 
   const openPanel = useCallback((p: "codex" | "journal" | "friends") => {
     audioRef.current.ui("open");
@@ -503,8 +517,8 @@ export default function Game() {
         const b = BAITS[n === 0 ? 9 : n - 1];
         if (b) engine.setBait(b.id);
       }
-      else if (ev.code === "ArrowLeft" || ev.code === "KeyA") { engine.keyDir = -1; engine.pullDir = -1; }
-      else if (ev.code === "ArrowRight" || ev.code === "KeyD") { engine.keyDir = 1; engine.pullDir = 1; }
+      else if ((ev.code === "ArrowLeft" || ev.code === "KeyA") && !engine.paused) { ev.preventDefault(); engine.keyDir = -1; engine.pullDir = -1; }
+      else if ((ev.code === "ArrowRight" || ev.code === "KeyD") && !engine.paused) { ev.preventDefault(); engine.keyDir = 1; engine.pullDir = 1; }
     };
     const up = (ev: KeyboardEvent) => {
       if (ev.code === "Space") engine.pointerUp();
@@ -578,7 +592,9 @@ export default function Game() {
     charging: ["Заброс", "Отпустите для броска"],
     casting: ["Заброс", ""],
     sinking: ["Снасть уходит на глубину", "Клик — смотать"],
-    waiting: ["Ожидание поклёвки", `Клик — смотать · ${engine.bait.name.toLowerCase()}`],
+    waiting: engine.nibbling
+      ? [engine.pendingFind ? "Снасть дрогнула" : "Рыба пробует наживку", "Не спешите — ждите уверенной потяжки"]
+      : ["Ожидание поклёвки", `Клик — смотать · ${engine.bait.name.toLowerCase()}`],
     bite: ["Поклёвка", "Подсекайте"],
     fight: ["Вываживание", "Удерживайте — подмотка · A / D — против рывка"],
     caught: ["Улов", ""],
@@ -591,7 +607,8 @@ export default function Game() {
         ref={canvasRef}
         className="absolute inset-0 h-full w-full touch-none"
         onPointerDown={(e) => {
-          if (e.button === 0 && playing && !panel && !letter && !engine.lastCatch && !engine.lastFind && !engine.s.atPort) {
+          if (e.button === 0 && playing && !engine.paused && !panel && !letter && !engine.lastCatch && !engine.lastFind && !engine.s.atPort) {
+            e.currentTarget.setPointerCapture(e.pointerId);
             engine.pointerDown();
             const k = e.clientX / window.innerWidth;
             engine.setPointerDir(k < 0.4 ? -1 : k > 0.6 ? 1 : 0);
@@ -603,9 +620,14 @@ export default function Game() {
             engine.setPointerDir(k < 0.4 ? -1 : k > 0.6 ? 1 : 0);
           }
         }}
-        onPointerUp={() => engine.pointerUp()}
-        onPointerLeave={() => engine.pointerUp()}
-        onWheel={(e) => { if (playing && !panel) engine.setDepth(uToDepth(depthToU(engine.s.targetDepth) + (e.deltaY > 0 ? 0.06 : -0.06))); }}
+        onPointerUp={(e) => {
+          if (e.button !== 0) return;
+          engine.pointerUp();
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+        }}
+        onPointerCancel={() => engine.cancelInput()}
+        onLostPointerCapture={() => engine.cancelInput()}
+        onPointerLeave={(e) => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) engine.cancelInput(); }}
         onContextMenu={(e) => e.preventDefault()}
       />
 
@@ -648,7 +670,7 @@ export default function Game() {
             )}
           </div>
           <div className="absolute bottom-6 left-[7vw] right-6 hidden flex-wrap gap-x-6 gap-y-1 text-[11px] dim md:flex">
-            <span>ЛКМ / Пробел — заброс и подмотка</span><span>A · D — против рывка</span><span>Колесо — глубина</span><span>C · J · P — кодекс, журнал, порт</span>
+            <span>ЛКМ / Пробел — заброс и подмотка</span><span>A · D — против рывка</span><span>Колесо — глубина · Shift + колесо — зум</span><span>C · J · P — кодекс, журнал, порт</span>
           </div>
         </div>
       )}
@@ -930,7 +952,7 @@ export default function Game() {
           )}
           {view.compact && !engine.s.atPort && (
             <div className="absolute inset-x-0 bottom-0 z-20 px-2 pb-[max(8px,env(safe-area-inset-bottom))] pl-[max(8px,env(safe-area-inset-left))] pr-[max(8px,env(safe-area-inset-right))]" onPointerDown={(e) => e.stopPropagation()}>
-              {engine.tipNow && engine.phase !== "fight" && engine.phase !== "bite" && (
+              {engine.tipNow && engine.phase !== "fight" && engine.phase !== "bite" && !engine.nibbling && (
                 <div key={engine.tipNow.id} className="tip glass mx-auto mb-1.5 flex max-w-[560px] items-start gap-2 px-3 py-2">
                   <span className="flex-1 text-[11px] leading-snug text-[#ddd7ca]">{engine.tipNow.text}</span>
                   <button className="dim" onClick={() => engine.dismissTip()} aria-label="Скрыть"><Icon name="close" size={12} /></button>
@@ -1000,14 +1022,27 @@ export default function Game() {
             </div>
           )}
           {touch && engine.phase === "fight" && (
-            <div className="pointer-events-none absolute inset-x-0 z-30 flex justify-between px-4" style={{ bottom: view.compact ? (view.land ? 84 : 146 + 92 + 26) : 150 + 118 }}>
+            <div className="pointer-events-none absolute inset-x-0 z-30 flex justify-between px-4" style={{ bottom: view.compact ? (view.land ? 84 : 146 + FIGHT_PANEL_HEIGHT + 26) : 150 + FIGHT_PANEL_HEIGHT + 26 }}>
               {([-1, 1] as const).map((d) => (
                 <button
                   key={d}
                   className="glass pointer-events-auto flex h-20 w-20 items-center justify-center text-[#ece6d8] active:border-[var(--brass)] active:text-[var(--brass)]"
-                  onPointerDown={(e) => { e.stopPropagation(); engine.keyDir = d; engine.pullDir = d; engine.reeling = true; }}
-                  onPointerUp={(e) => { e.stopPropagation(); engine.keyDir = 0; engine.pullDir = 0; engine.reeling = false; }}
-                  onPointerLeave={() => { engine.keyDir = 0; engine.pullDir = 0; }}
+                  aria-label={d < 0 ? "Подматывать и уводить удилище влево" : "Подматывать и уводить удилище вправо"}
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    if (engine.paused || e.button !== 0) return;
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                    engine.keyDir = d; engine.pullDir = d; engine.reeling = true;
+                  }}
+                  onPointerUp={(e) => {
+                    e.stopPropagation();
+                    engine.cancelInput();
+                    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+                  }}
+                  onPointerCancel={() => engine.cancelInput()}
+                  onLostPointerCapture={() => engine.cancelInput()}
+                  onPointerLeave={() => engine.cancelInput()}
                 ><Icon name={d < 0 ? "arrowL" : "arrowR"} size={28} /></button>
               ))}
             </div>

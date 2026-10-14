@@ -1,5 +1,6 @@
 import { depthToU, type SonarBand } from "../engine";
 import { RARITY_INFO } from "../fish";
+import { FIGHT_PANEL_HEIGHT, SURGE_WARNING_TIME } from "../fishing";
 import { bedFrac } from "../world";
 import type { Frame } from "./frame";
 import { clamp, FONTS, hash1, roundRect } from "./util";
@@ -47,7 +48,7 @@ export function drawBobberPointer(f: Frame) {
   ctx.lineTo(x - 6, py);
   ctx.lineTo(x + 6, py);
   ctx.fill();
-  label(ctx, e.phase === "bite" ? "поклёвка" : "поплавок", x, py + 13, "center", e.phase === "bite" ? BRASS : DIM);
+  label(ctx, e.phase === "bite" ? "подсекайте" : e.nibbling ? "пробует — ждите" : "поплавок", x, py + 13, "center", e.phase === "bite" ? BRASS : DIM);
   ctx.restore();
 }
 
@@ -131,78 +132,94 @@ export function drawFightPanel(f: Frame) {
   const { ctx, W, H, e, t } = f;
   const h = e.hooked;
   if (e.phase !== "fight" || !h) return;
-  const w = f.compact ? Math.min(430, W - (f.land ? 250 : 24)) : Math.min(480, W * 0.56), ph = 92;
+  const w = f.compact ? Math.min(430, W - (f.land ? 250 : 24)) : Math.min(480, W * 0.56);
+  const ph = FIGHT_PANEL_HEIGHT;
   const x0 = W / 2 - w / 2, y0 = H - f.botRes - ph - 8;
+  const bx = x0 + 18, bw = w - 36;
   ctx.save();
   panel(ctx, x0, y0, w, ph);
-  if (h.overload > 0.05) {
+  if (h.overload > 0.05 || h.surgeWarning > 0) {
     roundRect(ctx, x0, y0, w, ph, 3);
-    ctx.strokeStyle = `rgba(201,115,92,${0.4 + Math.sin(t * 30) * 0.3})`;
+    ctx.strokeStyle = h.overload > 0.05
+      ? `rgba(201,115,92,${0.45 + Math.sin(t * 12) * 0.15})`
+      : `rgba(227,201,150,${0.45 + Math.sin(t * 8) * 0.15})`;
     ctx.lineWidth = 1.5;
     ctx.stroke();
   }
   const known = !!e.s.codex[h.fish.id];
-  label(ctx, "Вываживание", x0 + 18, y0 + 22);
-  ctx.font = `500 18px ${FONTS.serif}`;
+  label(ctx, "Вываживание", bx, y0 + 22);
+  ctx.font = `500 ${f.compact ? 16 : 18}px ${FONTS.serif}`;
   ctx.textAlign = "right";
-  ctx.fillStyle = known ? "#f1ebdd" : MUTED;
-  ctx.fillText(known ? h.fish.name : "Неизвестный вид", x0 + w - 18, y0 + 24);
-  if (known) {
-    ctx.fillStyle = RARITY_INFO[h.fish.rarity].color;
-    const tw = ctx.measureText(h.fish.name).width;
-    ctx.beginPath();
-    ctx.arc(x0 + w - 26 - tw, y0 + 19, 2.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // натяжение
-  const bx = x0 + 18, bw = w - 36, by = y0 + 40;
+  ctx.fillStyle = known ? RARITY_INFO[h.fish.rarity].color : MUTED;
+  ctx.fillText(known ? h.fish.name : "Неизвестный вид", bx + bw, y0 + 23, bw * 0.57);
+
+  ctx.font = `500 10px ${FONTS.sans}`;
+  ctx.fillStyle = MUTED;
+  ctx.textAlign = "left";
+  ctx.fillText("НАТЯЖЕНИЕ", bx, y0 + 40);
+  ctx.textAlign = "right";
+  ctx.fillText(`леска ${Math.max(0, h.line).toFixed(1)} м`, bx + bw, y0 + 40);
+  const by = y0 + 47;
   const zones: [number, number, string][] = [[0, 0.15, "rgba(143,179,200,0.22)"], [0.15, 0.75, "rgba(134,180,148,0.32)"], [0.75, 0.92, "rgba(210,170,90,0.45)"], [0.92, 1, "rgba(201,115,92,0.6)"]];
   for (const [a, b, c] of zones) {
     ctx.fillStyle = c;
     ctx.fillRect(bx + a * bw, by, (b - a) * bw - 1, 6);
   }
-  const tx = bx + clamp(h.tension, 0, 1.03) * bw;
+  const tx = bx + clamp(h.tension, 0, 1) * bw;
   ctx.fillStyle = h.tension > 0.92 ? BAD : "#f4eee0";
-  ctx.fillRect(tx - 1, by - 5, 2, 16);
-  // подписи
-  ctx.font = `500 11px ${FONTS.sans}`;
-  ctx.fillStyle = DIM;
-  ctx.textAlign = "left";
-  ctx.fillText("натяжение", bx, by + 22);
-  ctx.textAlign = "right";
-  ctx.fillText(`леска ${Math.max(0, h.line).toFixed(1)} м`, bx + bw, by + 22);
-  ctx.textAlign = "center";
-  let state = h.running ? "рывок" : "рыба устала — подматывайте";
+  ctx.fillRect(tx - 1, by - 4, 2, 14);
+
+  let state = h.running ? "Рывок — держите против хода" : "Передышка — подматывайте";
   let col = h.running ? "#e0b48a" : OK;
-  if (h.jump > 0) {
-    state = e.reeling ? "в воздухе — отпустите" : "в воздухе";
-    col = e.reeling ? BAD : OK;
-  }
+  if (h.surgeWarning > 0) { state = "Сейчас сильный рывок — ослабьте"; col = BRASS; }
+  if (e.slackRisk > 0.3) { state = "Слабина — коротко подмотайте"; col = "#8fb3c8"; }
+  if (h.overload > 0.05) { state = "Перегруз — отпустите подмотку"; col = BAD; }
+  if (h.jump > 0) { state = e.reeling ? "В воздухе — отпустите!" : "В воздухе — ждите приземления"; col = e.reeling ? BAD : OK; }
   ctx.fillStyle = col;
-  ctx.fillText(state, bx + bw / 2, by + 22);
-  // силы рыбы
-  ctx.fillStyle = "rgba(230,225,214,0.1)";
-  ctx.fillRect(bx, by + 34, bw, 2);
-  ctx.fillStyle = "rgba(230,225,214,0.6)";
-  ctx.fillRect(bx, by + 34, bw * (h.stamina / 100), 2);
-  label(ctx, "силы", bx, by + 48, "left", DIM);
-  // направление рывка
+  ctx.font = `500 11px ${FONTS.sans}`;
+  ctx.textAlign = "center";
+  ctx.fillText(state, bx + bw / 2, y0 + 77, bw - 48);
+  if (h.surgeWarning > 0) {
+    const sw = bw * 0.5;
+    ctx.fillStyle = "rgba(200,164,106,0.12)";
+    ctx.fillRect(bx + bw * 0.25, y0 + 85, sw, 2);
+    ctx.fillStyle = BRASS;
+    ctx.fillRect(bx + bw * 0.25, y0 + 85, sw * (1 - h.surgeWarning / SURGE_WARNING_TIME), 2);
+  }
+
+  // Все риски нормированы теми же пределами, которые завершат борьбу.
+  const metrics: [string, number, string][] = [
+    ["силы", h.stamina / 100, OK],
+    ["перегруз", e.overloadRisk, BAD],
+    ["слабина", e.slackRisk, "#8fb3c8"],
+  ];
+  const mw = (bw - 24) / 3;
+  metrics.forEach(([name, raw, color], i) => {
+    const value = clamp(raw, 0, 1), x = bx + i * (mw + 12);
+    ctx.font = `500 9px ${FONTS.sans}`;
+    ctx.textAlign = "left";
+    ctx.fillStyle = i > 0 && value > 0.3 ? color : MUTED;
+    ctx.fillText(name, x, y0 + 104);
+    ctx.textAlign = "right";
+    ctx.fillText(`${Math.round(value * 100)}%`, x + mw, y0 + 104);
+    ctx.fillStyle = "rgba(230,225,214,0.09)";
+    ctx.fillRect(x, y0 + 111, mw, 3);
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y0 + 111, mw * value, 3);
+  });
   if (h.running && h.jump <= 0) {
-    const side = Math.sign(h.swayV);
-    const ok = h.countering;
-    const cx = f.compact ? (side > 0 ? x0 + 24 : x0 + w - 24) : side > 0 ? x0 - 28 : x0 + w + 28;
-    const dir = side > 0 ? -1 : 1;
-    ctx.strokeStyle = ok ? OK : `rgba(224,180,138,${0.6 + Math.sin(t * 10) * 0.35})`;
-    ctx.lineWidth = 2;
+    const side = Math.sign(h.swayV), dir = side > 0 ? -1 : 1;
+    const cx = side > 0 ? bx + 5 : bx + bw - 5;
+    ctx.strokeStyle = h.countering ? OK : BRASS;
+    ctx.lineWidth = 1.5;
     for (let i = 0; i < 2; i++) {
-      const ox = cx + dir * i * 9;
+      const ox = cx + dir * i * 6;
       ctx.beginPath();
-      ctx.moveTo(ox - dir * 5, y0 + ph / 2 - 10);
-      ctx.lineTo(ox + dir * 5, y0 + ph / 2);
-      ctx.lineTo(ox - dir * 5, y0 + ph / 2 + 10);
+      ctx.moveTo(ox - dir * 3, y0 + 67);
+      ctx.lineTo(ox + dir * 3, y0 + 73);
+      ctx.lineTo(ox - dir * 3, y0 + 79);
       ctx.stroke();
     }
-    if (!f.compact) label(ctx, ok ? "верно" : "уводите", cx, y0 + ph / 2 + 26, "center", ok ? OK : "#e0b48a");
   }
   ctx.restore();
 }

@@ -33,7 +33,7 @@ const VOICES = { mobile: 28, full: 56 };
 const NOISE_SECONDS = 2;
 /** События, под которые фон коротко прибирается, чтобы они читались поверх прибоя. */
 const DUCK: ReadonlySet<Sfx> = new Set<Sfx>([
-  "cast", "splash", "bite", "hook", "snap", "catch", "newSpecies", "legend", "jump", "bottom",
+  "cast", "splash", "surge", "bite", "hook", "snap", "catch", "newSpecies", "legend", "jump", "bottom",
 ]);
 
 export class GameAudio {
@@ -669,6 +669,16 @@ export class GameAudio {
         this.burst({ type: "lowpass", f: 3200, f2: 350, g: 0.4, a: 0.01, d: 0.8, pan: 0.2 });
         this.osc({ f: 90, f2: 40, g: 0.25, d: 0.35 });
         this.splashDrops(14, 0.8, 0.05, 0.05);
+        break;
+      case "nibble":
+        // Тихое касание отличается от решительного сигнала подсечки.
+        this.burst({ type: "lowpass", f: 950, f2: 450, g: 0.045, d: 0.09, pan: 0.25 });
+        this.osc({ f: 260, f2: 190, g: 0.045, d: 0.08, at: 0.13, pan: 0.25 });
+        break;
+      case "surge":
+        // Короткий нарастающий скрип — предупреждение, а не звук обрыва.
+        this.osc({ type: "triangle", f: 110, f2: 220, g: 0.075, d: 0.26 });
+        this.burst({ buf: this.pink, type: "bandpass", f: 750, f2: 1700, q: 2, g: 0.055, d: 0.3 });
         break;
       case "bite":
         this.osc({ f: 540, f2: 170, g: 0.22, d: 0.13, pan: 0.25 });

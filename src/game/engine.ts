@@ -1,4 +1,5 @@
 import { FISH, FISH_BY_ID, RARITY_INFO, VARIANT_INFO } from "./fish";
+import { BITE_WINDOWS, SURGE_WARNING_TIME, biteApproachSeconds } from "./fishing";
 import { Atmosphere, type LightningStrike } from "./atmosphere";
 import { ctxFromAtmosphere, EventDirector } from "./events";
 import type { DirectorMessage, DirectorSave, Outcome } from "./events/types";
@@ -48,7 +49,7 @@ export const TIME_SCALE = 5 / 11; // примерно 1 игровая мину�
 
 export type Phase = "idle" | "charging" | "casting" | "sinking" | "waiting" | "bite" | "fight" | "caught";
 export type Sfx =
-  | "cast" | "splash" | "bite" | "hook" | "snap" | "escape" | "catch" | "legend" | "newSpecies"
+  | "cast" | "splash" | "nibble" | "surge" | "bite" | "hook" | "snap" | "escape" | "catch" | "legend" | "newSpecies"
   | "coins" | "thunder" | "event" | "buy" | "jump" | "bottom" | "reelIn" | "travel" | "levelUp" | "quest" | "perfect" | "find" | "rest";
 
 export interface Hooked {
@@ -67,6 +68,9 @@ export interface Hooked {
   running: boolean;
   overload: number;
   slack: number;
+  /** Сильный дополнительный рывок сначала предупреждается, затем применяется. */
+  surgeWarning: number;
+  surgeBoost: number;
   sway: number;
   swayV: number;
   countering: boolean;
@@ -277,6 +281,8 @@ export class Engine {
   hookDepth = 0;
   biteTimer = 0;
   biteWindow = 0;
+  nibbleTimer = 0;
+  nibbleDuration = 1;
   pendingFish: { fish: FishDef; weight: number; variant: Variant | null } | null = null;
   pendingFind: FindDef | null = null;
   lastFind: { def: FindDef; isNew: boolean } | null = null;
@@ -492,7 +498,7 @@ export class Engine {
   }
 
   get calm() {
-    return !this.paused && (this.phase === "idle" || this.phase === "waiting" || this.phase === "sinking");
+    return !this.paused && !this.nibbling && (this.phase === "idle" || this.phase === "waiting" || this.phase === "sinking");
   }
 
   private tickNotices() {
@@ -506,7 +512,7 @@ export class Engine {
       changed = true;
     }
     if (this.tipNow && this.time - this.tipNow.t > TIP_TIME) { this.tipNow = null; changed = true; }
-    if (!this.tipNow && this.tipQueue.length && !this.paused && this.phase !== "bite" && !this.banner) {
+    if (!this.tipNow && this.tipQueue.length && !this.paused && this.phase !== "bite" && !this.nibbling && !this.banner) {
       this.tipNow = { ...this.tipQueue.shift()!, t: this.time };
       changed = true;
     }
@@ -585,8 +591,13 @@ export class Engine {
         break;
       }
       case "waiting":
-        this.biteTimer -= wdt;
-        if (this.biteTimer <= 0) this.tryBite();
+        if (this.nibbling) {
+          this.nibbleTimer = Math.max(0, this.nibbleTimer - dt);
+          if (this.nibbleTimer === 0) this.beginBite();
+        } else {
+          this.biteTimer -= wdt;
+          if (this.biteTimer <= 0) this.tryBite();
+        }
         break;
       case "bite":
         this.biteWindow -= dt;
@@ -638,8 +649,19 @@ export class Engine {
         this.power = 0;
         this.powerDir = 1;
         break;
-      case "sinking":
       case "waiting":
+        if (this.nibbling) {
+          // Ранний взмах пугает рыбу; наживка остаётся на снасти.
+          const finding = !!this.pendingFind;
+          this.startWaiting();
+          this.toast(finding ? "Рано — снасть ещё не натянулась" : "Рано — рыба только пробовала", "info", "Подсекайте, когда поплавок уверенно потянет вниз");
+          break;
+        }
+        // Обычное ожидание, как и погружение, можно прервать сматыванием.
+      case "sinking":
+        this.pendingFish = null;
+        this.pendingFind = null;
+        this.nibbleTimer = 0;
         this.phase = "idle";
         this.hookDepth = 0;
         this.sfx.push("reelIn");
@@ -650,6 +672,18 @@ export class Engine {
       case "fight":
         this.reeling = true;
         break;
+    }
+  }
+
+  /** Потеря фокуса/касания — отмена, а не отпускание с выполнением заброса. */
+  cancelInput() {
+    this.reeling = false;
+    this.keyDir = 0;
+    this.pullDir = 0;
+    if (this.phase === "charging") {
+      this.phase = "idle";
+      this.power = 0;
+      this.emit();
     }
   }
 
@@ -684,6 +718,9 @@ export class Engine {
   // ─────────── fishing ───────────
   private startWaiting() {
     this.phase = "waiting";
+    this.nibbleTimer = 0;
+    this.pendingFish = null;
+    this.pendingFind = null;
     const timeMult = { twilight: 1.35, night: 1.0, day: 0.9 }[this.timeOfDay];
     const bd = this.bait;
     const inRange = this.hookDepth >= bd.depth[0] && this.hookDepth <= bd.depth[1];
@@ -782,11 +819,7 @@ export class Engine {
         for (const f of pool) { r -= f.weight * (this.s.finds[f.id] ? 1 : 1.6); if (r <= 0) { pick = f; break; } }
         this.pendingFind = pick;
         this.pendingFish = null;
-        this.phase = "bite";
-        this.biteWindow = this.biteWindowMax = 1.3 * (1 + this.perk("hands") * 0.08 + this.mod("line_braid") * 0.06);
-        this.splash = 0.35;
-        this.sfx.push("bite");
-        this.emit();
+        this.prepareBite(1.3, 0.65);
         return;
       }
     }
@@ -815,11 +848,27 @@ export class Engine {
     else if (v < 0.056) variant = "scarred";
     else if (rr > 0.93) variant = "trophy";
     this.pendingFish = { fish: pick, weight, variant };
-    this.phase = "bite";
-    this.biteWindow = this.biteWindowMax = { common: 1.3, uncommon: 1.15, rare: 1.0, epic: 0.9, legendary: 0.8 }[pick.rarity] * (1 + this.perk("hands") * 0.08 + this.mod("line_braid") * 0.06);
-    this.splash = 0.5;
-    this.sfx.push("bite");
+    this.prepareBite(BITE_WINDOWS[pick.rarity], biteApproachSeconds(pick, Math.random()));
+  }
 
+  get nibbling() { return this.phase === "waiting" && this.nibbleTimer > 0; }
+  get nibbleProgress() { return Math.max(0, Math.min(1, 1 - this.nibbleTimer / this.nibbleDuration)); }
+
+  private prepareBite(window: number, approach: number) {
+    this.phase = "waiting";
+    this.biteWindow = this.biteWindowMax = window * (1 + this.perk("hands") * 0.08 + this.mod("line_braid") * 0.06);
+    this.nibbleTimer = this.nibbleDuration = approach;
+    this.sfx.push("nibble");
+    this.emit();
+  }
+
+  private beginBite() {
+    this.phase = "bite";
+    this.nibbleTimer = 0;
+    // Полное окно реакции начинается только с уверенной потяжки.
+    this.biteWindow = this.biteWindowMax;
+    this.splash = this.pendingFind ? 0.35 : 0.5;
+    this.sfx.push("bite");
     this.emit();
   }
 
@@ -844,14 +893,23 @@ export class Engine {
   }
 
   perfectHook = false;
-  get biteProgress() { return 1 - this.biteWindow / this.biteWindowMax; }
+  get biteProgress() { return Math.max(0, Math.min(1, 1 - this.biteWindow / this.biteWindowMax)); }
+  get perfectHookThreshold() { return Math.min(1, 0.42 * (1 + this.mod("hook_sharpen") * 0.12) + this.s.hook * 0.02); }
+  get inPerfectHookWindow() { return this.phase === "bite" && this.biteProgress < this.perfectHookThreshold; }
+  get overloadLimit() {
+    const risk = Math.max(0, Math.min(1, this.eventEffects.gearRisk));
+    return 0.38 * (1 + this.mod("reel_drag") * 0.18) * (1 - risk * 0.45);
+  }
+  get slackLimit() { return 3.2 + this.s.hook * 0.55; }
+  get overloadRisk() { return Math.min(1, (this.hooked?.overload ?? 0) / this.overloadLimit); }
+  get slackRisk() { return Math.min(1, (this.hooked?.slack ?? 0) / this.slackLimit); }
 
   private hook() {
     if (this.pendingFind) return this.registerFind(this.pendingFind);
     const p = this.pendingFish;
     if (!p) return;
     this.consumeBait();
-    this.perfectHook = this.biteProgress < 0.42 * (1 + this.mod("hook_sharpen") * 0.12) + this.s.hook * 0.02;
+    this.perfectHook = this.inPerfectHookWindow;
     const f = p.fish;
     const wNorm = (p.weight - f.weight[0]) / Math.max(0.0001, f.weight[1] - f.weight[0]);
     let power = 1.2 * Math.pow(f.strength, 1.6) * (0.7 + 0.6 * wNorm);
@@ -876,6 +934,8 @@ export class Engine {
       running: false,
       overload: 0,
       slack: 0,
+      surgeWarning: 0,
+      surgeBoost: 0,
       sway: 0,
       swayV: Math.random() < 0.5 ? -1 : 1,
       countering: false,
@@ -916,10 +976,7 @@ export class Engine {
     }
     h.intensity += (h.targetIntensity - h.intensity) * Math.min(1, dt * (h.running ? 11 : 5));
     const rare = h.fish.rarity === "legendary" ? 2 : h.fish.rarity === "epic" ? 1.5 : 1;
-    if (h.running && Math.random() < dt * 1.2 * rare) {
-      h.intensity = Math.min(1.25, h.intensity + (0.3 + Math.random() * 0.25) * (1 - this.mod("rod_guides") * 0.08));
-      if (h.fish.strength >= 7) this.shake = Math.max(this.shake, 0.08);
-    }
+
     h.sway += (h.swayV - h.sway) * dt * 2;
 
     // прыжок
@@ -937,9 +994,27 @@ export class Engine {
       this.splash = 1;
       this.shake = Math.max(this.shake, 0.12);
       this.sfx.push("jump");
-      this.tip("tip_jump", "Пока рыба в воздухе, не подматывайте — иначе крючок вырвет.");
+      this.tip("tip_jump", "Пока рыба в воздухе, отпустите подмотку: натяжение резко растёт и может оборвать леску.");
     }
     const jumping = h.jump > 0;
+
+    // Дополнительный сильный рывок больше не возникает без сигнала.
+    // Передышка и прыжок отменяют подготовленный рывок, а не откладывают его.
+    if (!h.running || jumping || h.stamina <= 0) {
+      h.surgeWarning = 0;
+      h.surgeBoost = 0;
+    } else if (h.surgeWarning > 0) {
+      h.surgeWarning = Math.max(0, h.surgeWarning - dt);
+      if (h.surgeWarning === 0) {
+        h.intensity = Math.min(1.25, h.intensity + h.surgeBoost);
+        h.surgeBoost = 0;
+        if (h.fish.strength >= 7) this.shake = Math.max(this.shake, 0.08);
+      }
+    } else if (Math.random() < dt * 1.2 * rare) {
+      h.surgeWarning = SURGE_WARNING_TIME;
+      h.surgeBoost = (0.3 + Math.random() * 0.25) * (1 - this.mod("rod_guides") * 0.08);
+      this.sfx.push("surge");
+    }
 
     const rod = this.rodPower;
     const staminaF = 0.35 + 0.65 * (h.stamina / 100);
@@ -954,9 +1029,7 @@ export class Engine {
 
     if (h.tension > 1) {
       h.overload += dt;
-      const gearRisk = Math.max(0, Math.min(1, this.eventEffects.gearRisk));
-      const overloadLimit = 0.38 * (1 + this.mod("reel_drag") * 0.18) * (1 - gearRisk * 0.45);
-      if (h.overload > overloadLimit) return this.endFight("snap");
+      if (h.overload > this.overloadLimit) return this.endFight("snap");
     } else {
       h.overload = Math.max(0, h.overload - dt * 0.8);
     }
@@ -970,18 +1043,18 @@ export class Engine {
 
     if (!this.reeling && !jumping && h.tension < 0.14) {
       h.slack += dt;
-      if (h.slack > 3.2 + this.s.hook * 0.55) return this.endFight("escape");
+      if (h.slack > this.slackLimit) return this.endFight("slack");
     } else h.slack = Math.max(0, h.slack - dt * 2);
 
-    if (h.line > h.startLine * 1.6 + 15) return this.endFight("escape");
+    if (h.line > h.startLine * 1.6 + 15) return this.endFight("distance");
     this.hookDepth = Math.max(0, h.startDepth * Math.min(1, h.line / h.startLine));
     if (h.line <= 1.2 && !jumping) this.endFight("caught");
   }
 
-  private endFight(result: "snap" | "escape" | "caught") {
+  private endFight(result: "snap" | "slack" | "distance" | "caught") {
     const h = this.hooked;
     this.hooked = null;
-    this.reeling = false;
+    this.cancelInput();
     this.hookDepth = 0;
     if (!h) return;
     if (result === "snap") {
@@ -996,12 +1069,14 @@ export class Engine {
       this.s.money -= paid;
       this.s.stats.gearLost = (this.s.stats.gearLost ?? 0) + paid;
       this.toast("Обрыв лески", "bad", `${h.fish.rarity === "legendary" || h.fish.rarity === "epic" ? "Что-то очень крупное ушло на глубину" : "Слишком сильное натяжение"} · оснастка −${paid} ₽`);
-    } else if (result === "escape") {
+    } else if (result === "slack" || result === "distance") {
       this.s.stats.escaped++;
       this.dailyEvent({ k: "escape" });
       this.phase = "idle";
       this.sfx.push("escape");
-      this.toast("Сход", "bad", "Леска ослабла — рыба освободилась");
+      this.toast("Сход", "bad", result === "slack"
+        ? "Долгая слабина — рыба освободилась. Подматывайте короткими движениями"
+        : "Рыба ушла слишком далеко. Выбирайте леску в передышках между рывками");
     } else {
       this.registerCatch(h);
     }

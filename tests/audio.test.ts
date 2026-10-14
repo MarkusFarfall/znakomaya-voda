@@ -217,3 +217,12 @@ test("дакинг: событие прибирает фон, а не наращ
   assert.ok(g.targets.some((t) => t < before), `фон должен прибираться: таргеты ${JSON.stringify(g.targets)} при базе ${before}`);
   assert.equal(g.targets[g.targets.length - 1], before, "после дакинга фон возвращается к прежнему уровню");
 });
+
+test("касание наживки и предупреждение рывка имеют отдельные звуковые сигналы", () => {
+  const { a, ctx } = makeAudio();
+  for (const sfx of ["nibble", "surge"] as const) {
+    const before = ctx.total();
+    assert.doesNotThrow(() => a.play(sfx));
+    assert.ok(ctx.total() > before, `${sfx} должен создавать звук`);
+  }
+});
