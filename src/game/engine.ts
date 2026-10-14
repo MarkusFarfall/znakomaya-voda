@@ -1,5 +1,6 @@
 import { FISH, FISH_BY_ID, RARITY_INFO, VARIANT_INFO } from "./fish";
 import { BITE_WINDOWS, SURGE_WARNING_TIME, biteApproachSeconds } from "./fishing";
+import { FIGHT_STEP, newFightMotion, stepFightMotion, type FightMotion } from "./fishingPhysics";
 import { Atmosphere, type LightningStrike } from "./atmosphere";
 import { ctxFromAtmosphere, EventDirector } from "./events";
 import type { DirectorMessage, DirectorSave, Outcome } from "./events/types";
@@ -77,6 +78,7 @@ export interface Hooked {
   jumper: boolean;
   jump: number; // >0 — рыба в воздухе
   jumpCD: number;
+  motion: FightMotion;
 }
 
 export interface Toast {
@@ -291,6 +293,7 @@ export class Engine {
   private lastDay = -1;
   hooked: Hooked | null = null;
   reeling = false;
+  private fightAccumulator = 0;
   pullDir: -1 | 0 | 1 = 0;
   keyDir: -1 | 0 | 1 = 0;
   lastCatch: CatchResult | null = null;
@@ -942,8 +945,10 @@ export class Engine {
       jumper: isJumper(f),
       jump: 0,
       jumpCD: 3,
+      motion: newFightMotion(startLine, this.hookDepth),
     };
     this.pendingFish = null;
+    this.fightAccumulator = 0;
     this.phase = "fight";
     this.splash = 0.8;
     this.shake = Math.max(this.shake, 0.08 + f.strength * 0.015);
@@ -957,6 +962,14 @@ export class Engine {
   }
 
   private updateFight(dt: number) {
+    this.fightAccumulator += Math.max(0, Math.min(0.25, dt));
+    while (this.fightAccumulator + 1e-10 >= FIGHT_STEP && this.phase === "fight") {
+      this.fightAccumulator -= FIGHT_STEP;
+      this.stepFight(FIGHT_STEP);
+    }
+  }
+
+  private stepFight(dt: number) {
     const h = this.hooked;
     if (!h) return;
     h.modeTimer -= dt;
@@ -974,21 +987,23 @@ export class Engine {
         h.modeTimer = 0.8 + Math.random() * 1.8 * (1.4 - tired);
       }
     }
-    h.intensity += (h.targetIntensity - h.intensity) * Math.min(1, dt * (h.running ? 11 : 5));
+    h.intensity += (h.targetIntensity - h.intensity) * -Math.expm1(-dt * (h.running ? 6 : 3));
     const rare = h.fish.rarity === "legendary" ? 2 : h.fish.rarity === "epic" ? 1.5 : 1;
-
-    h.sway += (h.swayV - h.sway) * dt * 2;
 
     // прыжок
     if (h.jump > 0) {
       h.jump -= dt;
       if (h.jump <= 0) {
+        h.jump = 0;
+        h.motion.depth = 0.12;
+        h.motion.depthVelocity = 0;
         this.splash = 1;
         this.sfx.push("splash");
         this.s.stats.jumps++;
         this.dailyEvent({ k: "jump" });
       }
-    } else if (h.jumper && h.running && h.jumpCD <= 0 && this.hookDepth < 14 && h.stamina > 15 && Math.random() < dt * 0.6) {
+    } else if (h.jumper && h.running && h.jumpCD <= 0 && this.hookDepth < 0.7 && h.stamina > 15 && Math.random() < dt * 0.6) {
+      h.motion.jumpDepth = h.motion.depth;
       h.jump = JUMP_TIME;
       h.jumpCD = 5 + Math.random() * 6;
       this.splash = 1;
@@ -1006,6 +1021,7 @@ export class Engine {
     } else if (h.surgeWarning > 0) {
       h.surgeWarning = Math.max(0, h.surgeWarning - dt);
       if (h.surgeWarning === 0) {
+        h.motion.surge = h.surgeBoost;
         h.intensity = Math.min(1.25, h.intensity + h.surgeBoost);
         h.surgeBoost = 0;
         if (h.fish.strength >= 7) this.shake = Math.max(this.shake, 0.08);
@@ -1016,16 +1032,12 @@ export class Engine {
       this.sfx.push("surge");
     }
 
-    const rod = this.rodPower;
-    const staminaF = 0.35 + 0.65 * (h.stamina / 100);
-    const pull = h.power * (0.25 + 0.75 * h.intensity) * staminaF * (this.reeling ? 1.0 : 0.5);
-    const side = h.running ? Math.sign(h.swayV) : 0;
-    let dirMod = 1;
-    if (side !== 0) dirMod = this.pullDir === -side ? 0.75 - this.mod("rod_grip") * 0.045 : this.pullDir === side ? 1.3 : 1.1;
-    h.countering = side !== 0 && this.pullDir === -side;
-    const jumpMod = jumping ? (this.reeling ? 2.1 * (1 - this.s.hook * 0.12) : 0.25) : 1;
-    const targetT = (pull / rod) * dirMod * jumpMod + (this.reeling ? 0.12 : 0);
-    h.tension += (targetT - h.tension) * Math.min(1, dt * 9);
+    stepFightMotion(h, {
+      reeling: this.reeling, direction: this.pullDir, rodPower: this.rodPower,
+      reelSpeed: this.reel.value * (2.6 + h.line * 0.05) * (1 + this.mod("reel_bearings") * 0.08),
+      grip: this.mod("rod_grip"), ratio: this.mod("reel_ratio"), hook: this.s.hook,
+      bed: Math.max(0.12, this.bedAt(this.castNX()) - 0.3),
+    }, dt);
 
     if (h.tension > 1) {
       h.overload += dt;
@@ -1033,10 +1045,6 @@ export class Engine {
     } else {
       h.overload = Math.max(0, h.overload - dt * 0.8);
     }
-
-    const reelSpeed = this.reel.value * (2.6 + h.line * 0.05) * (1 + this.mod("reel_bearings") * 0.08);
-    if (this.reeling && !jumping) h.line -= reelSpeed * (1 - h.intensity * 0.75 * (1 - this.mod("reel_ratio") * 0.1)) * dt;
-    if (h.intensity > 0.45 && !jumping) h.line += (h.intensity - 0.45) * 2 * (h.power / rod) * (2.5 + h.line * 0.04) * dt;
 
     const drain = (4 + 26 * Math.min(1.2, h.tension)) * (14 / (h.fish.strength + 4)) * (h.fish.rarity === "legendary" ? 0.7 : 1);
     h.stamina = Math.max(0, h.stamina - drain * dt * 0.55 * (h.countering ? 1.5 : 1) * (1 + this.perk("stamina") * 0.06) - (jumping && !this.reeling ? dt * 7 : 0));
@@ -1047,7 +1055,7 @@ export class Engine {
     } else h.slack = Math.max(0, h.slack - dt * 2);
 
     if (h.line > h.startLine * 1.6 + 15) return this.endFight("distance");
-    this.hookDepth = Math.max(0, h.startDepth * Math.min(1, h.line / h.startLine));
+    this.hookDepth = h.motion.depth;
     if (h.line <= 1.2 && !jumping) this.endFight("caught");
   }
 

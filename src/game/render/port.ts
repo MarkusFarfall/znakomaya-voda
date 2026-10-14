@@ -1,9 +1,10 @@
 import { TIME_SCALE, type Engine } from "../engine";
+import { PrecipitationField } from "./precipitation";
 import type { PortId } from "../types";
 import { drawBoat } from "./boat";
 import { Boat3D } from "./boats3d/boat3d";
 import type { Frame } from "./frame";
-import { drawBolt, drawIce, drawLeaves, drawRainbow, drawRain, drawSnow, makeBolt, type Bolt } from "./weatherFx";
+import { drawBolt, drawIce, drawLeaves, drawRainbow, makeBolt, type Bolt } from "./weatherFx";
 import { drawEventFx, type FxCall, type FxScene } from "./eventFx";
 import { clamp, glow, hash1, hexA, mix, rng, rgbHex } from "./util";
 
@@ -42,6 +43,10 @@ interface Puff { x: number; y: number; t: number; r: number }
 
 export class PortScene {
   boat3dOn = false;
+  precipEnabled = true;
+  quality = 1;
+  private rain = new PrecipitationField("rain");
+  private snowfall = new PrecipitationField("snow");
   private boat3d: Boat3D | null = null;
   hot: Hotspot[] = [];
   private t = 0;
@@ -448,17 +453,14 @@ export class PortScene {
     this.smoke = this.smoke.filter((p) => p.t < 5);
 
     // ───── погода ─────
-    const q = 1 as 0 | 1 | 2;
+    const q = clamp(Math.round(this.quality), 0, 2) as 0 | 1 | 2;
     const windPx = atmo.wind * atmo.windDir * 26 * sc;
-    const precip = { t, x0: 0, x1: W, top: 0, bottom: H, floor: () => H, wind: windPx, s: sc, q, near: false };
-    if (atmo.rain > 0.02) {
-      drawRain(ctx, { ...precip, intensity: atmo.rain, color: atmo.palette.cloud });
-      drawRain(ctx, { ...precip, near: true, intensity: atmo.rain, color: atmo.palette.cloud });
-    }
-    if (atmo.snow > 0.02) {
-      drawSnow(ctx, { ...precip, intensity: atmo.snow, color: [238, 245, 255] });
-      drawSnow(ctx, { ...precip, near: true, intensity: atmo.snow, color: [252, 254, 255] });
-    }
+    const precip = { x0: 0, x1: W, top: -60, bottom: H, floor: () => H - 4,
+      horizon: waterY + 20 * sc, wind: windPx, s: sc, q, color: atmo.palette.cloud };
+    const rain = { ...precip, intensity: this.precipEnabled ? atmo.rain : 0 };
+    const snow = { ...precip, intensity: this.precipEnabled ? atmo.snow : 0 };
+    this.rain.step(rain, dt); this.snowfall.step(snow, dt);
+    if (this.precipEnabled) { this.rain.draw(ctx, rain); this.snowfall.draw(ctx, snow); }
     if (atmo.leaves > 0.02) drawLeaves(ctx, t, 0, W, 0, H, windPx, atmo.leaves, "leaf", sc);
     if (atmo.petals > 0.02) drawLeaves(ctx, t, 0, W, 0, H, windPx * 0.6, atmo.petals, "petal", sc);
     if (atmo.rainbow > 0.02 && sunElev > 0) {

@@ -193,8 +193,10 @@ export default function Game() {
     sceneRef.current.gfx = { ...settings.gfx };
     sceneRef.current.boat3dOn = settings.model3d;
     portSceneRef.current.boat3dOn = settings.model3d;
+    portSceneRef.current.precipEnabled = settings.gfx.precip;
+    portSceneRef.current.quality = settings.quality;
     setBoat3dPref(settings.model3d);
-  }, [settings.zoom, settings.gfx, settings.model3d]);
+  }, [settings.zoom, settings.gfx, settings.model3d, settings.quality]);
 
   // Один обработчик: колесо — глубина, Shift + колесо — камера. Не оба сразу.
   useEffect(() => {

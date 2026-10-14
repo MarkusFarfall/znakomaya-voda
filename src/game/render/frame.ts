@@ -11,7 +11,7 @@ export interface EngineView {
   castT: number;
   reeling: boolean;
   pullDir: number;
-  hooked: { tension: number; jump: number } | null;
+  hooked: { tension: number; jump: number; motion?: import("../fishingPhysics").FightMotion } | null;
 }
 
 export interface Frame {

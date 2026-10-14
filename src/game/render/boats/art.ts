@@ -1,3 +1,4 @@
+import { fishingRodPose } from "../fishingRod";
 /**
  * Суда как проработанные рисунки + живые слои.
  *
@@ -141,21 +142,7 @@ function fisherS(r: R, o: PersonOpts, rodExtra = 0): P {
   const gx = o.x + 0.42 * s;
   const gy = hipY - (sit ? 0.36 : 0.1) * s;
 
-  let rodA = -0.85;
-  let bend = 0;
-  switch (e.phase) {
-    case "charging": rodA = -0.85 - e.power * 1.3; break;
-    case "casting": rodA = -2.1 + Math.min(1, e.castT * 3) * 1.6; break;
-    case "waiting": case "sinking": rodA = -0.55 + Math.sin(t * 1.3) * 0.03; break;
-    case "bite": rodA = -0.45 + Math.sin(t * 30) * 0.08; bend = 0.25; break;
-    case "fight": {
-      const h = e.hooked;
-      rodA = -0.95 - (e.reeling ? 0.18 : 0) + e.pullDir * 0.18;
-      bend = clamp(h?.tension ?? 0, 0, 1.2) * (h && h.jump > 0 ? 0.5 : 1);
-      break;
-    }
-    case "caught": rodA = -1.1; break;
-  }
+  const { angle: rodA, bend } = fishingRodPose(e, t);
   const L = (2.6 + rodExtra) * (0.5 + 0.5 * s);
   const dx = Math.cos(rodA), dy = Math.sin(rodA);
   const tipX = gx + dx * L * (1 - bend * 0.14);
@@ -195,7 +182,7 @@ function fisherS(r: R, o: PersonOpts, rodExtra = 0): P {
     ctx.arc(hN[0], hN[1], 0.034 * s, 0, TAU);
     ctx.fill();
   };
-  drawPerson(p, { ...o, hands: [hN, hF], between: rod });
+  drawPerson(p, { ...o, lean: (o.lean ?? 0.05) - bend * 0.14, hands: [hN, hF], between: rod });
   return [tipX, tipY];
 }
 

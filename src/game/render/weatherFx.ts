@@ -1,8 +1,8 @@
 import type { RGB } from '../atmosphere/types';
 
 /**
- * Погодные эффекты для canvas 2D. Частицы процедурные: положение считается из индекса
- * и времени (никаких массивов и сборки мусора), каждый слой — один path.
+ * Дополнительные погодные эффекты для canvas 2D.
+ * Дождь и снег живут в отдельных полях частиц: precipitation.ts.
  */
 
 const h1 = (i: number) => {
@@ -11,115 +11,6 @@ const h1 = (i: number) => {
 };
 const css = (c: RGB, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
 const wrap = (v: number, m: number) => ((v % m) + m) % m;
-
-export interface PrecipOpts {
-  t: number;
-  x0: number;
-  x1: number;
-  top: number;
-  bottom: number;
-  /** где частица исчезает (поверхность воды) */
-  floor: (x: number) => number;
-  intensity: number;
-  /** горизонтальный снос, px/с */
-  wind: number;
-  s: number;
-  q: 0 | 1 | 2;
-  near: boolean;
-  color: RGB;
-}
-
-const qf = (q: 0 | 1 | 2) => (q === 2 ? 1 : q === 1 ? 0.65 : 0.4);
-
-export function drawRain(c: CanvasRenderingContext2D, o: PrecipOpts) {
-  const n = Math.round((o.near ? 70 : 160) * o.intensity * qf(o.q));
-  if (n <= 0) return;
-  const v = (o.near ? 1300 : 850) * o.s;
-  const len = (o.near ? 28 : 14) * o.s;
-  const range = Math.max(60, o.bottom - o.top);
-  const span = o.x1 - o.x0 + 240;
-  const slope = o.wind / v;
-  c.beginPath();
-  for (let i = 0; i < n; i++) {
-    const seed = i * 2.17 + (o.near ? 500 : 0);
-    const sp = 0.8 + h1(seed + 3) * 0.4;
-    const y = o.top + wrap(h1(seed) * range + o.t * v * sp, range);
-    const x = o.x0 - 120 + wrap(h1(seed + 1) * span + o.t * o.wind * sp, span);
-    const fy = o.floor(x);
-    if (y - len > fy) continue;
-    const ye = Math.min(y, fy);
-    c.moveTo(x - slope * len, y - len);
-    c.lineTo(x - slope * (y - ye), ye);
-  }
-  c.strokeStyle = css(o.color, (o.near ? 0.34 : 0.2) * Math.min(1, 0.45 + o.intensity));
-  c.lineWidth = (o.near ? 1.3 : 0.8) * Math.max(0.8, o.s);
-  c.lineCap = 'round';
-  c.stroke();
-}
-
-/** Круги и брызги от капель на поверхности */
-export function drawRainRings(c: CanvasRenderingContext2D, t: number, x0: number, x1: number, surfaceAt: (x: number) => number, intensity: number, s: number, q: 0 | 1 | 2) {
-  const n = Math.round(intensity * (q === 0 ? 14 : 34));
-  if (n <= 0) return;
-  c.strokeStyle = 'rgba(235,245,255,1)';
-  c.lineWidth = 0.8;
-  for (let i = 0; i < n; i++) {
-    const period = 0.6 + h1(i) * 0.6;
-    const ph = t / period + h1(i + 9);
-    const cyc = Math.floor(ph);
-    const age = ph - cyc;
-    const x = x0 + h1(i * 3.3 + cyc * 7.1) * (x1 - x0);
-    const y = surfaceAt(x) + 1.5 * s;
-    const r = (1 + age * 8) * s;
-    c.globalAlpha = (1 - age) * 0.38;
-    c.beginPath();
-    c.ellipse(x, y, r, r * 0.28, 0, 0, Math.PI * 2);
-    if (age < 0.18) {
-      c.moveTo(x, y - 1);
-      c.lineTo(x, y - (1 - age / 0.18) * 5 * s);
-    }
-    c.stroke();
-  }
-  c.globalAlpha = 1;
-}
-
-export function drawSnow(c: CanvasRenderingContext2D, o: PrecipOpts) {
-  const n = Math.round((o.near ? 80 : 180) * o.intensity * qf(o.q));
-  if (n <= 0) return;
-  const windy = Math.min(1, Math.abs(o.wind) / (380 * o.s));
-  const v = (o.near ? 80 : 46) * o.s * (1 + windy * 1.6);
-  const range = Math.max(60, o.bottom - o.top);
-  const span = o.x1 - o.x0 + 240;
-  c.beginPath();
-  for (let i = 0; i < n; i++) {
-    const seed = i * 3.71 + (o.near ? 900 : 300);
-    const sp = 0.6 + h1(seed + 2) * 0.8;
-    const y = o.top + wrap(h1(seed) * range + o.t * v * sp, range);
-    const sway = Math.sin(o.t * (0.8 + h1(seed + 4) * 1.2) + h1(seed + 5) * 20) * (o.near ? 22 : 12) * o.s * (1 - windy * 0.6);
-    const x = o.x0 - 120 + wrap(h1(seed + 1) * span + o.t * o.wind * sp + sway, span);
-    if (y > o.floor(x)) continue;
-    const r = (o.near ? 1.6 + h1(seed + 6) * 1.6 : 0.7 + h1(seed + 6) * 0.9) * o.s;
-    if (windy > 0.55) {
-      // метель — снежинки вытягиваются в штрихи
-      const l = r * (2 + windy * 5) * Math.sign(o.wind || 1);
-      c.moveTo(x - l, y - r * 0.6);
-      c.lineTo(x, y);
-    } else {
-      c.moveTo(x + r, y);
-      c.arc(x, y, r, 0, Math.PI * 2);
-    }
-  }
-  const a = (o.near ? 0.85 : 0.55) * Math.min(1, 0.5 + o.intensity);
-  if (windy > 0.55) {
-    c.strokeStyle = css(o.color, a);
-    c.lineWidth = (o.near ? 2 : 1.1) * o.s;
-    c.lineCap = 'round';
-    c.stroke();
-  } else {
-    c.fillStyle = css(o.color, a);
-    c.fill();
-  }
-}
 
 /* ─────────────── молния ─────────────── */
 

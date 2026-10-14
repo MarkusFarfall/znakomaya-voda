@@ -1,3 +1,4 @@
+import { fishingRodPose } from "../fishingRod";
 /**
  * Адаптер 3D-судов к сцене игры.
  *
@@ -123,8 +124,27 @@ export class Boat3D {
       sharedBroken = true;
       return null;
     }
-    // носок удочки приблизительно там же, где в 2D-позе рыбака
-    const tip: [number, number] = [bx + PXM * 0.55, wl - PXM * 1.35];
+    const handHeld = spec.style === "row" || spec.style === "kayak";
+    const grip: [number, number] = [bx + PXM * (handHeld ? -0.45 : 0.35), wl - PXM * (handHeld ? 0.72 : 0.45)];
+    const { angle, bend } = fishingRodPose(f.e, f.t);
+    const length = PXM * 2.6;
+    const tip: [number, number] = [
+      grip[0] + Math.cos(angle) * length * (1 - bend * 0.14),
+      grip[1] + Math.sin(angle) * length * (1 - bend * 0.28) + bend * length * 0.38,
+    ];
+    if (pose === "fish") {
+      ctx.save(); ctx.globalAlpha *= this.k;
+      if (!handHeld) {
+        ctx.strokeStyle = "#777a70"; ctx.lineWidth = Math.max(1, PXM * 0.07);
+        ctx.beginPath(); ctx.moveTo(grip[0], wl - PXM * 0.05); ctx.lineTo(...grip); ctx.stroke();
+      }
+      ctx.strokeStyle = "#42372b"; ctx.lineWidth = Math.max(1, PXM * 0.055); ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(...grip);
+      ctx.quadraticCurveTo(grip[0] + Math.cos(angle) * length * 0.62, grip[1] + Math.sin(angle) * length * 0.62, ...tip);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(224,216,185,0.55)"; ctx.lineWidth = 0.6; ctx.stroke();
+      ctx.restore();
+    }
     return { tip, k: this.k };
   }
 

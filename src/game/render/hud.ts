@@ -158,7 +158,7 @@ export function drawFightPanel(f: Frame) {
   ctx.textAlign = "left";
   ctx.fillText("НАТЯЖЕНИЕ", bx, y0 + 40);
   ctx.textAlign = "right";
-  ctx.fillText(`леска ${Math.max(0, h.line).toFixed(1)} м`, bx + bw, y0 + 40);
+  ctx.fillText(`до рыбы ${Math.max(0, h.line).toFixed(1)} м`, bx + bw, y0 + 40);
   const by = y0 + 47;
   const zones: [number, number, string][] = [[0, 0.15, "rgba(143,179,200,0.22)"], [0.15, 0.75, "rgba(134,180,148,0.32)"], [0.75, 0.92, "rgba(210,170,90,0.45)"], [0.92, 1, "rgba(201,115,92,0.6)"]];
   for (const [a, b, c] of zones) {

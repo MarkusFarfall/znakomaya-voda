@@ -2,6 +2,8 @@ import { depthToU, JUMP_TIME, TIME_SCALE, type Engine, type SonarBand } from "..
 import { FISH } from "../fish";
 import { drawFish, drawFishGlow, fishScreenLen } from "../fishDraw";
 import type { FishDef } from "../types";
+import { PrecipitationField } from "./precipitation";
+import { projectFightFish } from "./fishingGeometry";
 import { BAIT_BY_ID } from "../world";
 import { drawBoat } from "./boat";
 import { Boat3D } from "./boats3d/boat3d";
@@ -11,7 +13,7 @@ import { LandRenderer } from "./land";
 import { AmbientLife } from "./ambient";
 import { SeabedRenderer } from "./seabed";
 import { SkyRenderer } from "./sky";
-import { drawBolt, drawIce, drawLeaves, drawRain, drawRainRings, drawSnow, makeBolt, type Bolt } from "./weatherFx";
+import { drawBolt, drawIce, drawLeaves, makeBolt, type Bolt } from "./weatherFx";
 import { drawEventFx, type FxCall, type FxScene, type Layer } from "./eventFx";
 import { clamp, glow, hexA, mix, rng, smooth, af, rgbHex, FONTS, roundRect } from "./util";
 import {
@@ -65,6 +67,8 @@ export class Scene {
   private spawnT = 0;
   private creatureT = 0;
   private t = 0;
+  private rain = new PrecipitationField("rain");
+  private snowfall = new PrecipitationField("snow");
   private W = 0;
   private H = 0;
   private initQuality = -1;
@@ -314,6 +318,7 @@ export class Scene {
       ctx.fillText(`${Math.min(e.s.targetDepth, e.maxDepth)} м`, bx + 64, dy - 6);
       ctx.restore();
     }
+    this.drawPrecipitation(f);
     ctx.restore();
 
     // ───── ЭКРАН ─────
@@ -660,19 +665,16 @@ export class Scene {
     const { ctx, e, W, t, sY } = f;
     if (e.hooked) {
       const h = e.hooked;
-      const k = clamp(h.line / h.startLine, 0, 1.6);
-      const bx = W * 0.3;
-      const fishX = bx + 60 + Math.min(1.3, k) * (bobX - bx - 60) + h.sway * 70 * f.sc + Math.sin(t * 7) * h.intensity * 10;
-      const fishY = sY + f.depthPx(e.hookDepth) + 6;
-      if (h.jump > 0) return [fishX, fishY];
-      const len = fishScreenLen(h.fish, h.weight, f.sc);
-      const dir: 1 | -1 = h.sway > 0 ? 1 : -1;
+      const pose = projectFightFish(h, { boatX: W * 0.3, castX: bobX, scale: f.sc, waveY: f.waveY, depthPx: f.depthPx });
+      const { x: fishX, y: fishY, len, dir } = pose;
+      if (h.jump > 0) return pose.mouth;
+      ctx.save(); ctx.translate(fishX, fishY); ctx.rotate(pose.angle); ctx.scale(pose.turn, 1);
       if (glowOnly) {
-        drawFishGlow(ctx, h.fish, fishX + dir * len * 0.4, fishY, len, dir, t * 8, 1.3);
+        drawFishGlow(ctx, h.fish, 0, 0, len, dir, h.motion.swimPhase, 1.3);
         if (e.hookDepth > 30) {
           ctx.save();
           ctx.globalAlpha = clamp((e.hookDepth - 30) / 200, 0, 0.75);
-          drawFish(ctx, h.fish, fishX + dir * len * 0.4, fishY, len, dir, { wag: t * (6 + h.intensity * 14), variant: h.variant });
+          drawFish(ctx, h.fish, 0, 0, len, dir, { wag: h.motion.swimPhase, variant: h.variant });
           ctx.restore();
         }
       } else {
@@ -681,14 +683,15 @@ export class Scene {
           ctx.strokeStyle = `rgba(227,201,150,${0.35 + Math.sin(t * 16) * 0.15})`;
           ctx.lineWidth = 1.2;
           ctx.beginPath();
-          ctx.ellipse(fishX + dir * len * 0.4, fishY, len * 0.6 + 8, len * 0.23 + 6, 0, 0, Math.PI * 2);
+          ctx.ellipse(0, 0, len * 0.6 + 8, len * 0.23 + 6, 0, 0, Math.PI * 2);
           ctx.stroke();
           ctx.restore();
         }
-        drawFish(ctx, h.fish, fishX + dir * len * 0.4, fishY, len, dir, { wag: t * (6 + h.intensity * 14), variant: h.variant });
+        drawFish(ctx, h.fish, 0, 0, len, dir, { wag: h.motion.swimPhase, variant: h.variant });
         if (Math.random() < f.dt * 8 * h.intensity) this.bubbles.push({ x: fishX, y: fishY, r: 1 + Math.random() * 3, v: 40 + Math.random() * 40 });
       }
-      return [fishX, fishY];
+      ctx.restore();
+      return pose.mouth;
     }
     if (e.phase === "bite" && e.pendingFish && !glowOnly) {
       const fi = e.pendingFish.fish;
@@ -700,24 +703,18 @@ export class Scene {
   }
 
   private drawJump(f: Frame, bobX: number) {
-    const { ctx, e, W, t, sY } = f;
+    const { ctx, e, W } = f;
     const h = e.hooked;
     if (!h || h.jump <= 0) return;
     const p = 1 - h.jump / JUMP_TIME;
-    const len = fishScreenLen(h.fish, h.weight, f.sc);
-    const k = clamp(h.line / h.startLine, 0, 1.3);
-    const bx = W * 0.3;
-    const x = bx + 60 + k * (bobX - bx - 60) + (p - 0.5) * len * 1.2;
-    const jh = (50 + Math.min(110, len * 0.8)) * f.sc;
-    const y = f.waveY(x) - Math.sin(p * Math.PI) * jh;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(-Math.cos(p * Math.PI) * 0.9);
-    drawFish(ctx, h.fish, 0, 0, len, 1, { wag: t * 20, variant: h.variant });
+    const pose = projectFightFish(h, { boatX: W * 0.3, castX: bobX, scale: f.sc, waveY: f.waveY, depthPx: f.depthPx });
+    ctx.save(); ctx.translate(pose.x, pose.y); ctx.rotate(pose.angle); ctx.scale(pose.turn, 1);
+    drawFish(ctx, h.fish, 0, 0, pose.len, pose.dir, { wag: h.motion.swimPhase, variant: h.variant });
     ctx.restore();
-    if (Math.random() < f.dt * 30) this.sprays.push({ x: x - len * 0.4, y, vx: (Math.random() - 0.5) * 60, vy: -Math.random() * 40, t: 0 });
-    if (p < 0.1 || p > 0.9) {
-      for (let i = 0; i < 3; i++) this.sprays.push({ x: x + (Math.random() - 0.5) * len, y: sY, vx: (Math.random() - 0.5) * 140, vy: -80 - Math.random() * 140, t: 0 });
+    if (Math.random() < f.dt * 22) this.sprays.push({ x: pose.x, y: pose.y, vx: h.motion.velocity * 8, vy: -30 - Math.random() * 35, t: 0 });
+    // Rate, not a fixed number per rendered frame (same spray budget at 30/120 fps).
+    if ((p < 0.1 || p > 0.9) && Math.random() < f.dt * 45) {
+      this.sprays.push({ x: pose.x, y: f.waveY(pose.x), vx: (Math.random() - 0.5) * 140, vy: -80 - Math.random() * 140, t: 0 });
     }
   }
 
@@ -821,33 +818,32 @@ export class Scene {
       const h = e.hooked;
       const tension = h.tension;
       ctx.strokeStyle = tension > 0.9 ? "rgba(255,120,100,0.95)" : "rgba(250,250,250,0.85)";
-      ctx.lineWidth = 1.2 + tension * 0.6;
+      ctx.lineWidth = 0.8 + Math.min(1.2, tension) * 0.35;
       if (h.jump > 0) {
-        const p = 1 - h.jump / JUMP_TIME;
-        const len = fishScreenLen(h.fish, h.weight, f.sc);
-        const k = clamp(h.line / h.startLine, 0, 1.3);
-        const x = f.W * 0.3 + 60 + k * (bobX - f.W * 0.3 - 60) + (p - 0.5) * len * 1.2;
-        const y = f.waveY(x) - Math.sin(p * Math.PI) * (50 + Math.min(110, len * 0.8)) * f.sc;
-        const bx = x - len * 0.9;
-        const by = f.waveY(bx);
-        ctx.beginPath();
-        ctx.moveTo(tip[0], tip[1]);
-        ctx.quadraticCurveTo((tip[0] + bx) / 2, Math.max(tip[1], by) + 10, bx, by - 2);
-        ctx.lineTo(x + len * 0.3, y);
+        // The same mouth point as the airborne body — no second jump formula.
+        ctx.beginPath(); ctx.moveTo(...tip);
+        const slack = Math.max(0, h.motion.lineOut - h.line);
+        ctx.quadraticCurveTo((tip[0] + fishPos[0]) / 2, (tip[1] + fishPos[1]) / 2 + (1 - Math.min(1, tension)) * 18 + Math.min(35, slack * 8), ...fishPos);
         ctx.stroke();
-        // поплавок подскакивает вслед за прыжком
-        this.drawBobber(ctx, bx, by - 2 - Math.sin(p * Math.PI) * 6, false, t, Math.atan2(y - by, x - bx) * 0.4);
       } else {
-        const entryX = (tip[0] + fishPos[0]) / 2 + 20;
+        // Intersect the tip→mouth ray with the actual water surface.
+        let entryX = (tip[0] + fishPos[0]) / 2;
+        for (let i = 0; i < 3; i++) {
+          const u = clamp((f.waveY(entryX) - tip[1]) / Math.max(1, fishPos[1] - tip[1]), 0, 1);
+          entryX = tip[0] + (fishPos[0] - tip[0]) * u;
+        }
         const entryY = f.waveY(entryX);
         ctx.beginPath();
         ctx.moveTo(tip[0], tip[1]);
-        const sag = (1 - clamp(tension, 0, 1)) * 30;
+        const sag = (1 - clamp(tension, 0, 1)) * 12 + Math.min(40, Math.max(0, h.motion.lineOut - h.line) * 10);
         ctx.quadraticCurveTo((tip[0] + entryX) / 2, (tip[1] + entryY) / 2 + sag, entryX, entryY);
-        ctx.lineTo(fishPos[0], fishPos[1]);
+        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(entryX, entryY);
+        ctx.strokeStyle = tension > 1 ? "rgba(240,136,110,0.72)" : "rgba(207,234,239,0.58)";
+        ctx.quadraticCurveTo((entryX + fishPos[0]) / 2, (entryY + fishPos[1]) / 2 + sag * 0.7, fishPos[0], fishPos[1]);
         ctx.stroke();
         // поплавок остаётся на леске: наклоняется к рыбе и притапливается по натяжению
-        const dive = clamp(tension, 0, 1.1) * 4.5 + h.intensity * 1.5 + Math.sin(t * (6 + h.intensity * 10)) * h.intensity * 1.8;
+        const dive = clamp(tension, 0, 1.1) * 4.5 + h.intensity * 1.5 + Math.sin(h.motion.swimPhase) * h.intensity * 1.2;
         const lean = clamp(Math.atan2(fishPos[1] - entryY, fishPos[0] - entryX) - Math.PI / 2, -1.1, 1.1) * clamp(tension, 0.2, 1);
         this.drawBobber(ctx, entryX, entryY + dive, h.overload > 0.05, t, lean);
         if (h.running && Math.random() < f.dt * 3) this.rings.push({ x: entryX, t: 0, s: 1.4 });
@@ -937,33 +933,27 @@ export class Scene {
     if (this.bubbles.length > 220) this.bubbles.splice(0, this.bubbles.length - 220);
   }
 
+  private drawPrecipitation(f: Frame) {
+    const o = {
+      x0: 0, x1: f.W, top: -60, bottom: f.sY + f.amp + 6,
+      floor: f.waveY, horizon: f.hY,
+      wind: f.atmo.wind * f.atmo.windDir * 26 * f.sc, s: f.sc,
+      q: clamp(Math.round(f.quality), 0, 2) as 0 | 1 | 2,
+      color: f.atmo.palette.cloud,
+    };
+    const rain = { ...o, intensity: this.gfx.precip ? f.atmo.rain : 0 };
+    const snow = { ...o, intensity: this.gfx.precip ? f.atmo.snow : 0 };
+    this.rain.step(rain, f.dt); this.snowfall.step(snow, f.dt);
+    if (this.gfx.precip) {
+      this.rain.draw(f.ctx, rain); this.snowfall.draw(f.ctx, snow);
+    }
+  }
+
   private drawWeather(f: Frame) {
     const { ctx, W, H, sY, cam, t, atmo, sc } = f;
-    const surf = sY - cam;
-    const q = clamp(Math.round(f.quality), 0, 2) as 0 | 1 | 2;
+    const surf = sY - clamp(this.zoom, 1, 2) * cam;
     const windPx = atmo.wind * atmo.windDir * 26 * sc;
     if (surf > 0) {
-      const bottom = Math.min(H, surf + 32 * sc);
-      const opts = {
-        t, x0: 0, x1: W, top: 0, bottom,
-        floor: (x: number) => f.waveY(x) - cam,
-        wind: windPx, s: sc, q, near: false,
-      };
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(0, 0, W, Math.min(H, surf + 6));
-      ctx.clip();
-      if (this.gfx.precip && atmo.rain > 0.02) {
-        const color = atmo.palette.cloud;
-        drawRain(ctx, { ...opts, intensity: atmo.rain, color });
-        drawRain(ctx, { ...opts, near: true, intensity: atmo.rain, color });
-      }
-      if (this.gfx.precip && atmo.snow > 0.02) {
-        drawSnow(ctx, { ...opts, intensity: atmo.snow, color: [245, 249, 255] });
-        drawSnow(ctx, { ...opts, near: true, intensity: atmo.snow, color: [252, 254, 255] });
-      }
-      ctx.restore();
-      if (this.gfx.precip && atmo.rain > 0.02) drawRainRings(ctx, t, 0, W, (x) => f.waveY(x) - cam, atmo.rain, sc, q);
       if (atmo.leaves > 0.02 && surf > 8) drawLeaves(ctx, t, 0, W, 0, Math.min(H, surf), windPx, atmo.leaves, "leaf", sc);
       if (atmo.petals > 0.02 && surf > 8) drawLeaves(ctx, t, 0, W, 0, Math.min(H, surf), windPx * 0.6, atmo.petals, "petal", sc);
     }

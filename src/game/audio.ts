@@ -978,7 +978,7 @@ export class GameAudio {
     // снасть
     const h = e.hooked;
     if (h && e.phase === "fight" && !e.paused) {
-      const lineLength = finite(h.line, 0);
+      const lineLength = finite(h.motion?.lineOut ?? h.line, 0);
       const tension = Math.max(0, finite(h.tension, 0));
       const dLine = lineLength - this.lastLine;
       this.lastLine = lineLength;
