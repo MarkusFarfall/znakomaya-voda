@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Engine, type TravelMode, type Trip } from "@/game/engine";
+import { frameDeltaSeconds } from "@/game/render/util";
 import { Scene } from "@/game/render/scene";
 import { LOC_BY_ID, PORT_BY_ID, SPOT_BY_ID } from "@/game/world";
 import { Icon, MiscIcon } from "./Icons";
+import { useGameDialog } from "./Dialog";
 import { fmt } from "./Panels";
 
 export const tripName = (t: Trip) => (t.kind === "port" ? PORT_BY_ID[t.port].name : LOC_BY_ID[t.loc].name);
@@ -18,6 +20,7 @@ export const animSeconds = (e: Engine, t: Trip, mode: TravelMode) => {
 };
 
 export function TravelChoice({ engine, trip, onCancel, onGo }: { engine: Engine; trip: Trip; onCancel: () => void; onGo: (mode: TravelMode) => void }) {
+  const dialog = useGameDialog(onCancel);
   const b = engine.boat;
   const opts: { mode: TravelMode; title: string; sub: string; icon: "wave" | "fuel" }[] = engine.canMotor
     ? [
@@ -27,8 +30,8 @@ export function TravelChoice({ engine, trip, onCancel, onGo }: { engine: Engine;
     : [{ mode: "sail", title: b.style === "yacht" ? "Под парусом" : "На вёслах", sub: "Судно без мотора — только своим ходом", icon: "wave" }];
   const cooler = engine.s.cooler.length;
   return (
-    <div className="fade-in absolute inset-0 z-[55] flex min-w-0 max-w-[100vw] items-end justify-center overflow-x-hidden bg-[#02050a]/70 backdrop-blur-[3px] sm:items-center sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="sheet reveal safe-pad min-w-0 max-w-full w-full !rounded-none overflow-x-hidden p-6 sm:!rounded-[3px] sm:max-w-[560px] sm:p-8">
+    <div className="zv-ui game-travel-choice fade-in absolute inset-0 z-[55] flex min-w-0 max-w-[100vw] items-end justify-center overflow-x-hidden bg-[#02050a]/70 backdrop-blur-[3px] sm:items-center sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
+      <div ref={dialog} role="dialog" aria-modal="true" aria-label={`Переход: ${tripName(trip)}`} data-game-dialog tabIndex={-1} className="sheet reveal safe-pad min-w-0 max-w-full w-full !rounded-none overflow-x-hidden p-6 sm:!rounded-[3px] sm:max-w-[560px] sm:p-8">
         <div className="flex min-w-0 items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="truncate label-brass">{trip.kind === "port" ? "Курс в порт" : "Выход в море"}</div>
@@ -47,7 +50,7 @@ export function TravelChoice({ engine, trip, onCancel, onGo }: { engine: Engine;
             const block = engine.tripBlock(trip, o.mode);
             const secs = Math.round(animSeconds(engine, trip, o.mode));
             return (
-              <button key={o.mode} disabled={!!block} onClick={() => onGo(o.mode)} className="cell cell-hover group flex min-w-0 items-center gap-4 p-4 text-left disabled:cursor-not-allowed disabled:opacity-45">
+              <button key={o.mode} disabled={!!block} onClick={() => onGo(o.mode)} className="game-travel-option cell cell-hover group min-w-0 items-center gap-4 p-4 text-left disabled:cursor-not-allowed disabled:opacity-45">
                 <span className="flex h-12 w-12 shrink-0 items-center justify-center border border-[var(--line-2)] text-[var(--brass)] group-hover:border-[var(--brass)]">
                   {o.icon === "fuel" ? <MiscIcon name="fuel" size={24} /> : <Icon name="wave" size={24} />}
                 </span>
@@ -123,11 +126,13 @@ export function TravelOverlay({ engine, trip, mode, onDone, quality = 1, model3d
     const t0 = performance.now();
     let last = t0;
     let raf = 0;
+    let doneTimer = 0;
+    doneRef.current = false;
     const cruise = motor ? 230 : 60;
     const loop = (now: number) => {
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
-      const el = (now - t0) / 1000;
+      const dt = frameDeltaSeconds(now, last);
+      last = Math.max(last, now);
+      const el = Math.max(0, (now - t0) / 1000);
       const k = Math.min(1, el / dur);
       // разгон и торможение
       const ease = Math.min(1, 0.35 + el / 1.2) * Math.min(1, (dur - el) / 1.2 + 0.35);
@@ -139,7 +144,7 @@ export function TravelOverlay({ engine, trip, mode, onDone, quality = 1, model3d
       if (k >= 1) {
         if (!doneRef.current) {
           doneRef.current = true;
-          setTimeout(onDone, 450);
+          doneTimer = window.setTimeout(onDone, 450);
         }
         return;
       }
@@ -148,6 +153,7 @@ export function TravelOverlay({ engine, trip, mode, onDone, quality = 1, model3d
     raf = requestAnimationFrame(loop);
     return () => {
       cancelAnimationFrame(raf);
+      window.clearTimeout(doneTimer);
       window.removeEventListener("resize", resize);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps

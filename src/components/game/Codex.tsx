@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useGameDialog } from './Dialog';
 import { FishIcon } from './FishIcon';
 import { Aquarium } from './Aquarium';
 import {
@@ -35,6 +36,15 @@ export function Codex({ codex, onClose }: { codex?: Record<string, CodexEntry>; 
   const [rarity, setRarity] = useState<Rarity | 'all'>('all');
   const [query, setQuery] = useState('');
   const [hover, setHover] = useState<string | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [compact, setCompact] = useState(false);
+  const dialog = useGameDialog(onClose, !!onClose);
+  useEffect(() => {
+    const media = window.matchMedia('(max-width: 979px)');
+    const update = () => setCompact(media.matches);
+    update(); media.addEventListener('change', update);
+    return () => media.removeEventListener('change', update);
+  }, []);
 
   const known = (f: FishDef) => !codex || !!codex[f.id];
   const sorted = useMemo(
@@ -54,29 +64,16 @@ export function Codex({ codex, onClose }: { codex?: Record<string, CodexEntry>; 
     });
   }, [sorted, loc, rarity, query, codex]);
 
-  const sel = FISH.find((f) => f.id === selId) ?? sorted[0];
+  const sel = list.find((f) => f.id === selId) ?? list[0];
   const knownCount = codex ? FISH.filter((f) => codex[f.id]).length : FISH.length;
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
-      if (e.key === 'Escape') onClose?.();
-      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-        const i = list.findIndex((f) => f.id === selId);
-        const n = list[(i + (e.key === 'ArrowRight' ? 1 : -1) + list.length) % list.length];
-        if (n) setSelId(n.id);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [list, selId, onClose]);
 
   return (
-    <div className="zv-codex fixed inset-0 z-50 flex min-w-0 max-w-[100vw] flex-col overflow-hidden bg-[#050b12] text-[var(--color-ink)]">
+    <div ref={dialog} role={onClose ? "dialog" : undefined} aria-modal={onClose ? true : undefined} aria-label="Кодекс рыб" data-game-dialog={onClose ? true : undefined} tabIndex={-1} className="zv-ui zv-codex fixed inset-0 z-50 flex min-w-0 max-w-[100vw] flex-col overflow-hidden bg-[#050b12] text-[var(--color-ink)]">
       {/* шапка */}
-      <header className="flex min-w-0 flex-wrap items-center gap-3 overflow-x-hidden border-b border-[var(--line)] px-4 py-3 min-[820px]:px-6">
+      <header className="codex-header flex min-w-0 flex-wrap items-center gap-3 overflow-x-hidden border-b border-[var(--line)] px-4 py-3 min-[820px]:px-6">
         {onClose && (
-          <button onClick={onClose} className="btn btn-quiet btn-sm">
+          <button onClick={onClose} data-dialog-focus className="btn btn-quiet btn-sm">
             ← Назад
           </button>
         )}
@@ -93,12 +90,12 @@ export function Codex({ codex, onClose }: { codex?: Record<string, CodexEntry>; 
             )}
           </div>
         </div>
-        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Название или латынь…" className="field !h-9 !w-full min-[520px]:!w-[220px] !text-[13px]" />
+        <input aria-label="Поиск рыбы" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Название или латынь…" className="field !h-9 !w-full min-[520px]:!w-[220px] !text-[13px]" />
       </header>
 
       {/* фильтры */}
-      <div className="flex flex-col gap-2 border-b border-[var(--line)] px-4 py-2.5 min-[820px]:px-6">
-        <div className="zv-scroll-x zv-fade-x flex gap-1.5 overflow-x-auto pb-0.5">
+      <div className="codex-filters flex flex-col gap-1 border-b border-[var(--line)] px-4 py-2.5 min-[820px]:px-6">
+        <div className="codex-filter-row zv-scroll-x" role="group" aria-label="Акватория">
           <Chip on={loc === 'all'} onClick={() => setLoc('all')}>
             Все акватории
           </Chip>
@@ -108,7 +105,7 @@ export function Codex({ codex, onClose }: { codex?: Record<string, CodexEntry>; 
             </Chip>
           ))}
         </div>
-        <div className="flex flex-wrap gap-1.5">
+        <div className="codex-filter-row zv-scroll-x" role="group" aria-label="Редкость">
           <Chip on={rarity === 'all'} onClick={() => setRarity('all')}>
             Любая редкость
           </Chip>
@@ -123,16 +120,28 @@ export function Codex({ codex, onClose }: { codex?: Record<string, CodexEntry>; 
       <div className="flex min-h-0 min-w-0 flex-1">
         {/* сетка */}
         <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain p-3 min-[820px]:p-5">
-          {list.length === 0 && <p className="py-16 text-center text-sm dim">Ничего не нашлось. Попробуйте другую акваторию.</p>}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2.5">
+          {list.length === 0 && <div className="codex-empty"><p className="text-sm muted">Ничего не нашлось. Измените запрос или фильтры.</p><button className="btn btn-quiet" onClick={() => { setQuery(''); setLoc('all'); setRarity('all'); }}>Сбросить фильтры</button></div>}
+          <div className="codex-grid" onKeyDown={e => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+            const cards = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('.zv-fish-card')];
+            const index = cards.indexOf(document.activeElement as HTMLButtonElement);
+            if (index < 0) return;
+            e.preventDefault();
+            const next = e.key === 'Home' ? 0 : e.key === 'End' ? cards.length - 1 : (index + (e.key === 'ArrowRight' ? 1 : -1) + cards.length) % cards.length;
+            cards[next]?.focus();
+            if (list[next]) setSelId(list[next].id);
+          }}>
             {list.map((f) => {
               const k = known(f);
-              const on = f.id === sel.id;
+              const on = f.id === sel?.id;
               const entry = codex?.[f.id];
               return (
                 <button
                   key={f.id}
-                  onClick={() => setSelId(f.id)}
+                  onClick={() => { setSelId(f.id); setDetailOpen(true); }}
+                  aria-pressed={on}
+                  aria-label={k ? f.name : `Неизвестный вид: ${LOC_NAMES[f.loc[0]]}`}
+                  aria-haspopup={compact ? 'dialog' : undefined}
                   onMouseEnter={() => setHover(f.id)}
                   onMouseLeave={() => setHover(null)}
                   className={`zv-fish-card cell cell-hover group relative flex flex-col items-center overflow-hidden px-2 pb-2.5 pt-3 text-center ${on ? '!border-[var(--brass)]' : ''}`}
@@ -152,31 +161,25 @@ export function Codex({ codex, onClose }: { codex?: Record<string, CodexEntry>; 
 
         {/* карточка вида — десктоп */}
         <aside className="hidden w-[440px] shrink-0 border-l border-[var(--line)] min-[980px]:block">
-          <FishCard key={sel.id} fish={sel} known={known(sel)} entry={codex?.[sel.id]} />
+          {!compact && sel ? <FishCard key={sel.id} fish={sel} known={known(sel)} entry={codex?.[sel.id]} /> : <p className="codex-empty muted">Выберите вид в коллекции</p>}
         </aside>
       </div>
 
       {/* карточка вида — телефон */}
-      <MobileCard fish={sel} known={known(sel)} entry={codex?.[sel.id]} />
+      {compact && detailOpen && sel && <MobileCard fish={sel} known={known(sel)} entry={codex?.[sel.id]} onClose={() => setDetailOpen(false)} />}
     </div>
   );
 }
 
-function MobileCard({ fish, known, entry }: { fish: FishDef; known: boolean; entry?: CodexEntry }) {
-  const [open, setOpen] = useState(false);
-  const [lastId, setLastId] = useState(fish.id);
-  if (fish.id !== lastId) {
-    setLastId(fish.id);
-    setOpen(true);
-  }
-  if (!open) return null;
+function MobileCard({ fish, known, entry, onClose }: { fish: FishDef; known: boolean; entry?: CodexEntry; onClose: () => void }) {
+  const dialog = useGameDialog(onClose);
   return (
-    <div className="fixed inset-0 z-[60] flex min-w-0 max-w-[100vw] flex-col overflow-x-hidden bg-[rgba(3,8,14,0.6)] backdrop-blur-sm min-[980px]:hidden" onClick={() => setOpen(false)}>
-      <div className="sheet zv-sheet-up mt-auto min-w-0 max-w-full max-h-[88dvh] w-full overflow-hidden rounded-t-[14px]" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-end px-3 pt-2">
-          <button onClick={() => setOpen(false)} className="dim px-2 text-xl hover:text-white" aria-label="Закрыть">
-            ×
-          </button>
+    <div className="codex-detail-overlay" onPointerDown={e => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={dialog} role="dialog" aria-modal="true" aria-label={known ? fish.name : 'Неизвестный вид'} data-game-dialog tabIndex={-1} className="sheet codex-detail-sheet">
+        <div className="relative flex shrink-0 items-center justify-between gap-3 px-4 pb-2 pt-4">
+          <span aria-hidden="true" className="codex-detail-handle" />
+          <span className="label-brass">Карточка вида</span>
+          <button onClick={onClose} data-dialog-focus className="iconbtn" aria-label="Закрыть карточку">×</button>
         </div>
         <FishCard key={fish.id} fish={fish} known={known} entry={entry} />
       </div>
@@ -193,7 +196,7 @@ function FishCard({ fish: f, known, entry }: { fish: FishDef; known: boolean; en
   const mult = variant ? VARIANT_INFO[variant].mult : 1;
 
   return (
-    <div className="flex h-full min-w-0 max-w-full flex-col overflow-x-hidden overflow-y-auto overscroll-contain">
+    <div className="codex-fish-details flex h-full min-w-0 max-w-full flex-col overflow-x-hidden overflow-y-auto overscroll-contain">
       <div className="relative">
         <Aquarium fish={f} variant={variant} silhouette={!known} depth={depth} animate={animate} className="h-[250px] w-full" />
         <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2">
@@ -326,7 +329,8 @@ function Chip({ on, onClick, children, color }: { on: boolean; onClick: () => vo
   return (
     <button
       onClick={onClick}
-      className={`shrink-0 whitespace-nowrap rounded-[2px] border px-2.5 py-1 text-[11px] transition-colors ${on ? 'border-[var(--brass)] bg-[var(--brass-soft)] text-[var(--brass-2)]' : 'border-[var(--line)] text-[var(--muted)] hover:border-[var(--line-2)] hover:text-white'}`}
+      aria-pressed={on}
+      className={`codex-chip shrink-0 whitespace-nowrap rounded-[2px] border px-2.5 py-1 text-[11px] transition-colors ${on ? 'border-[var(--brass)] bg-[var(--brass-soft)] text-[var(--brass-2)]' : 'border-[var(--line)] text-[var(--muted)] hover:border-[var(--line-2)] hover:text-white'}`}
     >
       {color && <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle" style={{ background: color }} />}
       {children}

@@ -420,30 +420,28 @@ export function cypress(f: PF, x: number, y: number, h: number, lean: number) {
   }
 }
 
-export function mountainRidge(f: PF, baseY: number, hMax: number, seed: number, col: string, sharp = 1, x0 = 0, x1 = f.W) {
+export function ridgePath(f: PF, baseY: number, hMax: number, seed: number, sharp = 1, x0 = 0, x1 = f.W) {
   const { ctx } = f;
-  ctx.fillStyle = col;
-  ctx.beginPath();
-  ctx.moveTo(x0, baseY + 2);
-  for (let x = x0; x <= x1; x += 6) {
+  const point = (x: number) => {
     const q = x / f.W;
     const n = Math.sin(q * 5.1 + seed) * 0.5 + Math.sin(q * 13.7 + seed * 2.3) * 0.3 + Math.sin(q * 31 + seed * 4.1) * 0.2 * sharp;
     ctx.lineTo(x, baseY - hMax * (0.55 + n * 0.45));
-  }
-  ctx.lineTo(x1, baseY + 2);
-  ctx.fill();
+  };
+  ctx.beginPath(); ctx.moveTo(x0, baseY + 2);
+  for (let x = x0; x < x1; x += 6) point(x);
+  point(x1); ctx.lineTo(x1, baseY + 2); ctx.closePath();
+}
+
+export function mountainRidge(f: PF, baseY: number, hMax: number, seed: number, col: string, sharp = 1, x0 = 0, x1 = f.W) {
+  f.ctx.fillStyle = col;
+  ridgePath(f, baseY, hMax, seed, sharp, x0, x1);
+  f.ctx.fill();
 }
 
 /** Snow is clipped inside the same ridge path, never a polygon floating in the sky. */
 export function snowCaps(f: PF, baseY: number, hMax: number, seed: number, col: string, sharp: number, level: number) {
   const { ctx, W, H, sc } = f;
-  ctx.save(); ctx.beginPath(); ctx.moveTo(0, baseY + 2);
-  for (let x = 0; x <= W; x += 6) {
-    const q = x / W;
-    const n = Math.sin(q * 5.1 + seed) * 0.5 + Math.sin(q * 13.7 + seed * 2.3) * 0.3 + Math.sin(q * 31 + seed * 4.1) * 0.2 * sharp;
-    ctx.lineTo(x, baseY - hMax * (0.55 + n * 0.45));
-  }
-  ctx.lineTo(W, baseY + 2); ctx.closePath(); ctx.clip();
+  ctx.save(); ridgePath(f, baseY, hMax, seed, sharp); ctx.clip();
   ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(W, 0);
   for (let x = W; x >= 0; x -= 6) {
     const q = x / W;

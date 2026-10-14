@@ -122,8 +122,11 @@ export function backdropReflection(f: PF, strength = 0.22) {
     ctx.translate(0, hY * 2 + 2); ctx.scale(1, -1);
     ctx.drawImage(ctx.canvas, sx, sy, sw, sh, 0, hY - h, W, h);
     ctx.restore();
-    // рябь разбивает отражение
-    for (let yy = hY + 2; yy < hY + h; yy += 3) { const q = (yy - hY) / h; ctx.fillStyle = hexA(f.A.palette.seaNear, 0.2 + q * 0.5); ctx.fillRect(Math.sin(yy * 0.4 + f.t * 2) * 5, yy, W, 1.3); }
+    // Soft depth falloff avoids regular scanlines / moiré at fractional mobile scales.
+    const fade = ctx.createLinearGradient(0, hY, 0, hY + h);
+    fade.addColorStop(0, hexA(f.A.palette.seaNear, 0.08));
+    fade.addColorStop(1, hexA(f.A.palette.seaNear, 0.78));
+    ctx.fillStyle = fade; ctx.fillRect(0, hY + 1, W, h);
   } catch { ctx.restore(); }
 }
 

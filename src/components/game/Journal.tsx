@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useGameDialog } from "./Dialog";
 import type { Engine } from "@/game/engine";
 import { FISH, FISH_BY_ID } from "@/game/fish";
 import { ACHIEVEMENTS, FINDS, MAX_LEVEL, PERKS, PERK_GROUPS, QUESTS, RANK_LEVEL, TOTAL_PERK_COST, levelFromXp, levelTitle, rankCost, spentPoints, xpForLevel } from "@/game/progress";
@@ -76,11 +77,12 @@ export function QuestTracker({ engine, onOpen }: { engine: Engine; onOpen: () =>
 }
 
 export function LetterModal({ engine, index, onClose }: { engine: Engine; index: number; onClose: () => void }) {
+  const dialog = useGameDialog(onClose, !!QUESTS[index]);
   const q = QUESTS[index];
   if (!q) return null;
   return (
-    <div className="fade-in absolute inset-0 z-50 flex min-w-0 max-w-[100vw] items-center justify-center overflow-x-hidden bg-[#02050a]/70 p-0 backdrop-blur-[2px] sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="paper reveal min-w-0 max-w-full max-h-[100dvh] w-full overflow-x-hidden overflow-y-auto px-6 py-7 sm:max-h-[94vh] sm:max-w-[560px] sm:px-12 sm:py-10">
+    <div className="zv-ui game-letter fade-in absolute inset-0 z-50 flex min-w-0 max-w-[100vw] items-center justify-center overflow-x-hidden bg-[#02050a]/70 p-0 backdrop-blur-[2px] sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
+      <div ref={dialog} role="dialog" aria-modal="true" aria-label={`Письмо: ${q.title}`} data-game-dialog tabIndex={-1} className="paper reveal min-w-0 max-w-full max-h-[100dvh] w-full overflow-x-hidden overflow-y-auto px-6 py-7 sm:max-h-[94vh] sm:max-w-[560px] sm:px-12 sm:py-10">
         <div className="flex min-w-0 items-center justify-between gap-4 text-[10px] uppercase tracking-[0.3em] text-[#6b5530]">
           <span className="shrink-0">Письмо {index + 1} из {QUESTS.length}</span>
           <span className="min-w-0 truncate text-right">{engine.s.name}</span>
@@ -101,12 +103,13 @@ export function LetterModal({ engine, index, onClose }: { engine: Engine; index:
 }
 
 export function FindModal({ engine }: { engine: Engine }) {
+  const dialog = useGameDialog(undefined, !!engine.lastFind);
   const f = engine.lastFind;
   if (!f) return null;
   const count = FINDS.filter((x) => engine.s.finds[x.id]).length;
   return (
-    <div className="fade-in absolute inset-0 z-30 flex min-w-0 max-w-[100vw] items-center justify-center overflow-x-hidden bg-[#02050a]/55 p-4" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="sheet reveal min-w-0 max-w-full w-full overflow-x-hidden p-8 text-center sm:max-w-[420px]">
+    <div className="zv-ui game-find fade-in absolute inset-0 z-30 flex min-w-0 max-w-[100vw] items-center justify-center overflow-x-hidden bg-[#02050a]/55 p-4" onPointerDown={(e) => e.stopPropagation()}>
+      <div ref={dialog} role="dialog" aria-modal="true" aria-label="Находка со дна" data-game-dialog tabIndex={-1} className="sheet reveal min-w-0 max-w-full w-full overflow-x-hidden p-8 text-center sm:max-w-[420px]">
         <div className="label-brass">{f.isNew ? `Новая находка · ${count} из ${FINDS.length}` : "Находка со дна"}</div>
         <div className="plate mx-auto my-6 flex h-36 w-36 items-center justify-center rounded-full">
           <Icon name={FIND_ICON[f.def.id]} size={64} strokeWidth={1} className="text-[#e3c996]" />
@@ -303,10 +306,10 @@ export function JournalModal({ engine, onClose, initial = "daily" }: { engine: E
   );
 }
 
-export function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+export function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label?: string }) {
   return (
-    <button type="button" onClick={() => onChange(!on)} className={`relative h-5 w-9 border transition ${on ? "border-[var(--brass)] bg-[var(--brass-soft)]" : "border-[var(--line-2)]"}`} aria-pressed={on}>
-      <span className={`absolute top-[3px] h-3 w-3 transition-all ${on ? "left-[19px] bg-[var(--brass)]" : "left-[3px] bg-white/30"}`} />
+    <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={() => onChange(!on)} className="game-switch">
+      <span aria-hidden="true" />
     </button>
   );
 }

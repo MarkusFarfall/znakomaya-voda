@@ -96,7 +96,7 @@ export function EventFeed({ director, onCue, onChoose, hidden, compact = false, 
 
   return (
     <div
-      className={`zv-feed pointer-events-none absolute z-30 flex flex-col gap-2 transition-opacity duration-500 left-3 right-3 top-[calc(max(0.75rem,env(safe-area-inset-top))+3.1rem)] min-[820px]:left-[clamp(2rem,5vw,5rem)] min-[820px]:right-auto min-[820px]:top-auto min-[820px]:bottom-8 min-[820px]:w-[340px] min-[820px]:flex-col-reverse ${
+      className={`zv-ui zv-feed pointer-events-none absolute z-30 flex flex-col gap-2 transition-opacity duration-500 left-3 right-3 top-[calc(max(0.75rem,env(safe-area-inset-top))+3.1rem)] min-[820px]:left-[clamp(2rem,5vw,5rem)] min-[820px]:right-auto min-[820px]:top-auto min-[820px]:bottom-8 min-[820px]:w-[340px] min-[820px]:flex-col-reverse ${
         hidden ? 'invisible pointer-events-none opacity-0' : 'visible opacity-100'
       }`}
       style={compact

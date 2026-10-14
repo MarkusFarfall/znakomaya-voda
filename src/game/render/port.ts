@@ -1,6 +1,8 @@
 import { TIME_SCALE, type Engine } from "../engine";
 import { FISH_BY_ID } from "../fish";
 import type { HotId } from "../types";
+import { ART } from "./boats/art";
+import { berthScale } from "./portTerrain";
 import { drawBoat } from "./boat";
 import { Boat3D } from "./boats3d/boat3d";
 import { drawEventFx, type FxCall, type FxScene } from "./eventFx";
@@ -39,6 +41,7 @@ export class PortScene {
   boat3dOn = false;
   precipEnabled = true;
   quality = 1;
+  reflectionsEnabled = true;
   hover: HotId | null = null;
   private rain = new PrecipitationField("rain");
   private snowfall = new PrecipitationField("snow");
@@ -81,6 +84,7 @@ export class PortScene {
         hotFish: e.hot.map(id => e.s.codex[id] ? FISH_BY_ID[id].name : "Неизвестный вид"),
         serviceHours: false, precipEnabled: this.precipEnabled,
         quality: clamp(Math.round(this.quality), 0, 2) as 0 | 1 | 2,
+        reflectionsEnabled: this.reflectionsEnabled,
       }, W, H, dt);
     } finally {
       ctx.restore();
@@ -94,7 +98,7 @@ export class PortScene {
     const a = e.atmosphere.state;
     const f: Frame = {
       ctx: p.ctx, e, loc: e.loc, spot: e.spot, atmo: a, weather: e.weather,
-      W: p.W, H: p.H, t: p.t, dt: p.dt, sc: p.sc * 0.9, sY: p.waterY + 4 * p.sc, hY: p.hY,
+      W: p.W, H: p.H, t: p.t, dt: p.dt, sc: berthScale(p.W, x, p.sc * 0.9, ART[e.boat.style].w * 28 * 1.08), sY: p.waterY + 4 * p.sc, hY: p.hY,
       night: p.night, day: a.day, golden: p.golden, cover: a.cover, fogK: a.fog,
       top: p.A.palette.skyTop, mid: p.A.palette.skyMid, hor: p.A.palette.skyHor,
       sunX: p.W * clamp((a.sunAz - 45) / 270, 0, 1), sunY: p.hY - Math.sin(a.sunElev * Math.PI / 180) * p.H * 0.42,

@@ -1,6 +1,6 @@
 import type { PF, PortKit } from '../portFrame';
 import { aerial, airplane, shoreLights } from '../portHorizon';
-import { barrel, bollard, crate, door, fishCrate, flag, hull, mountainRidge, person, pine, silhouettes, snowCaps, table, windowRect } from '../portParts';
+import { barrel, bollard, crate, door, fishCrate, flag, hull, mountainRidge, person, pine, ridgePath, silhouettes, snowCaps, table, windowRect } from '../portParts';
 import { hexA, mix } from '../util';
 
 /** Ганзейский пакгауз: узкий, высокий, вертикальная доска, крутой фронтон, подъёмная балка */
@@ -221,10 +221,12 @@ export const nordhavnKit: PortKit = {
     // дальние горы со снегом
     mountainRidge(f, hY + 2, H * 0.36, 2.2, dim(mix('#6a7a88', sky, 0.35), 0.6), 1.6);
     snowCaps(f, hY + 2, H * 0.36, 2.2, dim('#eef4f8', 0.82), 1.6, 0.21);
-    // ледник в седловине
+    // Glacier follows the mountain silhouette, never an ice polygon suspended in the sky.
+    ctx.save(); ridgePath(f, hY + 2, H * 0.36, 2.2, 1.6); ctx.clip();
     ctx.fillStyle = dim('#c8dce8', 0.5);
     ctx.beginPath(); ctx.moveTo(W * 0.52, hY - H * 0.25); ctx.quadraticCurveTo(W * 0.55, hY - H * 0.1, W * 0.5, hY - H * 0.02); ctx.lineTo(W * 0.62, hY - H * 0.02); ctx.quadraticCurveTo(W * 0.6, hY - H * 0.14, W * 0.6, hY - H * 0.26); ctx.fill();
     ctx.strokeStyle = hexA('#5a8ab0', 0.4); ctx.lineWidth = 1; for (let k = 0; k < 5; k++) { ctx.beginPath(); ctx.moveTo(W * (0.53 + k * 0.015), hY - H * 0.22); ctx.lineTo(W * (0.52 + k * 0.02), hY - H * 0.04); ctx.stroke(); }
+    ctx.restore();
     // ближние тёмные склоны и лес
     mountainRidge(f, hY + 2, H * 0.15, 5.1, dim('#3a4a52'), 1);
     ctx.fillStyle = dim('#1e2e24');

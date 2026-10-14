@@ -58,15 +58,17 @@ export function Aquarium({
     ro.observe(wrap.current!);
     resize();
     let raf = 0;
-    const t0 = performance.now();
-    let last = t0;
+    let last = performance.now();
+    let elapsed = 0;
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
     let wag = 0.6;
     const loop = (now: number) => {
       const { fish: f, variant: v, silhouette: sil, depth: dk, animate: an } = props.current;
-      const t = (now - t0) / 1000;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
-      if (an) wag += dt * (f.shape === 'eel' ? 3 : f.shape === 'ray' || f.shape === 'squid' ? 2.4 : 4.2);
+      if (an && !motion.matches) elapsed += dt;
+      const t = elapsed;
+      if (an && !motion.matches) wag += dt * (f.shape === 'eel' ? 3 : f.shape === 'ray' || f.shape === 'squid' ? 2.4 : 4.2);
       const [d0, d1] = f.depth;
       const meters = d0 + (d1 - d0) * dk;
       const dark = Math.min(0.92, Math.pow(Math.min(1, meters / 900), 0.55));

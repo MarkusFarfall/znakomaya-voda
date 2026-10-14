@@ -1,3 +1,4 @@
+import { miradorHillY, groundedFoot } from '../portTerrain';
 import type { PF, PortKit } from '../portFrame';
 import { aerial, airplane, cityGlow, shoreLights } from '../portHorizon';
 import { bollard, crate, cypress, dog, door, hull, lantern, notes, person, sign, silhouettes, table, windowRect } from '../portParts';
@@ -68,8 +69,8 @@ export const miradorKit: PortKit = {
   signage(f) {
     // буквы MIRADOR на холме
     const { ctx, W, H, hY, sc, dim } = f;
-    const txt = 'MIRADOR', x = W * 0.64, u = (x - W * 0.4) / (W * 0.65);
-    const yy = hY - H * 0.26 * 4 * u * (1 - u) * 0.5 - H * 0.03 * u - 6 * sc;
+    const txt = 'MIRADOR', x = W * 0.64;
+    const yy = miradorHillY(W, H, hY, x) + 12 * sc;
     ctx.font = `bold ${7 * sc}px Inter, sans-serif`; ctx.textAlign = 'center';
     ctx.fillStyle = dim(mix('#2a3a3a', f.A.palette.skyHor, 0.3), 0.7); ctx.fillText(txt, x + 1, yy + 1);
     ctx.fillStyle = dim(mix('#f4f2ec', f.A.palette.skyHor, 0.25), 0.7); ctx.fillText(txt, x, yy);
@@ -171,7 +172,7 @@ export const miradorKit: PortKit = {
       const red = dim(mix('#c0452b', sky, 0.3), 0.7);
       ctx.strokeStyle = red; ctx.lineWidth = 2.4 * sc; ctx.beginPath(); ctx.moveTo(x1, deck); ctx.lineTo(x2, deck); ctx.stroke();
       ctx.fillStyle = red;
-      for (const tx of tw) { ctx.fillRect(tx - 3 * sc, deck - H * 0.16, 6 * sc, H * 0.16 + 10 * sc); ctx.fillRect(tx - 5 * sc, deck - H * 0.12, 10 * sc, 2 * sc); ctx.fillRect(tx - 5 * sc, deck - H * 0.06, 10 * sc, 2 * sc); }
+      for (const tx of tw) { ctx.fillRect(tx - 3 * sc, deck - H * 0.16, 6 * sc, hY - deck + H * 0.16 + 3 * sc); ctx.fillRect(tx - 5 * sc, deck - H * 0.12, 10 * sc, 2 * sc); ctx.fillRect(tx - 5 * sc, deck - H * 0.06, 10 * sc, 2 * sc); }
       ctx.lineWidth = 1.2 * sc; ctx.beginPath(); ctx.moveTo(x1, deck - H * 0.06); ctx.quadraticCurveTo((x1 + tw[0]) / 2, deck + 4, tw[0], deck - H * 0.16);
       ctx.quadraticCurveTo((tw[0] + tw[1]) / 2, deck + H * 0.02, tw[1], deck - H * 0.16); ctx.quadraticCurveTo((tw[1] + x2) / 2, deck + 4, x2, deck - H * 0.06); ctx.stroke();
       ctx.lineWidth = 0.6; for (let x = tw[0]; x < tw[1]; x += 7 * sc) { const u = (x - tw[0]) / (tw[1] - tw[0]); const cy = deck - H * 0.16 + (H * 0.16 + H * 0.02) * 4 * u * (1 - u) * 0.5; ctx.beginPath(); ctx.moveTo(x, cy); ctx.lineTo(x, deck); ctx.stroke(); }
@@ -181,7 +182,11 @@ export const miradorKit: PortKit = {
     ctx.fillStyle = dim('#4e5a66', 0.7);
     ctx.beginPath(); ctx.moveTo(W * 0.4, hY + 2); ctx.quadraticCurveTo(W * 0.72, hY - H * 0.26, W * 1.05, hY - H * 0.05); ctx.lineTo(W, hY + 2); ctx.fill();
     const ladies: [number, number, string, string][] = [[0.52, 0.5, '#d8b0b8', '#f4f0e8'], [0.58, 0.72, '#9ab0c8', '#f4f0e8'], [0.645, 0.88, '#e8d8a0', '#7a5a4a'], [0.71, 0.97, '#b8c8a0', '#f4f0e8'], [0.775, 0.93, '#d8a080', '#f4f0e8'], [0.84, 0.78, '#a0b8c8', '#2a3a4a'], [0.9, 0.58, '#e0c8d8', '#f4f0e8'], [0.96, 0.38, '#c8b890', '#5a4a3a'], [0.62, 0.55, '#c8a8c8', '#f4f0e8'], [0.74, 0.65, '#a8c0b0', '#f4f0e8']];
-    ladies.forEach(([qx, k, c, tr], i) => { const x = W * qx; const u = (x - W * 0.4) / (W * 0.65); const hill = hY - H * 0.26 * 4 * u * (1 - u) * 0.5 - H * 0.03 * u; paintedLady(f, x, hill + 6 + (1 - k) * 18, (14 + f.h(i) * 6) * sc, (18 + f.h(i + 2) * 10) * sc, c, tr, i * 7); });
+    ladies.forEach(([qx, k, c, tr], i) => {
+      const x = W * qx, w = (14 + f.h(i) * 6) * sc;
+      const base = groundedFoot(px => miradorHillY(W, H, hY, px), x, w / 2, (2 + (1 - k) * 18) * sc);
+      paintedLady(f, x, base, w, (18 + f.h(i + 2) * 10) * sc, c, tr, i * 7);
+    });
     // кипарисы на обрыве справа
     for (let i = 0; i < 4; i++) cypress(f, W * (0.86 + i * 0.045), hY - H * 0.05 * (1 - i * 0.1) + 2, (30 + f.h(i) * 16) * sc, -8 - i * 2);
     // маяк с ревуном на мысу
@@ -386,7 +391,7 @@ export const miradorKit: PortKit = {
     hull(f, W * 0.26, waterY + 2 * sc, sc * 1.0, '#e8e4dc', '#3a5a4a', { bob: Math.sin(t * 1.1 + 2.1) * 1.5 * sc, wheelhouse: true, long: 1.05 });
     hull(f, W * 0.08, waterY + 2 * sc, sc * 0.8, '#f2f0ea', '#1a3a6a', { bob: Math.sin(t * 1.1 + 0.4) * 1.5 * sc, mast: true });
     // морской лев на ближнем понтоне у причала
-    const { ctx, dim } = f; const px = W * 0.6, py = waterY + 2 * sc + Math.sin(t * 1.3) * 1.5 * sc;
+    const { ctx, dim } = f; const px = W * 0.44, py = waterY + 2 * sc + Math.sin(t * 1.3) * 1.5 * sc;
     ctx.fillStyle = dim('#6a5a48'); ctx.fillRect(px - 16 * sc, py - 2 * sc, 32 * sc, 4 * sc);
     ctx.fillStyle = dim('#5a4a3a'); ctx.beginPath(); ctx.ellipse(px, py - 5 * sc, 9 * sc, 4 * sc, 0, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.ellipse(px + 8 * sc, py - 10 * sc + Math.sin(t * 0.7) * 2 * sc, 3.5 * sc, 3 * sc, 0.3, 0, Math.PI * 2); ctx.fill();
   },

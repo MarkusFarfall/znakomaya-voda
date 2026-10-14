@@ -1,5 +1,6 @@
 "use client";
 
+import { useGameDialog } from "./Dialog";
 import { useState } from "react";
 import type { Engine, Trip } from "@/game/engine";
 import type { Building, Hotspot } from "@/game/render/port";
@@ -27,14 +28,15 @@ function BuildingIcon({ b, size = 18 }: { b: Building | "sea" | "orders"; size?:
 const fmtH = (m: number) => (m >= 60 ? `${(m / 60).toFixed(1).replace(".", ",")} ч` : `${Math.round(m)} мин`);
 
 function DepartSheet({ engine, onClose, onTravel, onMap }: { engine: Engine; onClose: () => void; onTravel: (t: Trip) => void; onMap: () => void }) {
+  const dialog = useGameDialog(onClose);
   const s = engine.s;
   const port = engine.port;
   const last: Trip = { kind: "loc", loc: s.location, spot: s.spot };
   const lastOk = LOC_BY_ID[s.location].boatTier <= engine.boat.tier;
   const quote = (t: Trip) => engine.tripQuote(t, engine.canMotor ? "motor" : "sail");
   return (
-    <div className="fade-in absolute inset-0 z-30 flex min-w-0 max-w-[100vw] items-end justify-center overflow-x-hidden bg-[#02050a]/60 backdrop-blur-[2px] sm:items-center sm:p-4" onPointerDown={(e) => { e.stopPropagation(); onClose(); }}>
-      <div className="sheet reveal safe-bottom min-w-0 max-w-full max-h-[88dvh] w-full overflow-x-hidden overflow-y-auto !rounded-none p-5 sm:!rounded-[3px] sm:max-w-[620px] sm:p-7" onPointerDown={(e) => e.stopPropagation()}>
+    <div className="zv-ui game-travel-choice fade-in absolute inset-0 z-30 flex min-w-0 max-w-[100vw] items-end justify-center overflow-x-hidden bg-[#02050a]/60 backdrop-blur-[2px] sm:items-center sm:p-4" onPointerDown={(e) => { e.stopPropagation(); onClose(); }}>
+      <div ref={dialog} role="dialog" aria-modal="true" aria-label="Куда выходим?" data-game-dialog tabIndex={-1} className="sheet reveal safe-bottom min-w-0 max-w-full max-h-[88dvh] w-full overflow-x-hidden overflow-y-auto !rounded-none p-5 sm:!rounded-[3px] sm:max-w-[620px] sm:p-7" onPointerDown={(e) => e.stopPropagation()}>
         <div className="flex min-w-0 items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="truncate label-brass">Отплытие · {engine.boat.name}</div>
@@ -121,7 +123,7 @@ export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onC
   ];
 
   return (
-    <div className="hud-layer z-20" onPointerDown={(e) => e.stopPropagation()}>
+    <div className="zv-ui game-port hud-layer z-20" onPointerDown={(e) => e.stopPropagation()}>
       {/* шапка */}
       <div className="flex items-start justify-between gap-2">
         <div className="glass fade-in min-w-0 px-3 py-3 sm:px-4">

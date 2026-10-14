@@ -194,6 +194,7 @@ export default function Game() {
     sceneRef.current.boat3dOn = settings.model3d;
     portSceneRef.current.boat3dOn = settings.model3d;
     portSceneRef.current.precipEnabled = settings.gfx.precip;
+    portSceneRef.current.reflectionsEnabled = settings.gfx.refl;
     portSceneRef.current.quality = settings.quality;
     setBoat3dPref(settings.model3d);
   }, [settings.zoom, settings.gfx, settings.model3d, settings.quality]);
@@ -502,6 +503,7 @@ export default function Game() {
         if (ev.code !== "Escape") return;
         tgt.blur();
       }
+      if (tgt?.closest("[data-game-dialog]")) return;
       unlockAudio();
       if (travelling) return;
       if (ev.code === "Space") { ev.preventDefault(); if (!ev.repeat && !panel && !letter && !engine.lastCatch && !engine.lastFind && !engine.s.atPort && !tripReq) engine.pointerDown(); }
@@ -693,7 +695,7 @@ export default function Game() {
           {!view.compact && !engine.s.atPort && (
             <>
           {/* ───────── ЛЕВЫЙ ВЕРХ ───────── */}
-          <div className="absolute left-4 top-4 z-20 w-[300px] space-y-2">
+          <div className="zv-ui game-hud absolute left-4 top-4 z-20 w-[300px] space-y-2">
             <div className="glass px-4 pb-3 pt-3.5">
               <div className="label-brass">{engine.loc.name}</div>
               <div className="flex items-end justify-between gap-3">
@@ -745,7 +747,7 @@ export default function Game() {
           </div>
 
           {/* ───────── ПРАВЫЙ ВЕРХ ───────── */}
-          <div className="absolute right-4 top-4 z-20 flex w-[330px] flex-col items-stretch gap-2" onPointerDown={(e) => e.stopPropagation()}>
+          <div className="zv-ui game-hud absolute right-4 top-4 z-20 flex w-[330px] flex-col items-stretch gap-2" onPointerDown={(e) => e.stopPropagation()}>
             <div className="glass px-4 py-3">
               <div className="grid grid-cols-3 gap-3">
                 <div><div className="label">Средства</div><div className="num text-[17px] text-[var(--brass-2,#e3c996)]">{fmt(s.money)} ₽</div></div>
@@ -770,9 +772,9 @@ export default function Game() {
             </>
           )}
           {view.compact && !engine.s.atPort && (
-            <div className="hud-layer z-20">
+            <div className="zv-ui game-hud game-hud-compact hud-layer z-20">
               <div className="!pointer-events-none flex items-start justify-between gap-2">
-                <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { audio.ui(info ? "close" : "open"); setInfo((v) => !v); }} className={`glass pointer-events-auto relative flex min-w-0 max-w-[58vw] items-center gap-2.5 px-3 py-2 text-left ${info ? "!border-[var(--brass)]" : ""}`}>
+                <button onPointerDown={(e) => e.stopPropagation()} onClick={() => { audio.ui(info ? "close" : "open"); setInfo((v) => !v); }} className={`hud-overview glass pointer-events-auto relative flex min-w-0 max-w-[58vw] items-center gap-2.5 px-3 py-2 text-left ${info ? "!border-[var(--brass)]" : ""}`}>
                   <span className="num text-[18px] font-light leading-none text-[#f1ebdd]">{hh}<span className="opacity-50">:</span>{mm}</span>
                   <span className="h-6 w-px shrink-0 bg-[var(--line-2)]" />
                   <span className="min-w-0">
@@ -783,8 +785,8 @@ export default function Game() {
                   <span className="num hidden shrink-0 text-[11px] muted min-[420px]:inline">{engine.temperature > 0 ? "+" : ""}{engine.temperature}°</span>
                   {(events.length > 0 || engine.hasLetter) && <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[var(--brass)] shadow-[0_0_6px_var(--brass)]" />}
                 </button>
-                <div className="pointer-events-auto flex flex-col items-end gap-1.5" onPointerDown={(e) => e.stopPropagation()}>
-                  <div className="flex gap-1.5">
+                <div className="hud-toolbar pointer-events-auto flex flex-col items-end gap-1.5" onPointerDown={(e) => e.stopPropagation()}>
+                  <div className="hud-tools flex gap-1.5">
                     <button className="iconbtn" onClick={cycleCam} aria-label="Камера"><Icon name="target" size={16} /></button>
                     <button className="iconbtn" onClick={() => openPanel("journal")} aria-label="Журнал"><Icon name="journal" size={16} />{(engine.perkPoints > 0 || engine.hasLetter || engine.daily.tasks.some((t) => t.done && !t.claimed)) && <span className="dot" />}</button>
                     <button className="iconbtn" onClick={() => openPanel("codex")} aria-label="Кодекс"><Icon name="book" size={16} /></button>
@@ -902,7 +904,7 @@ export default function Game() {
           {!view.compact && !engine.s.atPort && (
             <>
           {/* ───────── НИЖНЯЯ ПАНЕЛЬ ───────── */}
-          <div className="absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-2 px-4 pb-4" onPointerDown={(e) => e.stopPropagation()}>
+          <div className="zv-ui game-controls absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-2 px-4 pb-4" onPointerDown={(e) => e.stopPropagation()}>
             {engine.tipNow && (
               <div key={engine.tipNow.id} className="tip glass flex max-w-[640px] items-start gap-3 px-4 py-2.5">
                 <span className="label-brass mt-0.5 shrink-0">Совет</span>
@@ -919,6 +921,7 @@ export default function Game() {
                 <span className="label shrink-0">Глубина</span>
                 <input
                   type="range"
+                  aria-label="Глубина ловли"
                   min={0}
                   max={1000}
                   disabled={!["idle", "charging"].includes(engine.phase)}
@@ -953,7 +956,7 @@ export default function Game() {
             </>
           )}
           {view.compact && !engine.s.atPort && (
-            <div className="absolute inset-x-0 bottom-0 z-20 px-2 pb-[max(8px,env(safe-area-inset-bottom))] pl-[max(8px,env(safe-area-inset-left))] pr-[max(8px,env(safe-area-inset-right))]" onPointerDown={(e) => e.stopPropagation()}>
+            <div className="zv-ui game-controls absolute inset-x-0 bottom-0 z-20 px-2 pb-[max(8px,env(safe-area-inset-bottom))] pl-[max(8px,env(safe-area-inset-left))] pr-[max(8px,env(safe-area-inset-right))]" onPointerDown={(e) => e.stopPropagation()}>
               {engine.tipNow && engine.phase !== "fight" && engine.phase !== "bite" && !engine.nibbling && (
                 <div key={engine.tipNow.id} className="tip glass mx-auto mb-1.5 flex max-w-[560px] items-start gap-2 px-3 py-2">
                   <span className="flex-1 text-[11px] leading-snug text-[#ddd7ca]">{engine.tipNow.text}</span>
@@ -965,6 +968,7 @@ export default function Game() {
                   <div className={`w-[128px] shrink-0 truncate text-[12px] ${engine.phase === "bite" ? "pulse-soft font-semibold uppercase tracking-[0.12em] text-[var(--brass-2,#e3c996)]" : "text-[#f1ebdd]"}`}>{stTitle}</div>
                   <input
                   type="range"
+                  aria-label="Глубина ловли"
                   min={0}
                   max={1000}
                   disabled={!["idle", "charging"].includes(engine.phase)}
@@ -997,6 +1001,7 @@ export default function Game() {
                     <span className="label shrink-0">Глубина</span>
                     <input
                   type="range"
+                  aria-label="Глубина ловли"
                   min={0}
                   max={1000}
                   disabled={!["idle", "charging"].includes(engine.phase)}

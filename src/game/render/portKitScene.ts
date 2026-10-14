@@ -16,6 +16,7 @@ export interface SceneState {
   serviceHours?: boolean;
   precipEnabled?: boolean;
   quality?: 0 | 1 | 2;
+  reflectionsEnabled?: boolean;
 }
 
 export type FxLayer = 'sky' | 'horizon' | 'under' | 'surface' | 'front';
@@ -66,8 +67,6 @@ export class PortKitScene {
   private t = 0;
   private windTravel = 0;
   private key = '';
-  private lastPid: PortId | null = null;
-  private arrive = 1;
   private walkers: Walker[] = [];
   private birds: [number, number, number][] = [];
   private clouds: [number, number, number, number][] = [];
@@ -133,8 +132,6 @@ export class PortKitScene {
     const layer = (name: FxLayer) => this.hooks.layer?.(name, frame);
 
     // инициализация при смене порта / размера
-    if (st.pid !== this.lastPid) { this.arrive = this.lastPid ? 0 : 1; this.lastPid = st.pid; }
-    this.arrive = Math.min(1, this.arrive + dt / 5);
     const key = `${st.pid}|${W}|${H}`;
     if (key !== this.key) {
       this.key = key;
@@ -281,7 +278,7 @@ export class PortKitScene {
     // ───── задник (берега, горы — перекрывают дальние суда) ─────
     kit.backdrop(frame);
     layer('horizon');
-    if (frame.quality > 0) backdropReflection(frame, 0.2);
+    if (frame.quality > 0 && st.reflectionsEnabled !== false) backdropReflection(frame, 0.2);
     depthHaze(frame);
     cloudShadows(frame, this.clouds, Math.round(this.clouds.length * A.cover));
     layer('under');
@@ -319,7 +316,7 @@ export class PortKitScene {
       kit.props(frame);
       kit.signage?.(frame);
     };
-    if (frame.quality > 0) {
+    if (frame.quality > 0 && st.reflectionsEnabled !== false) {
     ctx.save();
     ctx.beginPath(); ctx.rect(0, waterY, W, H - waterY); ctx.clip();
     ctx.translate(0, waterY * 2 + 2 * sc); ctx.scale(1, -1);
@@ -327,12 +324,10 @@ export class PortKitScene {
     frame.reflecting = true; drawTown(); frame.reflecting = false;
     ctx.restore();
     }
-    for (let yy = waterY + 2; yy < H; yy += 3 * sc) {
-      const q = (yy - waterY) / (H - waterY);
-      ctx.fillStyle = hexA(dim(mix(kit.pal.water[0], kit.pal.water[1], q), 0.7), 0.3 + q * 0.4);
-      const off = Math.sin(yy * 0.3 + t * 2.2) * 6 * sc;
-      ctx.fillRect(off, yy, W, 1.2 * sc);
-    }
+    const reflectionFade = ctx.createLinearGradient(0, waterY, 0, H);
+    reflectionFade.addColorStop(0, hexA(dim(kit.pal.water[0], 0.7), 0.12));
+    reflectionFade.addColorStop(1, hexA(dim(kit.pal.water[1], 0.7), 0.72));
+    ctx.fillStyle = reflectionFade; ctx.fillRect(0, waterY, W, H - waterY);
     const sh = ctx.createLinearGradient(0, waterY, 0, waterY + 26 * sc);
     sh.addColorStop(0, 'rgba(0,0,0,0.35)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = sh; ctx.fillRect(0, waterY, W, 26 * sc);
@@ -689,22 +684,17 @@ export class PortKitScene {
   }
 
   private dock(f: PF, kit: PortKit, dockX: number, boat: BoatDef) {
-    const { ctx, W, sc, quayY, waterY, dim, t } = f;
+    const { ctx, sc, quayY, waterY, dim, t } = f;
     ctx.fillStyle = dim(kit.pal.quay); ctx.fillRect(dockX - 70 * sc, quayY - 2 * sc, 140 * sc, 5 * sc);
     for (const dx of [-60, -20, 20, 60]) { ctx.fillStyle = dim(kit.pal.quayFace); ctx.fillRect(dockX + dx * sc, quayY, 5 * sc, waterY - quayY + 30 * sc); }
-    const bxFinal = dockX + 40 * sc;
-    const u = 1 - Math.pow(1 - this.arrive, 3);
-    const bx = bxFinal - (1 - u) * (bxFinal + 160 * sc);
-    const moving = u < 0.995;
-    this.hot.push({ id: 'dock', x: bxFinal, y: waterY - 60 * sc });
-    if (moving && !this.hooks.playerBoat) for (let i = 0; i < 12; i++) { const q = i / 12; ctx.fillStyle = `rgba(255,255,255,${(0.35 * (1 - q) * (1 - f.night * 0.5)).toFixed(3)})`; ctx.beginPath(); ctx.ellipse(bx - (40 + q * 120) * sc, waterY + 10 * sc + q * 3, (5 + q * 16) * sc, (1.2 + q * 1.6) * sc, 0, 0, Math.PI * 2); ctx.fill(); }
+    // TravelOverlay already performed the journey. Never replay an approach through the moored fleet.
+    const bx = dockX + 40 * sc;
+    this.hot.push({ id: 'dock', x: bx, y: waterY - 60 * sc });
     if (this.hooks.playerBoat) {
-      this.hooks.playerBoat(f, bx, boat, moving ? Math.min(1, (1 - this.arrive) ** 2 * 1.2) : 0);
-      if (!moving) {
-        ctx.strokeStyle = dim('#c8b080'); ctx.lineWidth = 1.2;
-        ctx.beginPath(); ctx.moveTo(dockX - 20 * sc, quayY);
-        ctx.quadraticCurveTo(dockX, waterY + 6 * sc, bx - 30 * sc, f.waveY(bx - 30 * sc) - 4 * sc); ctx.stroke();
-      }
+      this.hooks.playerBoat(f, bx, boat, 0);
+      ctx.strokeStyle = dim('#c8b080'); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(dockX - 20 * sc, quayY);
+      ctx.quadraticCurveTo(dockX, waterY + 6 * sc, bx - 30 * sc, f.waveY(bx - 30 * sc) - 4 * sc); ctx.stroke();
       return;
     }
     const bob = Math.sin(t * 1.1) * 1.5 * sc;
@@ -718,7 +708,7 @@ export class PortKitScene {
     } else if (st === 'barkas' || st === 'cutter') {
       hull(f, bx, waterY + 2 * sc, s * 0.85, boat.hull, boat.trim, { bob, cabin: true, mast: st === 'barkas' });
     } else if (st === 'yacht') {
-      hull(f, bx, waterY + 2 * sc, s * 0.9, boat.hull, boat.trim, { bob, sail: moving, mast: true, long: 1.1 });
+      hull(f, bx, waterY + 2 * sc, s * 0.9, boat.hull, boat.trim, { bob, sail: false, mast: true, long: 1.1 });
     } else {
       hull(f, bx, waterY + 2 * sc, s * 1.25, boat.hull, boat.trim, { bob, wheelhouse: true, long: st === 'research' ? 1.25 : 1.1 });
       if (st === 'trawler' || st === 'research') {
@@ -726,7 +716,6 @@ export class PortKitScene {
         ctx.beginPath(); ctx.moveTo(bx - 60 * s, waterY - 8 * s + bob); ctx.lineTo(bx - 50 * s, waterY - 50 * s + bob); ctx.lineTo(bx - 40 * s, waterY - 8 * s + bob); ctx.stroke();
       }
     }
-    if (moving) return;
     ctx.strokeStyle = dim('#c8b080'); ctx.lineWidth = 1.2;
     ctx.beginPath(); ctx.moveTo(dockX - 20 * sc, quayY); ctx.quadraticCurveTo(dockX, waterY + 6 * sc, bx - 44 * s, waterY - 4 * s + bob); ctx.stroke();
     ctx.strokeStyle = dim('#3a2a1c'); ctx.lineWidth = 1 * sc;

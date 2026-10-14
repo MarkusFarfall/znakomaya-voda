@@ -1,3 +1,4 @@
+import { coralHillY } from '../portTerrain';
 import type { PF, PortKit } from '../portFrame';
 import { aerial, airplane, shoreLights } from '../portHorizon';
 import { bunting, crate, door, hull, notes, palm, person, sign, windowRect } from '../portParts';
@@ -188,7 +189,7 @@ export const coralKit: PortKit = {
     }
     // джунгли справа, холмы
     ctx.fillStyle = dim(mix('#2f6a3a', sky, 0.2), 0.65); ctx.beginPath(); ctx.moveTo(W * 0.5, hY + 2); ctx.quadraticCurveTo(W * 0.72, hY - H * 0.14, W * 0.9, hY - H * 0.06); ctx.quadraticCurveTo(W * 0.96, hY - H * 0.03, W * 1.02, hY - H * 0.08); ctx.lineTo(W, hY + 2); ctx.fill();
-    for (let i = 0; i < 9; i++) { const q = 0.52 + i * 0.055; const x = W * q; const u = (x - W * 0.5) / (W * 0.4); const hh = H * 0.14 * 4 * u * (1 - u) * 0.5 * 0.9 + 2; palm(f, x, hY - hh + 6, (22 + f.h(i) * 14) * sc, (f.h(i + 3) - 0.5) * 16, i); }
+    for (let i = 0; i < 9; i++) { const q = 0.52 + i * 0.055; const x = W * q; palm(f, x, coralHillY(W, H, hY, x) + 3 * sc, (22 + f.h(i) * 14) * sc, (f.h(i + 3) - 0.5) * 16, i); }
     // белый пляж вдоль берега, зонтики и лежаки
     ctx.fillStyle = dim('#f4ecd8', 0.5); ctx.beginPath(); ctx.moveTo(W * 0.3, hY + 2); ctx.quadraticCurveTo(W * 0.6, hY - 4 * sc, W, hY + 2); ctx.lineTo(W, hY + 6 * sc); ctx.lineTo(W * 0.3, hY + 6 * sc); ctx.fill();
     for (let k = 0; k < 4; k++) { const ux = W * (0.66 + k * 0.07), uy = hY - 1; ctx.fillStyle = dim('#8a6a4a'); ctx.fillRect(ux - 0.5 * sc, uy - 9 * sc, 1 * sc, 9 * sc); ctx.fillStyle = dim(['#e06a4a', '#40a0b0', '#f0c040', '#d8a0c0'][k]); ctx.beginPath(); ctx.ellipse(ux, uy - 9 * sc, 7 * sc, 2.6 * sc, 0, Math.PI, 0); ctx.fill(); ctx.fillStyle = dim('#f8f4e8'); ctx.fillRect(ux - 6 * sc, uy - 2 * sc, 7 * sc, 1.6 * sc); ctx.fillStyle = dim('#c88a5a'); ctx.beginPath(); ctx.ellipse(ux - 2.5 * sc, uy - 2.6 * sc, 3 * sc, 1 * sc, 0, 0, Math.PI * 2); ctx.fill(); }

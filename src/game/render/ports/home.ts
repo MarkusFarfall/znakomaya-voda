@@ -1,3 +1,4 @@
+import { hillY, groundedFoot } from '../portTerrain';
 import type { PF, PortKit } from '../portFrame';
 import { aerial, airplane, birdFlock, cityGlow, shoreLights } from '../portHorizon';
 import { barrel, bollard, bunting, cat, crate, dog, door, fishCrate, flag, hull, notes, person, rope, sign, silhouettes, splash, windowRect } from '../portParts';
@@ -222,26 +223,29 @@ export const homeKit: PortKit = {
     const hill = (cx: number, hw: number, hh: number, col: string) => {
       ctx.fillStyle = dim(col, 0.7);
       ctx.beginPath(); ctx.moveTo(cx - hw, hY + 2);
-      for (let x = cx - hw; x <= cx + hw; x += 5) { const q = (x - cx) / hw; ctx.lineTo(x, hY - hh * Math.max(0, 1 - q * q) * (0.9 + Math.sin(x * 0.03) * 0.08)); }
+      for (let x = cx - hw; x <= cx + hw; x += 5) { ctx.lineTo(x, hillY(x, cx, hw, hh, hY)); }
       ctx.lineTo(cx + hw, hY + 2); ctx.fill();
     };
     hill(W * 0.82, W * 0.42, H * 0.2, '#4e7452');
     hill(W * 0.12, W * 0.34, H * 0.13, '#56805a');
+    const rightGround = (x: number) => hillY(x, W * 0.82, W * 0.42, H * 0.2, hY);
+    const leftGround = (x: number) => hillY(x, W * 0.12, W * 0.34, H * 0.13, hY);
     // деревья на холмах
     for (let i = 0; i < 14; i++) {
       const q = f.h(i * 3 + 1);
-      const x = W * (0.45 + q * 0.55), hh = H * 0.2 * Math.max(0, 1 - ((x - W * 0.82) / (W * 0.42)) ** 2) * 0.92;
-      tree(f, x, hY - hh + 2, (5 + f.h(i) * 4) * sc, i % 3 ? '#2f5a36' : '#3f6a3c', i);
+      const x = W * (0.45 + q * 0.55);
+      tree(f, x, rightGround(x) + 2 * sc, (5 + f.h(i) * 4) * sc, i % 3 ? '#2f5a36' : '#3f6a3c', i);
     }
-    for (let i = 0; i < 6; i++) { const x = W * (0.02 + f.h(i + 40) * 0.3); const hh = H * 0.13 * Math.max(0, 1 - ((x - W * 0.12) / (W * 0.34)) ** 2) * 0.9; tree(f, x, hY - hh + 2, (4 + f.h(i + 9) * 3) * sc, '#355f3a', i + 7); }
+    for (let i = 0; i < 6; i++) { const x = W * (0.02 + f.h(i + 40) * 0.3); tree(f, x, leftGround(x) + 2 * sc, (4 + f.h(i + 9) * 3) * sc, '#355f3a', i + 7); }
     // домики посёлка
     const homes: [number, number][] = [[0.56, 0.6], [0.62, 0.75], [0.69, 0.85], [0.74, 0.7], [0.6, 0.95], [0.66, 1.0], [0.9, 0.5], [0.95, 0.75], [0.5, 0.8]];
     homes.forEach(([qx, k], i) => {
-      const x = W * qx; const hh = H * 0.2 * Math.max(0, 1 - ((x - W * 0.82) / (W * 0.42)) ** 2);
-      cottage(f, x, hY - hh * k + 4, (18 + f.h(i) * 8) * sc, (12 + f.h(i + 3) * 6) * sc, i % 2 ? '#8a3a2a' : '#a24a30', i * 11);
+      const x = W * qx, w = (18 + f.h(i) * 8) * sc;
+      const base = groundedFoot(rightGround, x, w / 2, (hY - rightGround(x)) * (1 - k) + 2 * sc);
+      cottage(f, x, base, w, (12 + f.h(i + 3) * 6) * sc, i % 2 ? '#8a3a2a' : '#a24a30', i * 11);
     });
     // часовня с колокольней
-    { const x = W * 0.12, y = hY - H * 0.12 + 3;
+    { const x = W * 0.12, y = groundedFoot(leftGround, x, 14 * sc, 2 * sc);
       ctx.fillStyle = dim('#efe8dc'); ctx.fillRect(x - 14 * sc, y - 18 * sc, 28 * sc, 18 * sc); ctx.fillRect(x - 5 * sc, y - 38 * sc, 10 * sc, 20 * sc);
       ctx.fillStyle = dim('#6a7a9a'); ctx.beginPath(); ctx.moveTo(x - 16 * sc, y - 18 * sc); ctx.lineTo(x, y - 28 * sc); ctx.lineTo(x + 16 * sc, y - 18 * sc); ctx.fill();
       ctx.beginPath(); ctx.moveTo(x - 6 * sc, y - 38 * sc); ctx.lineTo(x, y - 50 * sc); ctx.lineTo(x + 6 * sc, y - 38 * sc); ctx.fill();
@@ -252,7 +256,7 @@ export const homeKit: PortKit = {
       ctx.save(); ctx.translate(x, y - 34 * sc); ctx.rotate(sw); ctx.fillStyle = dim('#b89040'); ctx.beginPath(); ctx.moveTo(-2 * sc, 0); ctx.lineTo(2 * sc, 0); ctx.lineTo(1.2 * sc, -3 * sc); ctx.lineTo(-1.2 * sc, -3 * sc); ctx.fill(); ctx.restore();
     }
     // маяк
-    { const x = W * 0.8, base = hY - H * 0.2 * 0.99 + 2;
+    { const x = W * 0.8, base = groundedFoot(rightGround, x + 12 * sc, 22 * sc, 2 * sc);
       ctx.fillStyle = dim('#e8e4dc'); ctx.beginPath(); ctx.moveTo(x - 9 * sc, base); ctx.lineTo(x - 6 * sc, base - 56 * sc); ctx.lineTo(x + 6 * sc, base - 56 * sc); ctx.lineTo(x + 9 * sc, base); ctx.fill();
       ctx.fillStyle = dim('#c0392b'); ctx.beginPath(); ctx.moveTo(x - 8.2 * sc, base - 16 * sc); ctx.lineTo(x - 7.4 * sc, base - 30 * sc); ctx.lineTo(x + 7.4 * sc, base - 30 * sc); ctx.lineTo(x + 8.2 * sc, base - 16 * sc); ctx.fill();
       ctx.fillStyle = dim('#2a2a2e'); ctx.fillRect(x - 8 * sc, base - 58 * sc, 16 * sc, 2 * sc);

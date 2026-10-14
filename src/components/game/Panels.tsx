@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { GameDialog, useGameDialog } from "./Dialog";
 import { ART } from "@/game/render/boats/art";
 import { getSprite } from "@/game/render/boats/sprites";
 import { boat3dSnapshot, getBoat3dPref } from "@/game/render/boats3d/boat3d";
@@ -22,25 +23,7 @@ const fmtLen = (cm: number) => (cm >= 100 ? `${(cm / 100).toFixed(2)} м` : `${M
 
 /** `above` поднимает окно выше титульной заставки (z-50) — нужно панелям, доступным до начала игры. */
 export function Modal({ label, title, onClose, children, tabs, right, wide = true, above = false }: { label?: string; title: string; onClose: () => void; children: ReactNode; tabs?: ReactNode; right?: ReactNode; wide?: boolean; above?: boolean }) {
-  return (
-    <div className={`fade-in absolute inset-0 ${above ? "z-[60]" : "z-40"} flex min-w-0 max-w-[100vw] items-stretch justify-center overflow-x-hidden bg-[#02050a]/72 backdrop-blur-[3px] sm:items-center sm:p-3`} onPointerDown={(e) => e.stopPropagation()}>
-      <div className={`sheet reveal safe-pad flex min-w-0 h-full max-h-[100dvh] w-full max-w-full flex-col overflow-hidden !rounded-none sm:h-auto sm:max-h-[94vh] sm:!rounded-[3px] ${wide ? "max-w-[1180px]" : "max-w-3xl"}`}>
-        <div className="flex min-w-0 shrink-0 items-end justify-between gap-4 px-4 pt-4 sm:px-7 sm:pt-6">
-          <div className="min-w-0 flex-1">
-            {label && <div className="truncate label-brass">{label}</div>}
-            <h2 className="font-serif mt-1 min-w-0 truncate text-[26px] font-medium leading-none text-[#f1ebdd] sm:text-[34px]">{title}</h2>
-          </div>
-          <div className="flex min-w-0 shrink-0 items-center gap-3 sm:gap-5">
-            {right}
-            <button onClick={onClose} className="iconbtn shrink-0" aria-label="Закрыть"><Icon name="close" size={16} /></button>
-          </div>
-        </div>
-        {tabs && <div className="min-w-0 shrink-0 border-b border-[var(--line)]"><div className="no-scrollbar zv-fade-x mt-3 flex min-w-0 gap-5 overflow-x-auto px-4 sm:mt-4 sm:gap-6 sm:px-7">{tabs}</div></div>}
-        {!tabs && <div className="rule mx-4 mt-4 shrink-0 sm:mx-7 sm:mt-5" />}
-        <div className="min-h-0 min-w-0 max-w-full flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">{children}</div>
-      </div>
-    </div>
-  );
+  return <GameDialog label={label} title={title} onClose={onClose} tabs={tabs} right={right} wide={wide} above={above}>{children}</GameDialog>;
 }
 
 function Row({ k, v, strong }: { k: string; v: ReactNode; strong?: boolean }) {
@@ -54,6 +37,7 @@ function Row({ k, v, strong }: { k: string; v: ReactNode; strong?: boolean }) {
 
 // ───────────────────────── УЛОВ ─────────────────────────
 export function CatchModal({ engine }: { engine: Engine }) {
+  const dialog = useGameDialog(undefined, !!engine.lastCatch);
   const c = engine.lastCatch;
   if (!c) return null;
   const f = FISH_BY_ID[c.item.fishId];
@@ -68,8 +52,8 @@ export function CatchModal({ engine }: { engine: Engine }) {
   if (c.perfect) notes.push(["target", "Точная подсечка"]);
   if (order) notes.push(["order", `Подходит для заказа: ${order.client}`]);
   return (
-    <div className="fade-in absolute inset-0 z-30 flex min-w-0 max-w-[100vw] items-stretch justify-center overflow-x-hidden bg-[#02050a]/55 sm:items-center sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
-      <div className="sheet reveal safe-pad grid min-w-0 max-w-full max-h-[100dvh] w-full overflow-x-hidden overflow-y-auto overscroll-contain !rounded-none sm:!rounded-[3px] md:grid-cols-[1.15fr_1fr] sm:max-h-[94vh] sm:max-w-[880px]">
+    <div className="zv-ui game-catch fade-in absolute inset-0 z-30 flex min-w-0 max-w-[100vw] items-stretch justify-center overflow-x-hidden bg-[#02050a]/55 sm:items-center sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
+      <div ref={dialog} role="dialog" aria-modal="true" aria-label="Улов" data-game-dialog tabIndex={-1} className="sheet reveal safe-pad grid min-w-0 max-w-full max-h-[100dvh] w-full overflow-x-hidden overflow-y-auto overscroll-contain !rounded-none sm:!rounded-[3px] md:grid-cols-[1.15fr_1fr] sm:max-h-[94vh] sm:max-w-[880px]">
         <div className="plate relative flex min-w-0 min-h-[190px] flex-col justify-between overflow-hidden p-4 sm:p-6 [@media(min-height:560px)]:min-h-[300px]">
           <div className="flex items-center justify-between">
             <span className="label" style={{ color: r.color }}>{r.name}</span>
@@ -86,7 +70,8 @@ export function CatchModal({ engine }: { engine: Engine }) {
             <span className="min-w-0 truncate pl-2 text-right text-[11px] dim">{LOC_BY_ID[c.item.loc].name} · {engine.spot.name} · день {c.item.day}</span>
           </div>
         </div>
-        <div className="flex min-w-0 flex-col overflow-hidden p-5 sm:p-7">
+        <div className="catch-details flex min-h-0 min-w-0 flex-col overflow-hidden">
+          <div className="catch-info min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 sm:p-7">
           <div className="label">{c.isNew ? "Впервые пойман" : "Улов"}</div>
           <h3 className="font-serif mt-1 break-words text-[32px] font-medium leading-[1.05] text-[#f4eee0] sm:text-[40px]">{f.name}</h3>
           <div className="font-serif break-words text-[17px] italic muted">{f.latin}</div>
@@ -106,7 +91,8 @@ export function CatchModal({ engine }: { engine: Engine }) {
             </ul>
           )}
           <p className="mt-4 text-[13px] leading-relaxed muted">{f.desc}</p>
-          <div className="sticky bottom-0 -mx-5 mt-auto flex flex-col gap-2 border-t border-[var(--line)] bg-[#0a121c] px-5 pb-[max(4px,env(safe-area-inset-bottom))] pt-4 min-[360px]:flex-row min-[360px]:gap-2 sm:-mx-7 sm:px-7 md:mt-6">
+          </div>
+          <div className="catch-actions flex shrink-0 flex-col gap-2 border-t border-[var(--line)] bg-[#0a121c] px-5 py-4 min-[360px]:flex-row sm:px-7">
             <button className="btn btn-quiet min-w-0 flex-1 !px-2 !text-[10px] !tracking-[0.12em]" onClick={() => engine.releaseCatch()}>Отпустить</button>
             <button className="btn btn-solid min-w-0 flex-1 !px-2 !text-[10px] !tracking-[0.12em]" disabled={engine.coolerFull} onClick={() => engine.keepCatch()}>
               {engine.coolerFull ? "Садок полон" : `В садок · ${engine.s.cooler.length}/${engine.coolerCap}`}
@@ -199,7 +185,7 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
             {s.cooler.length === 0 ? (
               <p className="font-serif py-16 text-center text-xl italic dim">Садок пуст</p>
             ) : (
-              <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0"><table className="w-full min-w-[460px] text-[13px]">
+              <div className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0"><table className="market-table w-full text-[13px]">
                 <thead>
                   <tr className="label text-left">
                     <th className="py-2 font-medium" colSpan={2}>Вид</th>
@@ -275,8 +261,8 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
         {tab === "gear" && (
           <div>
             <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-              <p className="max-w-3xl text-[12px] leading-relaxed muted">Каждая снасть имеет класс и три ступени доработок. Уровень доработки не может быть выше класса самой снасти, а мастерские разных портов берутся за разную сложность. Здесь, в «{engine.port.name}», — до класса {engine.port.gearMax.rod + 1} и доработок {Math.min(3, engine.port.gearMax.rod)} уровня; цены ×{engine.port.priceMult.toFixed(2)}.</p>
-              <div className="text-right"><div className="label">Средства</div><div className="num text-[18px] text-[var(--brass-2,#e3c996)]">{fmt(s.money)} ₽</div></div>
+              <details className="gear-notes min-w-0 flex-1"><summary className="cursor-pointer text-[12px] text-[var(--brass)]">Мастерская и доработки</summary><p className="mt-2 max-w-3xl text-[12px] leading-relaxed muted">Каждая снасть имеет класс и три ступени доработок. Уровень доработки не может быть выше класса самой снасти, а мастерские разных портов берутся за разную сложность. Здесь, в «{engine.port.name}», — до класса {engine.port.gearMax.rod + 1} и доработок {Math.min(3, engine.port.gearMax.rod)} уровня; цены ×{engine.port.priceMult.toFixed(2)}.</p></details>
+              <div className="hidden text-right sm:block"><div className="label">Средства</div><div className="num text-[18px] text-[var(--brass-2,#e3c996)]">{fmt(s.money)} ₽</div></div>
             </div>
             <div className="space-y-3">
               {GEAR_ROWS.map(([k, name, what]) => {
@@ -463,7 +449,7 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
               </div>}
               <div className="label">Судовой журнал</div>
               <div className="mt-3">
-                <div className="mb-3"><div className="label mb-1">Имя</div><input className="field !text-left" maxLength={24} defaultValue={s.name} onBlur={(ev) => engine.setName(ev.target.value)} /></div>
+                <div className="mb-3"><div className="label mb-1">Имя</div><input aria-label="Имя в судовом журнале" className="field !text-left" maxLength={24} defaultValue={s.name} onBlur={(ev) => engine.setName(ev.target.value)} /></div>
                 <dl>
                   <Row k="Поймано рыб" v={fmt(s.stats.totalCaught)} />
                   <Row k="Заработано" v={`${fmt(s.stats.totalEarned)} ₽`} />
@@ -587,7 +573,7 @@ function ChartMap({ engine, onGo, onSail }: { engine: Engine; onGo: (l: LocId, s
               const here = s.port === p.id;
               const fuel = engine.fuelTo(p.pos);
               return (
-                <div key={p.id} className={`flex items-center gap-3 border px-3 py-2 ${here ? "border-[rgba(200,164,106,0.55)]" : "border-[var(--line)]"} ${known ? "" : "opacity-45"}`}>
+                <div key={p.id} className={`port-route-card flex items-center gap-3 border px-3 py-2 ${here ? "border-[rgba(200,164,106,0.55)]" : "border-[var(--line)]"} ${known ? "" : "opacity-45"}`}>
                   <MiscIcon name="port" size={15} className={known ? "text-[var(--brass)]" : "dim"} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] text-[#ece6d8]">{known ? p.name : "Неизвестный порт"}</div>

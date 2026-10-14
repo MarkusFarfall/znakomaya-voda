@@ -144,3 +144,7 @@ export function lightPool(ctx: CanvasRenderingContext2D, x: number, y: number, r
   ctx.fillStyle = g;
   ctx.fillRect(x - r, y - r, r * 2, r * 2);
 }
+
+/** RAF timestamps can precede effect setup after an expensive WebGL warm-up. Never integrate backwards. */
+export const frameDeltaSeconds = (now: number, previous: number, max = 0.05) =>
+  Math.max(0, Math.min(max, (now - previous) / 1000));

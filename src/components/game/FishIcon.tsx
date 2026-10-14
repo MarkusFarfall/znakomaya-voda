@@ -49,20 +49,23 @@ export function FishIcon({
     if (!ctx) return;
     let raf = 0;
     const start = performance.now();
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const { L, cx, cy } = fishFrame(fish, size, h);
     const draw = () => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, size, h);
       const t = (performance.now() - start) / 1000;
       drawFish(ctx, fish, cx, cy, L, 1, {
-        wag: animate ? t * 4 : 0.6,
+        wag: animate && !motion.matches ? t * 4 : 0.6,
         silhouette: known ? null : 'rgba(150,180,200,0.14)',
         variant,
       });
-      if (animate) raf = requestAnimationFrame(draw);
+      if (animate && !motion.matches) raf = requestAnimationFrame(draw);
     };
+    const onMotion = () => { cancelAnimationFrame(raf); draw(); };
     draw();
-    return () => cancelAnimationFrame(raf);
+    if (animate) motion.addEventListener("change", onMotion);
+    return () => { cancelAnimationFrame(raf); motion.removeEventListener("change", onMotion); };
   }, [fish, size, h, known, variant, animate]);
   return <canvas ref={ref} style={{ width: `min(${size}px, 100%)`, height: 'auto', aspectRatio: `${size} / ${h}` }} className="block max-w-full" aria-hidden="true" />;
 }

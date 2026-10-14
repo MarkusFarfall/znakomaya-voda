@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useId } from "react";
 import { FISH_BY_ID } from "@/game/fish";
 import { LOCATIONS, LOC_POS, PORTS, PORT_BY_ID } from "@/game/world";
 import {
@@ -33,6 +33,7 @@ import { FishIcon } from "./FishIcon";
  * только снимок мира друга. `compact` — без подписей, для карточки в списке.
  */
 export function FriendChart({ where, boat, compact = false }: { where: FriendSummary["where"]; boat: BoatDef | null; compact?: boolean }) {
+  const chartId = useId();
   const Y = (p: number) => p * 0.625;
   const target = where && !where.hidden ? (where.atPort && where.port && where.port in PORT_BY_ID ? PORT_BY_ID[where.port as keyof typeof PORT_BY_ID].pos : where.location ? LOC_POS[where.location] : null) : null;
   const home = PORTS[0].pos;
@@ -41,14 +42,14 @@ export function FriendChart({ where, boat, compact = false }: { where: FriendSum
     <div className="relative aspect-[16/10] overflow-hidden border border-[var(--line-2)] bg-[#0b1824]">
       <svg viewBox="0 0 100 62.5" className="absolute inset-0 h-full w-full" preserveAspectRatio="none" aria-hidden="true">
         <defs>
-          <radialGradient id="fdeep" cx="86%" cy="36%" r="22%"><stop offset="0" stopColor="#03080f" /><stop offset="1" stopColor="#0b1824" stopOpacity="0" /></radialGradient>
-          <radialGradient id="fshelf" cx="15%" cy="60%" r="40%"><stop offset="0" stopColor="#153246" /><stop offset="1" stopColor="#0b1824" stopOpacity="0" /></radialGradient>
-          <pattern id="fgrid" width="6.25" height="6.25" patternUnits="userSpaceOnUse"><path d="M6.25 0H0V6.25" fill="none" stroke="rgba(143,179,200,0.07)" strokeWidth="0.15" /></pattern>
-          <pattern id="fice" width="1.4" height="1.4" patternUnits="userSpaceOnUse"><path d="M0 1.4L1.4 0" stroke="rgba(200,225,240,0.25)" strokeWidth="0.12" /></pattern>
+          <radialGradient id={`${chartId}-fdeep`} cx="86%" cy="36%" r="22%"><stop offset="0" stopColor="#03080f" /><stop offset="1" stopColor="#0b1824" stopOpacity="0" /></radialGradient>
+          <radialGradient id={`${chartId}-fshelf`} cx="15%" cy="60%" r="40%"><stop offset="0" stopColor="#153246" /><stop offset="1" stopColor="#0b1824" stopOpacity="0" /></radialGradient>
+          <pattern id={`${chartId}-fgrid`} width="6.25" height="6.25" patternUnits="userSpaceOnUse"><path d="M6.25 0H0V6.25" fill="none" stroke="rgba(143,179,200,0.07)" strokeWidth="0.15" /></pattern>
+          <pattern id={`${chartId}-fice`} width="1.4" height="1.4" patternUnits="userSpaceOnUse"><path d="M0 1.4L1.4 0" stroke="rgba(200,225,240,0.25)" strokeWidth="0.12" /></pattern>
         </defs>
-        <rect width="100" height="62.5" fill="url(#fshelf)" />
-        <rect width="100" height="62.5" fill="url(#fgrid)" />
-        <rect width="100" height="62.5" fill="url(#fdeep)" />
+        <rect width="100" height="62.5" fill={`url(#${chartId}-fshelf)`} />
+        <rect width="100" height="62.5" fill={`url(#${chartId}-fgrid)`} />
+        <rect width="100" height="62.5" fill={`url(#${chartId}-fdeep)`} />
         {[0, 1, 2, 3].map((i) => <ellipse key={i} cx="86" cy="15" rx={4 + i * 3.5} ry={2.5 + i * 2.2} fill="none" stroke="rgba(143,179,200,0.1)" strokeWidth="0.18" />)}
         <path d="M0 62.5 L0 0 L19 0 C18 3 12 4 13 7 C14 9 19 8 20 11 C21 14 17 15 19 18 C22 21 26 19 27 23 C27 26 22 26 21 29 C20 33 24 34 22 38 C20 42 16 40 14 43 C12 46 16 48 13 51 C11 53 7 51 5 54 L4 56 C6 58 9 57 10 60 L10 62.5 Z" fill="#1b2721" stroke="rgba(230,225,214,0.28)" strokeWidth="0.2" />
         <path d="M3 62.5 C4 58 2 56 4 54" fill="none" stroke="#2a4a5a" strokeWidth="0.7" />
@@ -59,7 +60,7 @@ export function FriendChart({ where, boat, compact = false }: { where: FriendSum
         <path d="M44 62.5 C45 59 49 58 53 59 C55 60 54 62 56 62.5 Z" fill="#1f3326" stroke="rgba(230,225,214,0.22)" strokeWidth="0.15" />
         <path d="M72 38.5 L74 35.5 L76 38.5 Z" fill="#2a2422" stroke="rgba(230,225,214,0.35)" strokeWidth="0.15" />
         <circle cx="74" cy="35.2" r="0.35" fill="rgba(255,120,50,0.7)" />
-        <path d="M76 62.5 L78 56 C82 54.5 88 55 93 53.5 C96 53 98 54 100 53 L100 62.5 Z" fill="url(#fice)" stroke="rgba(220,236,246,0.45)" strokeWidth="0.2" />
+        <path d="M76 62.5 L78 56 C82 54.5 88 55 93 53.5 C96 53 98 54 100 53 L100 62.5 Z" fill={`url(#${chartId}-fice)`} stroke="rgba(220,236,246,0.45)" strokeWidth="0.2" />
         <path d="M76 62.5 L78 56 C82 54.5 88 55 93 53.5 C96 53 98 54 100 53 L100 62.5 Z" fill="rgba(200,225,240,0.1)" />
         {target && <line x1={home[0]} y1={Y(home[1])} x2={target[0]} y2={Y(target[1])} stroke="rgba(200,164,106,0.5)" strokeWidth="0.24" strokeDasharray="0.9 0.9" />}
         <g transform="translate(93 44)" stroke="rgba(230,225,214,0.35)" strokeWidth="0.2" fill="none">
@@ -181,11 +182,11 @@ function FriendCard({ f, onOpen, onRemove, onUi }: { f: FriendSummary; onOpen: (
   const boat = boatOf(f.where?.boat ?? null);
   const online = isOnline(f.lastSeenAt);
   return (
-    <div className="border border-[var(--line)] bg-[rgba(9,17,24,0.5)] p-3 transition-colors hover:border-[rgba(200,164,106,0.4)]">
+    <div className="cell friend-card border border-[var(--line)] bg-[rgba(9,17,24,0.5)] p-3 transition-colors hover:border-[rgba(200,164,106,0.4)]">
       <div className="flex items-start gap-3">
         <Avatar id={f.userId} name={f.username} online={online} />
         <div className="min-w-0 flex-1">
-          <button className="font-serif truncate text-left text-[19px] leading-tight text-[#f1ebdd] hover:text-white" onClick={() => { onUi(); onOpen(); }}>
+          <button className="font-serif max-w-full truncate text-left text-[19px] leading-tight text-[#f1ebdd] hover:text-white" onClick={() => { onUi(); onOpen(); }}>
             {f.username}
           </button>
           <div className="num text-[10.5px] text-[var(--brass-2,#e3c996)]">уровень {f.level} · {f.codexCount} видов · {fmt(f.totalCaught)} рыб</div>
@@ -223,7 +224,7 @@ function FriendCard({ f, onOpen, onRemove, onUi }: { f: FriendSummary; onOpen: (
 
 function RequestCard({ r, onAccept, onDecline, onUi }: { r: FriendRequestRow; onAccept?: () => void; onDecline: () => void; onUi: () => void }) {
   return (
-    <div className="flex min-w-0 items-center gap-3 border border-[var(--line)] bg-[rgba(9,17,24,0.5)] px-3 py-2.5">
+    <div className="friend-request cell flex min-w-0 items-center gap-3 border border-[var(--line)] bg-[rgba(9,17,24,0.5)] px-3 py-2.5">
       <Avatar id={r.userId} name={r.username} size={38} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-[15px] text-[#f1ebdd]">{r.username}</div>
@@ -404,8 +405,8 @@ export function FriendsModal({ state, onClose, onUi, me }: { state: FriendsState
                 <div className="label mb-2">Приватность</div>
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="seg">
-                    <button className={!d?.hideLocation ? "on" : ""} disabled={busy} onClick={() => { onUi(); void act("privacy", { hideLocation: false }, "Местоположение видно друзьям"); }}>Показывать, где я</button>
-                    <button className={d?.hideLocation ? "on" : ""} disabled={busy} onClick={() => { onUi(); void act("privacy", { hideLocation: true }, "Местоположение скрыто"); }}>Скрыть</button>
+                    <button aria-pressed={!d?.hideLocation} className={!d?.hideLocation ? "on" : ""} disabled={busy} onClick={() => { onUi(); void act("privacy", { hideLocation: false }, "Местоположение видно друзьям"); }}>Показывать, где я</button>
+                    <button aria-pressed={!!d?.hideLocation} className={d?.hideLocation ? "on" : ""} disabled={busy} onClick={() => { onUi(); void act("privacy", { hideLocation: true }, "Местоположение скрыто"); }}>Скрыть</button>
                   </div>
                   <div className="text-[11px] dim">Влияет только на друзей: карта, лодка и погода. Статистика и уловы остаются видны.</div>
                 </div>

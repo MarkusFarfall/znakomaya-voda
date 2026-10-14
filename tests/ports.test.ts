@@ -135,16 +135,30 @@ test("wind reversal integrates drift rather than teleporting foreground particle
   assert.ok(Math.abs(phases.at(-1)! - phases.at(-2)!) <= 1 / 60 + 1e-10);
 });
 
-test("arriving player boat approaches bow-first from left and settles at the dock", () => {
-  const c = canvas(1024, 640), st = state("home");
-  const positions: { x: number; speed: number }[] = [];
-  const scene = new PortKitScene(KITS, { playerBoat: (_f, x, _boat, speed) => { positions.push({ x, speed }); } });
-  scene.render(c.ctx, st, 1024, 640, 1 / 60); positions.length = 0;
-  st.pid = "coral";
-  for (let i = 0; i < 65; i++) scene.render(c.ctx, st, 1024, 640, 0.1);
-  assert.ok(positions[0].x < 0 && positions[0].speed > 0);
-  assert.ok(positions.every((p, i) => i === 0 || p.x >= positions[i - 1].x));
-  assert.equal(positions.at(-1)!.speed, 0);
-  const dock = scene.hot.find(h => h.id === "dock")!;
-  assert.equal(positions.at(-1)!.x, dock.x); c.balanced();
+test("destination boat is moored on its very first frame, without crossing the fleet", () => {
+  for (const [W, H] of [[320, 568], [390, 844], [844, 390], [1440, 900]]) {
+    const c = canvas(W, H), st = state("home");
+    const positions: { x: number; speed: number }[] = [];
+    const scene = new PortKitScene(KITS, { playerBoat: (_f, x, _boat, speed) => { positions.push({ x, speed }); } });
+    for (const pid of ["home", "coral", "mirador", "nordhavn", "southcross", "home"] as const) {
+      st.pid = pid; positions.length = 0;
+      for (let i = 0; i < 65; i++) scene.render(c.ctx, st, W, H, 0.1);
+      const dock = scene.hot.find(h => h.id === "dock")!;
+      assert.ok(dock.x > 0 && dock.x < W);
+      assert.ok(positions.every(p => p.speed === 0 && p.x === dock.x), `${pid} ${W}×${H}: no second approach`);
+    }
+    c.balanced();
+  }
+});
+
+test("reflection preference suppresses both port reflection passes without hiding services", () => {
+  for (const pid of ["home", "nordhavn", "mirador", "coral", "southcross"] as const) {
+    const off = canvas(390, 844), on = canvas(390, 844), st = state(pid);
+    const noReflection = new PortKitScene(KITS), withReflection = new PortKitScene(KITS);
+    noReflection.render(off.ctx, { ...st, quality: 2, reflectionsEnabled: false }, 390, 844, 1 / 60);
+    withReflection.render(on.ctx, { ...st, quality: 2, reflectionsEnabled: true }, 390, 844, 1 / 60);
+    assert.ok(off.count() < on.count() * .95, pid);
+    assert.deepEqual(noReflection.hot, withReflection.hot);
+    off.balanced(); on.balanced();
+  }
 });

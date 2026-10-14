@@ -167,8 +167,8 @@ export function drawBoat(f: Frame, x: number, pose: Pose = "fish", speedIn?: num
   }
   for (let i = foam.length - 1; i >= 0; i--) {
     const q = foam[i];
-    q.t += f.dt;
-    q.x -= flow * f.dt;
+    q.t += dt;
+    q.x -= flow * dt;
     if (q.t > q.life || q.x < -120) {
       foam.splice(i, 1);
       continue;
@@ -254,12 +254,12 @@ export function drawBoat(f: Frame, x: number, pose: Pose = "fish", speedIn?: num
   /* — частицы — */
   for (let i = parts.length - 1; i >= 0; i--) {
     const q = parts[i];
-    q.t += f.dt;
-    q.x += q.vx * f.dt;
-    q.y += q.vy * f.dt;
+    q.t += dt;
+    q.x += q.vx * dt;
+    q.y += q.vy * dt;
     if (q.kind === "spray") {
-      q.vy += 320 * s * f.dt;
-      q.vx *= 1 - 0.6 * f.dt;
+      q.vy += 320 * s * dt;
+      q.vx *= 1 - 0.6 * dt;
     }
     const life = q.kind === "smoke" ? 3 : q.kind === "bubble" ? 1.7 : 0.9;
     const water = f.waveY(q.x);
