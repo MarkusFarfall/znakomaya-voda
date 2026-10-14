@@ -157,7 +157,20 @@ export interface BaitDef {
   mimics?: BaitId[];
 }
 
-export interface PortDef {
+export type Building = "market" | "shop" | "shipyard" | "tavern";
+export type HotId = Building | "dock";
+export interface Hotspot { id: HotId; x: number; y: number }
+export interface Keeper { name: string; role: string; line: string }
+export interface PortAtmosphereDetails {
+  tagline?: string;
+  landmarks?: string[];
+  buildings?: Record<Building, { title: string; sub: string; keeper: Keeper }>;
+  rumours?: string[];
+  ambience?: string;
+  dish?: string;
+}
+
+export interface PortDef extends PortAtmosphereDetails {
   id: PortId;
   name: string;
   place: string;

@@ -9,7 +9,7 @@ import { gearList, isJumper, type Engine, type Trip } from "@/game/engine";
 import type { GearKind } from "@/game/world";
 import { availableNow, conditionsNow, fishNotes } from "@/game/lore";
 import { FISH, FISH_BY_ID, RARITY_INFO, VARIANT_INFO } from "@/game/fish";
-import type { FishDef, LocId, PortId } from "@/game/types";
+import type { Building, FishDef, LocId, PortId } from "@/game/types";
 import { BAITS, BAIT_BY_ID, BOATS, BOAT_CLASS_NAMES, LOC_POS, PORTS, PORT_BY_ID, LINES, LOCATIONS, LOC_BY_ID, MILESTONES, REELS, RODS, SONARS, WEATHER_INFO, spotsOf } from "@/game/world";
 import { FishIcon } from "./FishIcon";
 import { BaitIcon, GearIcon, Icon, MiscIcon } from "./Icons";
@@ -138,6 +138,8 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
     ["map", "Карта", ""],
     ["rest", "Таверна", ""],
   ];
+  const building: Building | null = tab === "market" ? "market" : tab === "gear" || tab === "bait" ? "shop" : tab === "boats" ? "shipyard" : tab === "rest" ? "tavern" : null;
+  const venue = building ? engine.port.buildings?.[building] : undefined;
   const hot = engine.hot;
   const fc = engine.forecast;
   const atmo = engine.atmosphere.summary();
@@ -146,7 +148,7 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
   return (
     <Modal
       label={mapOnly ? `Точка отправления · ${engine.loc.name}` : `Порт · ${engine.port.place}`}
-      title={mapOnly ? "Карта переходов" : engine.port.name}
+      title={mapOnly ? "Карта переходов" : venue?.title ?? engine.port.name}
       onClose={onClose}
       tabs={(mapOnly ? tabs.filter(([id]) => id === "map") : tabs).map(([id, n, b]) => (
         <button key={id} className={`tab ${tab === id ? "on" : ""}`} onClick={() => setTab(id)}>
@@ -162,6 +164,15 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
     >
       {flash && <div className="fade-in mx-4 mt-4 sm:mx-7 border-l-2 border-[var(--color-ok)] bg-[rgba(134,180,148,0.08)] px-4 py-2 text-[13px] text-[#cfe3d4]">{flash}</div>}
       <div className="min-w-0 p-4 sm:p-7">
+        {!mapOnly && venue && <div className="mb-5 flex min-w-0 items-start gap-3 border-l-2 border-[var(--brass)] bg-[rgba(200,164,106,0.055)] px-4 py-3" data-port-keeper>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <span className="text-[13px] text-[#e3c996]">{venue.keeper.name}</span>
+              <span className="text-[10px] uppercase tracking-wider dim">{venue.keeper.role}</span>
+            </div>
+            <p className="font-serif mt-1 text-[17px] leading-snug text-[#ded8cb]">«{venue.keeper.line}»</p>
+          </div>
+        </div>}
         {tab === "market" && (
           <div>
             <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
@@ -277,7 +288,7 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
                 return (
                   <div key={k} className="cell grid min-w-0 gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1.4fr)]">
                     <div className="flex min-w-0 gap-4">
-                      <span className="flex h-16 w-16 shrink-0 items-center justify-center border border-[var(--line-2)] bg-[#081019] text-[var(--brass)]"><GearIcon kind={k} size={38} /></span>
+                      <span className="flex h-12 w-12 shrink-0 items-center justify-center border border-[var(--line-2)] bg-[#081019] text-[var(--brass)] sm:h-16 sm:w-16"><GearIcon kind={k} size={38} /></span>
                       <div className="min-w-0 flex-1">
                         <div className="flex min-w-0 items-baseline justify-between gap-2">
                           <span className="min-w-0 truncate label">{name}</span>
@@ -287,12 +298,12 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
                         <div className="break-words text-[12px] muted">{what}: <span className="num text-[#ece6d8]">{gearValue(k, cur.value, cur.desc)}</span></div>
                         <div className="mt-2 flex gap-1">{list.map((_, i) => <div key={i} className={`h-[3px] flex-1 ${i <= lvl ? "bg-[var(--brass)]" : i <= engine.port.gearMax[k] ? "bg-white/25" : "bg-white/8"}`} />)}</div>
                         {next ? (
-                          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-3">
+                          <div className="mt-3 flex min-w-0 flex-col items-stretch gap-3 sm:flex-row sm:flex-wrap sm:items-center">
                             <div className="min-w-0 flex-1">
                               <div className="break-words text-[13px] text-[#ece6d8]">→ {next.name}</div>
                               <div className="break-words text-[11px] dim">{next.desc}{k !== "hook" && k !== "sonar" ? ` · ${gearValue(k, next.value, next.desc)}` : ""}</div>
                             </div>
-                            <button className="btn btn-sm btn-solid shrink-0" disabled={!!block} onClick={() => engine.buyGear(k) && say(`Приобретено: ${next.name}`)}>{block ?? `${fmt(engine.gearPrice(k))} ₽`}</button>
+                            <button className="btn btn-sm btn-solid min-w-0 w-full !h-auto min-h-8 !whitespace-normal py-2 sm:w-auto" disabled={!!block} onClick={() => engine.buyGear(k) && say(`Приобретено: ${next.name}`)}>{block ?? `${fmt(engine.gearPrice(k))} ₽`}</button>
                           </div>
                         ) : <div className="mt-3 text-[12px] text-[var(--color-ok)]">Лучшее из доступного</div>}
                       </div>
@@ -430,7 +441,7 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
         {tab === "rest" && (
           <div className="grid gap-4 sm:gap-6 md:grid-cols-2">
             <div className="cell p-5 sm:p-6">
-              <div className="label">{TAVERN[engine.port.id]}</div>
+              <div className="label">{engine.port.buildings?.tavern.title ?? TAVERN[engine.port.id]}</div>
               <h3 className="font-serif mt-1 flex items-center gap-2 text-2xl text-[#f1ebdd]"><MiscIcon name="bed" size={20} className="text-[var(--brass)]" />Ночлег</h3>
               <p className="mt-2 text-[13px] muted">Комнаты сдают с 19:00 до 4:00, не чаще раза за 16 часов. Отдых до пяти утра, за ночь сменится погода и появятся новые заказы. Цена ночлега — <span className="num text-[#ece6d8]">{fmt(engine.port.innFee)} ₽</span>.</p>
               <div className="mt-5 flex items-center gap-4 border-y border-[var(--line)] py-4">
@@ -443,6 +454,13 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
               <button className="btn btn-solid mt-5" disabled={!!engine.restBlock} onClick={onRest}>{engine.restBlock ?? `Снять комнату · ${fmt(engine.port.innFee)} ₽`}</button>
             </div>
             <div className="cell p-5 sm:p-6">
+              {engine.port.ambience && <p className="font-serif mb-4 text-[17px] italic leading-snug muted">{engine.port.ambience}</p>}
+              {engine.port.dish && <div className="mb-4 text-[12px] muted"><span className="label-brass mr-2">На столе</span>{engine.port.dish}</div>}
+              {!!engine.port.rumours?.length && <div className="mb-5 border-y border-[var(--line)] py-3">
+                <div className="label mb-2">Разговоры у причала</div>
+                <p className="text-[12px] leading-relaxed muted">{engine.port.rumours[(engine.day - 1) % engine.port.rumours.length]}</p>
+                <p className="mt-1.5 text-[10px] dim">Местные байки. Действующие заказы — на доске заказов.</p>
+              </div>}
               <div className="label">Судовой журнал</div>
               <div className="mt-3">
                 <div className="mb-3"><div className="label mb-1">Имя</div><input className="field !text-left" maxLength={24} defaultValue={s.name} onBlur={(ev) => engine.setName(ev.target.value)} /></div>
@@ -573,7 +591,8 @@ function ChartMap({ engine, onGo, onSail }: { engine: Engine; onGo: (l: LocId, s
                   <MiscIcon name="port" size={15} className={known ? "text-[var(--brass)]" : "dim"} />
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[13px] text-[#ece6d8]">{known ? p.name : "Неизвестный порт"}</div>
-                    <div className="truncate text-[10.5px] dim">{known ? p.place : `откроется: ${p.serves.map((l) => LOC_BY_ID[l].name).join(" / ")}`}</div>
+                    <div className="text-[10.5px] leading-snug dim">{known ? p.tagline ?? p.place : `откроется: ${p.serves.map((l) => LOC_BY_ID[l].name).join(" / ")}`}</div>
+                    {known && !!p.landmarks?.length && <div className="mt-1 text-[10px] leading-snug text-[#918d82]">{p.landmarks.slice(0, 2).join(" · ")}</div>}
                   </div>
                   {here ? <span className="label-brass">здесь</span> : known && (
                     <button className="btn btn-sm btn-quiet" disabled={fuel > s.money} onClick={() => onSail(p.id)}>{(engine.travelMinutesTo(p.pos) / 60).toFixed(1)} ч{fuel ? ` · ${fmt(fuel)} ₽` : ""}</button>

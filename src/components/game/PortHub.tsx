@@ -88,7 +88,7 @@ function DepartSheet({ engine, onClose, onTravel, onMap }: { engine: Engine; onC
   );
 }
 
-export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onCodex, account, onAccount }: {
+export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onCodex, account, onAccount, onHover }: {
   engine: Engine;
   hot: Hotspot[];
   compact: boolean;
@@ -98,6 +98,7 @@ export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onC
   onCodex: () => void;
   account: AccountState;
   onAccount: () => void;
+  onHover?: (b: Building | null) => void;
 }) {
   const s = engine.s;
   const port = engine.port;
@@ -123,19 +124,18 @@ export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onC
     <div className="hud-layer z-20" onPointerDown={(e) => e.stopPropagation()}>
       {/* шапка */}
       <div className="flex items-start justify-between gap-2">
-        <div className="glass fade-in px-4 py-3">
-          <div className="label-brass">{port.place}</div>
-          <div className="font-serif text-[26px] leading-none text-[#f4eee0] sm:text-[32px]">{port.name}</div>
-          <div className="mt-2 flex items-center gap-3 text-[12px] text-[#ddd7ca]">
+        <div className="glass fade-in min-w-0 px-3 py-3 sm:px-4">
+          <div className="label-brass truncate">{port.place}</div>
+          <div className="font-serif truncate text-[23px] leading-none text-[#f4eee0] sm:text-[32px]">{port.name}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] sm:text-[12px] text-[#ddd7ca]">
             <span className="num text-[15px] text-[#f1ebdd]">{hh}:{mm}</span>
             <span className="flex items-center gap-1"><span aria-hidden="true" className="text-sm leading-none">{atmo.icon}</span>{atmo.weatherName} · {atmo.temp > 0 ? "+" : ""}{atmo.temp}°</span>
             <span className="hidden dim sm:inline">{SEASONS[engine.season]}, день {engine.dayOfSeason}</span>
           </div>
           {engine.fairBonus > 1 && <div className="mt-1.5 text-[11px] text-[var(--brass-2,#e3c996)]">Ярмарка выходного дня · цены на рынке +10%</div>}
-          <div className="hidden">
-          </div>
+          {port.tagline && !compact && <p className="mt-2 text-[11px] italic text-[#bcb7a9]">{port.tagline}</p>}
         </div>
-        <div className="flex flex-col items-end gap-1.5">
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
           <div className="flex gap-1.5">
             <AccountBadge account={account} compact onClick={onAccount} />
             <button className="iconbtn" onClick={onJournal} aria-label="Журнал"><Icon name="journal" size={16} />{(engine.perkPoints > 0 || engine.hasLetter || engine.daily.tasks.some((t) => t.done && !t.claimed)) && <span className="dot" />}</button>
@@ -152,19 +152,28 @@ export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onC
       {hot.filter((h) => h.id !== "dock").map((h) => {
         const b = h.id as Building;
         const L = LABELS[b];
+        const venue = port.buildings?.[b];
+        const title = venue?.title ?? L.name;
         return (
           <button
             key={b}
             onClick={() => onOpen(b)}
-            className="group absolute -translate-x-1/2 -translate-y-full text-center"
-            style={{ left: h.x, top: h.y - 6 }}
+            aria-label={`${L.name} · ${title}`}
+            title={`${title} — ${L.sub}`}
+            data-port-hotspot={b}
+            onPointerEnter={() => onHover?.(b)}
+            onPointerLeave={() => onHover?.(null)}
+            onFocus={() => onHover?.(b)}
+            onBlur={() => onHover?.(null)}
+            className="group absolute -translate-x-1/2 -translate-y-full text-center focus-visible:outline-2 focus-visible:outline-[var(--brass)]"
+            style={{ left: compact ? `clamp(26px, ${h.x}px, calc(100% - 26px))` : `clamp(92px, ${h.x}px, calc(100% - 92px))`, top: Math.max(compact ? 180 : 190, h.y - 6) }}
           >
-            <span className="glass flex items-center gap-2 whitespace-nowrap px-2.5 py-1.5 transition group-hover:border-[var(--brass)]">
-              <span className="text-[var(--brass)]"><BuildingIcon b={b} size={compact ? 14 : 16} /></span>
-              <span className="text-left">
-                <span className="block text-[11px] leading-tight text-[#f1ebdd] sm:text-[12px]">{L.name}</span>
-                {!compact && <span className="block text-[10px] leading-tight dim">{badges[b] || L.sub}</span>}
-              </span>
+            <span className={`glass flex items-center justify-center gap-2 transition group-hover:border-[var(--brass)] ${compact ? "h-11 w-11" : "max-w-[180px] px-2.5 py-2"}`}>
+              <span className="shrink-0 text-[var(--brass)]"><BuildingIcon b={b} size={compact ? 20 : 16} /></span>
+              {!compact && <span className="min-w-0 text-left">
+                <span className="block text-[12px] leading-tight text-[#f1ebdd]">{title}</span>
+                <span className="mt-0.5 block text-[10px] leading-tight dim">{badges[b] || L.sub}</span>
+              </span>}
             </span>
             <span className="mx-auto block h-3 w-px bg-[var(--brass)]/60" />
           </button>
@@ -178,13 +187,13 @@ export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onC
             <button
               key={d.id}
               onClick={() => onOpen(d.id as Building | "orders")}
-              className="flex shrink-0 flex-col items-center gap-1 border border-transparent px-2.5 py-2 text-[9.5px] uppercase tracking-[0.12em] text-[#cfc8b8] transition hover:border-[var(--line-2)] hover:text-white sm:px-4 sm:text-[10px]"
+              className={`flex min-w-11 shrink-0 flex-col items-center gap-1 border border-transparent py-2 uppercase text-[#cfc8b8] transition hover:border-[var(--line-2)] hover:text-white ${compact ? "px-2 text-[8.5px] tracking-[0.06em]" : "px-4 text-[10px] tracking-[0.12em]"}`}
             >
               <BuildingIcon b={d.id} size={compact ? 18 : 20} />
               <span className="whitespace-nowrap">{d.name}</span>
             </button>
           ))}
-          <button onClick={() => onOpen("map")} className="flex shrink-0 flex-col items-center gap-1 border border-transparent px-2.5 py-2 text-[9.5px] uppercase tracking-[0.12em] text-[#cfc8b8] hover:border-[var(--line-2)] hover:text-white sm:px-4 sm:text-[10px]">
+          <button onClick={() => onOpen("map")} className={`flex min-w-11 shrink-0 flex-col items-center gap-1 border border-transparent py-2 uppercase text-[#cfc8b8] hover:border-[var(--line-2)] hover:text-white ${compact ? "px-2 text-[8.5px] tracking-[0.06em]" : "px-4 text-[10px] tracking-[0.12em]"}`}>
             <Icon name="map" size={compact ? 18 : 20} />
             <span>Карта</span>
           </button>

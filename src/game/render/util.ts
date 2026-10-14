@@ -134,3 +134,13 @@ export function installCanvasGuards() {
   };
   (G.prototype as unknown as { __zvGuard?: boolean }).__zvGuard = true;
 }
+
+/** Мягкое пятно света на плоскости (без белого ядра) */
+export function lightPool(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, color: string, a: number) {
+  if (a <= 0.002) return;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+  g.addColorStop(0, hexA(color, a));
+  g.addColorStop(1, hexA(color, 0));
+  ctx.fillStyle = g;
+  ctx.fillRect(x - r, y - r, r * 2, r * 2);
+}

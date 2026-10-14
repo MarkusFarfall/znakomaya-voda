@@ -37,6 +37,10 @@ export function TravelChoice({ engine, trip, onCancel, onGo }: { engine: Engine;
           </div>
           <button className="iconbtn shrink-0" onClick={onCancel} aria-label="Отмена"><Icon name="close" size={16} /></button>
         </div>
+        {trip.kind === "port" && <div className="mt-5 border-l border-[var(--brass)] pl-3">
+          <p className="font-serif text-[19px] leading-tight text-[#e3c996]">{PORT_BY_ID[trip.port].tagline}</p>
+          <p className="mt-1 text-[11px] leading-relaxed muted">{PORT_BY_ID[trip.port].landmarks?.slice(0, 2).join(" · ")}</p>
+        </div>}
         <div className="mt-6 grid min-w-0 gap-3">
           {opts.map((o) => {
             const q = engine.tripQuote(trip, o.mode);

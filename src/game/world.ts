@@ -1,3 +1,4 @@
+import { PORT_DETAILS } from "./portDetails";
 import { FISH } from "./fish";
 import type { BaitDef, BaitId, BoatDef, GearLevel, LocId, LocationDef, PortDef, PortId, Season, SpotDef, WeatherId } from "./types";
 
@@ -350,6 +351,7 @@ export const LOC_POS: Record<LocId, [number, number]> = {
 
 export const PORTS: PortDef[] = [
   {
+    ...PORT_DETAILS.home,
     id: "home", name: "Знакомая вода", place: "родной посёлок", pos: [10, 60], style: "home", serves: ["bay", "estuary", "cape"],
     desc: "Деревянные причалы, маяк на холме и рынок, где все знают твоего отца. Здесь дешевле всего снасти для начала.",
     demand: { bay: 0.85, estuary: 0.9, cape: 0.95, skerries: 1.15, fjord: 1.25, kelp: 1.3, reef: 1.5, mangrove: 1.45, ocean: 1.3, volcano: 1.5, abyss: 1.7, antarctic: 1.6 },
@@ -358,6 +360,7 @@ export const PORTS: PortDef[] = [
     clients: ["Трактир «Старый якорь»", "Коптильня деда Матвея", "Рыбный рынок", "Ресторан «Лагуна»"],
   },
   {
+    ...PORT_DETAILS.nordhavn,
     id: "nordhavn", name: "Нордхавн", place: "северный порт", pos: [24, 17], style: "nord", serves: ["skerries", "fjord"],
     desc: "Красные пакгаузы на сваях, портовые краны и горы над гаванью. Лучшая верфь промысловых судов.",
     demand: { skerries: 0.85, fjord: 0.85, bay: 1.15, estuary: 1.2, cape: 1.05, kelp: 1.2, reef: 1.75, mangrove: 1.7, ocean: 1.25, volcano: 1.6, abyss: 1.4, antarctic: 1.1 },
@@ -366,6 +369,7 @@ export const PORTS: PortDef[] = [
     clients: ["Аквариум Нордвика", "Консервный завод «Фьорд»", "Шеф Эрик Хальвор", "Рыбный рынок Нордхавна"],
   },
   {
+    ...PORT_DETAILS.mirador,
     id: "mirador", name: "Мирадор", place: "туманная гавань", pos: [37, 56], style: "fog", serves: ["kelp", "ocean"],
     desc: "Викторианский пирс, консервные заводы и рестораны на сваях. Гурманы платят за северную и тропическую рыбу.",
     demand: { kelp: 0.85, ocean: 0.95, bay: 1.2, estuary: 1.35, cape: 1.1, skerries: 1.3, fjord: 1.35, reef: 1.3, mangrove: 1.35, volcano: 1.25, abyss: 1.35, antarctic: 1.45 },
@@ -374,6 +378,7 @@ export const PORTS: PortDef[] = [
     clients: ["Суши-бар «Кит»", "Шеф Пьер Дюваль", "Консервный ряд", "Клуб спортивной рыбалки"],
   },
   {
+    ...PORT_DETAILS.coral,
     id: "coral", name: "Порт-Корал", place: "тропический остров", pos: [66, 88], style: "coral", serves: ["reef", "mangrove", "volcano"],
     desc: "Разноцветные домики на сваях, пальмы и базар под навесами. Холодноводная рыба здесь — диковина.",
     demand: { reef: 0.85, mangrove: 0.85, volcano: 0.9, bay: 1.4, estuary: 1.45, cape: 1.45, skerries: 1.7, fjord: 1.8, kelp: 1.5, ocean: 1.1, abyss: 1.35, antarctic: 1.9 },
@@ -382,6 +387,7 @@ export const PORTS: PortDef[] = [
     clients: ["Отель «Лагуна Азул»", "Музей природы", "Рыбный базар", "Ресторан «Пальма»"],
   },
   {
+    ...PORT_DETAILS.southcross,
     id: "southcross", name: "Южный Крест", place: "полярная станция", pos: [93, 78], style: "polar", serves: ["antarctic", "abyss"],
     desc: "Купола станции, радиомачты и ледовый причал. Учёные платят любую цену за редкие виды.",
     demand: { antarctic: 0.9, abyss: 0.95, bay: 1.1, estuary: 1.1, cape: 1.1, skerries: 1.15, fjord: 1.15, kelp: 1.2, reef: 1.25, mangrove: 1.25, ocean: 1.15, volcano: 1.25 },
