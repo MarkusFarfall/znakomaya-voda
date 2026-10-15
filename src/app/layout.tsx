@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { STARTUP_GUARD } from "./startupGuard";
 import { ServiceWorker } from "@/components/game/ServiceWorker";
 // Шрифты подключены локально (@fontsource) — сборка не зависит от Google Fonts.
 import "@fontsource/cormorant-garamond/400.css";
@@ -53,6 +54,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ru">
+      <head><script dangerouslySetInnerHTML={{ __html: STARTUP_GUARD }} /></head>
       <body className="bg-[#050a12] text-[#e6e1d6] antialiased">
         {children}
         <ServiceWorker />

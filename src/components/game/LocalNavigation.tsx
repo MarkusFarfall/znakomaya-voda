@@ -1,6 +1,7 @@
 import type { Engine } from "@/game/engine";
 import type { Scene } from "@/game/render/scene";
-import { waterBedAt, waterRegions } from "@/game/aquatory";
+import { regionAt, waterBedAt, waterRegions } from "@/game/aquatory";
+import { HABITAT_CUES, habitatActivityText } from "@/game/exploration";
 import { DEFAULT_SETTINGS, type Settings } from "@/game/settings";
 import { HoldControl } from "./HoldControl";
 import type { CSSProperties } from "react";
@@ -24,6 +25,11 @@ export function LocalNavigationPanel({
   const pos = n.nx * 1000,
     target = n.target === null || n.manual ? null : (n.target / W) * 1000;
   const regions = waterRegions(e.s.location);
+  const targetDepth = Math.min(e.s.targetDepth, e.maxDepth);
+  const castSpot = regionAt(e.s.location, e.castNX() * W).spot;
+  const activeHabitatCount = e.candidates(targetDepth).filter(({ fish }) => castSpot.bias.includes(fish.id)).length;
+  const cue = HABITAT_CUES[castSpot.feature];
+  const readoutTitle = castSpot.name === cue.title ? cue.title : `${castSpot.name} · ${cue.title}`;
   const profile = Array.from(
     { length: 121 },
     (_, i) =>
@@ -101,6 +107,14 @@ export function LocalNavigationPanel({
             Рыбачить
           </button>
         </div>
+      </div>
+      <div className="local-navigation__readout" aria-live="polite">
+        <span className="local-navigation__readout-mark" aria-hidden="true">{cue.mark}</span>
+        <div>
+          <strong>{readoutTitle}</strong>
+          <span>{cue.hint} · {habitatActivityText(activeHabitatCount, targetDepth)}</span>
+        </div>
+        <span className="local-navigation__readout-count" aria-label={`${activeHabitatCount} активных видов`}>{activeHabitatCount}</span>
       </div>
       <div className="local-navigation__chartrow">
         {arrow(-1)}

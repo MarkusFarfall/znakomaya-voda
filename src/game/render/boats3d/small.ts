@@ -1,6 +1,6 @@
 /** Малые суда: плоскодонка «Утро», каяк «Тишина», моторка «Чайка», баркас «Помор» */
 import * as THREE from 'three';
-import { TAU, clamp } from './util3';
+import { TAU, clamp, damp } from './util3';
 import type { VesselSpec } from './hull3';
 import {
   Builder,
@@ -464,11 +464,15 @@ export function buildDinghy(spec: VesselSpec, cbx: number): VesselModel {
   skipper.root.position.set(-0.4, 0.0, 0);
   b.add(skipper.root);
   const tmp = new V3();
-  b.upd.push((body) => {
-    propG.rotation.x += (0.2 + body.rpm * 55) * 0.016;
-    (blur.material as THREE.MeshBasicMaterial).opacity = clamp((body.rpm - 0.35) * 0.55, 0, 0.3);
-    motor.rotation.z = 0.05 + body.theta * 0.4 + clamp(body.rpm - 0.4, 0, 1) * 0.06;
-    wheel.rotation.x = -body.yawRate * 3.5;
+  let propSpeed = 0;
+  b.upd.push((body, _e, dt) => {
+    const targetPropSpeed = body.rpm * 34 * (body.reversing ? -1 : 1);
+    propSpeed = damp(propSpeed, targetPropSpeed, targetPropSpeed > propSpeed ? 6 : 2.2, dt);
+    propG.rotation.x += propSpeed * dt;
+    (blur.material as THREE.MeshBasicMaterial).opacity = clamp((body.rpm - 0.3) * 0.42, 0, 0.28);
+    const engineTrim = clamp(body.rpm - 0.2, 0, 0.8) * 0.045;
+    motor.rotation.z = damp(motor.rotation.z, 0.05 + body.theta * 0.4 + engineTrim, 5, dt);
+    wheel.rotation.x = damp(wheel.rotation.x, clamp(-body.yawRate * 0.17, -0.62, 0.62), 7, dt);
     skipper.setLean(clamp(body.lean, -0.3, 0.3) + 0.08);
     b.root.updateMatrixWorld(true);
     handL.getWorldPosition(tmp);

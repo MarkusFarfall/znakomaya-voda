@@ -12,7 +12,7 @@ export function ServiceWorker() {
     if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) return;
 
     const timer = setTimeout(() => {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
+      navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).then(reg => reg.update()).catch(() => {
         /* офлайн-режим недоступен — игра работает как обычно */
       });
     }, 1200);

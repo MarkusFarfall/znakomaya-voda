@@ -1,6 +1,6 @@
 import { bedFrac } from "../world";
 import type { Frame } from "./frame";
-import { clamp, ctx2d, hexA, makeCanvas, mix, rng, af, rgbHex } from "./util";
+import { clamp, ctx2d, hash1, hexA, makeCanvas, mix, rng, af, rgbHex } from "./util";
 
 let causticTile: HTMLCanvasElement | null = null;
 
@@ -266,6 +266,29 @@ export function drawSurfaceFront(f: Frame, rings: Ring[]) {
   ctx.closePath();
   ctx.fillStyle = sl;
   ctx.fill();
+
+  // World-anchored specular streaks make wind direction and swell legible without a GPU shader.
+  const streaks = Math.min(120, Math.max(22, Math.round(W / 110)));
+  const drift = t * (4 + f.atmo.wind * 1.5) * (f.atmo.windDir < 0 ? -1 : 1);
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineWidth = 0.8 * f.sc;
+  for (let i = 0; i < streaks; i++) {
+    const seed = i + f.spot.seed * 13;
+    const x0 = (((i * 137 + drift) % W) + W) % W;
+    const offset = (3 + hash1(seed) * 34) * f.sc;
+    const len = (12 + hash1(seed + 87) * 38 + f.atmo.wind * 0.8) * f.sc;
+    const alpha = (0.035 + hash1(seed + 171) * 0.09) * (0.4 + f.sunVis * (1 - f.cover * 0.6)) * (1 - night * 0.55);
+    ctx.strokeStyle = `rgba(235,248,244,${alpha})`;
+    ctx.beginPath();
+    for (let j = 0; j <= 3; j++) {
+      const x = x0 + len * j / 3;
+      const y = f.waveY(x) + offset + Math.sin(t * 1.7 + seed + j) * f.sc;
+      if (j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  ctx.restore();
 
   const plankton = f.e.activeEvents.some((a) => a.id === "plankton");
   ctx.beginPath();

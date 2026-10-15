@@ -59,13 +59,21 @@ export interface AccountStats {
   updatedAt: string;
 }
 
+export function readSavedProgress(raw: unknown): SaveData {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Сохранение имеет неизвестный формат. Исходные данные не изменены.");
+  const value = raw as Record<string, unknown>;
+  if (typeof value.minutes !== "number" || !Number.isFinite(value.minutes) || typeof value.name !== "string") throw new Error("Сохранение неполное. Исходные данные не изменены.");
+  const save = migrateSave(raw);
+  if (!save) throw new Error("Не удалось прочитать прогресс. Исходные данные не изменены.");
+  return save;
+}
+
 export function loadLocal(pid: string): SaveData | null {
-  try {
-    const raw = localStorage.getItem(saveKey(pid));
-    return raw ? migrateSave(JSON.parse(raw)) : null;
-  } catch {
-    return null;
-  }
+  let raw: string | null;
+  try { raw = localStorage.getItem(saveKey(pid)); } catch { return null; }
+  if (raw === null) return null;
+  try { return readSavedProgress(JSON.parse(raw)); }
+  catch { throw new Error("Не удалось прочитать локальное сохранение. Скачайте копию на странице восстановления; данные не удалены."); }
 }
 
 export function saveLocal(pid: string, s: SaveData) {
@@ -81,12 +89,20 @@ export function clearLocal(pid: string) {
 }
 
 async function req<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; status: number; data: T & { error?: string } }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12_000);
+  const abort = () => controller.abort();
+  init?.signal?.addEventListener("abort", abort, { once: true });
+  if (init?.signal?.aborted) controller.abort();
   try {
-    const r = await fetch(url, { cache: "no-store", credentials: "same-origin", ...init, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
+    const r = await fetch(url, { cache: "no-store", credentials: "same-origin", ...init, signal: controller.signal, headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) } });
     const data = (await r.json().catch(() => ({}))) as T & { error?: string };
     return { ok: r.ok, status: r.status, data };
   } catch {
     return { ok: false, status: 0, data: { error: "Нет связи с сервером" } as T & { error?: string } };
+  } finally {
+    clearTimeout(timeout);
+    init?.signal?.removeEventListener("abort", abort);
   }
 }
 
@@ -94,7 +110,7 @@ async function req<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; s
 export async function loadRemote(pid: string): Promise<SaveData | null | undefined> {
   const r = await req<{ save: unknown }>(`/api/save?playerId=${encodeURIComponent(pid)}`);
   if (!r.ok) return undefined;
-  return r.data.save ? migrateSave(r.data.save) : null;
+  return r.data.save === null ? null : readSavedProgress(r.data.save);
 }
 
 export type SaveResult = { ok: true } | { ok: false; conflict?: SaveData; offline?: boolean; unauthorized?: boolean };

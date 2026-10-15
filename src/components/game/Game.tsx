@@ -7,6 +7,7 @@ import { depthToU, Engine, newSave, uToDepth, type TravelMode, type Trip } from 
 import { FISH } from "@/game/fish";
 import { FIGHT_PANEL_HEIGHT } from "@/game/fishing";
 import { clearLocal, deleteRemote, fetchMe, flushCatches, forgetRememberedAccount, loadLocal, loadRemote, loadRememberedAccount, logCatch, logout as apiLogout, pickNewest, rememberAccount, saveLocal, saveRemote, type AccountUser } from "@/game/persist";
+import { RecoveryScreen, rememberFailure } from "./Recovery";
 import { AccountBadge, ProfileModal, type AccountState } from "./Account";
 import { AuthScreen } from "./AuthScreen";
 import { MILESTONES } from "@/game/world";
@@ -37,6 +38,8 @@ type Boot = { state: "loading" } | { state: "auth" } | { state: "title"; save: S
 
 export default function Game() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [startupError, setStartupError] = useState<string | null>(null);
+  const [safeStart, setSafeStart] = useState(false);
   const [engine0] = useState(() => new Engine());
   const engineRef = useRef<Engine>(engine0);
   const [scene0] = useState(() => new Scene());
@@ -108,9 +111,11 @@ export default function Game() {
     const local = loadLocal(pid);
     const remote = await loadRemote(pid);
     setCloud(remote === undefined ? "только на устройстве" : "сервер и устройство");
+    if (!local && remote === undefined) throw new Error("Не удалось проверить серверное сохранение. Повторите запуск при наличии связи.");
     const best = pickNewest(local, remote);
-    if (best) saveLocal(pid, best);
+    // Apply before writing: a failed migration must never replace the original.
     engineRef.current.s = best ?? newSave();
+    if (best) saveLocal(pid, best);
     engineRef.current.phase = "idle";
     return best;
   }, []);
@@ -131,6 +136,11 @@ export default function Game() {
       if (a) st = normalizeSettings(a);
       else if ((navigator.hardwareConcurrency ?? 8) <= 4 || window.matchMedia("(pointer: coarse)").matches) st = { ...st, quality: 1 };
     } catch { /* ignore */ }
+    const safeQuery = new URLSearchParams(window.location.search).get("safe") === "1";
+    let safe = safeQuery;
+    try { safe ||= localStorage.getItem("zv_safe_start") === "1"; } catch { /* query still works */ }
+    if (safe) st = { ...st, quality: 0, model3d: false, sound: false, music: false, gfx: { refl: false, shafts: false, caustics: false, foam: true, precip: false } };
+    setSafeStart(safe);
     setSettingsState(st);
     audioRef.current.enabled = st.sound;
     audioRef.current.music = st.music;
@@ -175,7 +185,8 @@ export default function Game() {
       const best = await loadBest(me.playerId);
       setName(best?.name ?? me.user.username);
       setBoot({ state: "title", save: best });
-    })();
+    })().catch(error => setStartupError(rememberFailure(error)));
+    return () => window.removeEventListener("resize", onResize);
   }, [loadBest]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -262,6 +273,7 @@ export default function Game() {
     pidRef.current = playerId;
     rememberAccount(playerId, user);
     void flushCatches(playerId);
+    try {
     if (mode === "register") {
       // новая учётная запись: имя рыбака берём из имени пользователя, если своё ещё не задано
       if (!e.s.name || e.s.name === "Рыбак") e.s.name = user.username;
@@ -281,6 +293,7 @@ export default function Game() {
     }
     setName(e.s.name);
     void refreshMe();
+    } catch (error) { setStartupError(rememberFailure(error)); }
   }, [loadBest, refreshMe]);
 
   /** Выход: сохраняем прогресс на сервер и возвращаемся на экран входа. */
@@ -396,23 +409,27 @@ export default function Game() {
       // Пока открыт экран входа, большой canvas с игрой не нужен: его заменяет
       // лёгкая SVG-сцена авторизации. На титуле оставляем фон, но обновляем его
       // реже, чтобы не тратить GPU на невидимую подложку.
-      if (boot.state === "auth") {
+      if (!playing || travelling || startupError) {
         if (!clearedWhileAuth) {
           ctx.setTransform(1, 0, 0, 1, 0, 0);
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.fillStyle = "#07151f";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          const glow = ctx.createRadialGradient(canvas.width * .75, canvas.height * .15, 0, canvas.width * .5, canvas.height * .3, Math.max(canvas.width, canvas.height));
+          glow.addColorStop(0, "#183746"); glow.addColorStop(1, "#050a12");
+          ctx.fillStyle = glow; ctx.fillRect(0, 0, canvas.width, canvas.height);
           clearedWhileAuth = true;
         }
         e.sfx.length = 0;
         raf = requestAnimationFrame(loop);
         return;
       }
-      clearedWhileAuth = false;
+      if (clearedWhileAuth) { resize(); clearedWhileAuth = false; }
       if (!playing && now - lastRender < 1000 / 20) {
         raf = requestAnimationFrame(loop);
         return;
       }
       lastRender = now;
-      if (playing) e.update(dt);
+      // Engine and renderer share the guard; either used to be able to kill RAF.
 
       // Размер canvas может оказаться нулевым (окно свёрнуто, элемент ещё не разложен).
       // Рисовать в этом случае нечего, но цикл обязан выжить.
@@ -420,10 +437,13 @@ export default function Game() {
         // Исключение в кадре раньше обрывало requestAnimationFrame навсегда:
         // игра замирала, а звук пропадал до перезагрузки страницы.
         try {
+          e.update(dt);
           if (e.s.atPort) portSceneRef.current.render(ctx, e, W, H, dt);
           else scene.render(ctx, e, W, H, dt);
+          frameFails.current = 0;
         } catch (err) {
-          if (frameFails.current++ < 3) console.warn("[render] кадр пропущен", err);
+          if (++frameFails.current <= 3) console.warn("[render] кадр пропущен", err);
+          if (frameFails.current === 3) { setPlaying(false); setStartupError(rememberFailure(err)); }
         }
         // Во время заставки музыка и процедурная среда не должны продолжать
         // генерировать звук за кадром. SFX сбрасываются только в активной игре.
@@ -455,7 +475,7 @@ export default function Game() {
     };
     raf = requestAnimationFrame(loop);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
-  }, [quality, playing, boot.state]);
+  }, [quality, playing, boot.state, travelling, startupError]);
 
   useEffect(() => {
     engineRef.current.paused = !playing || panel !== null || settingsOpen || letter !== null || authOpen !== null || boot.state === "auth" || engine.s.atPort || !!travelling || !!tripReq;
@@ -616,8 +636,10 @@ export default function Game() {
   const [stTitle, stSub] = status[engine.phase];
 
   const controlReserve=engine.navigationMode?(view.land&&view.compact?130:205):buttonFishing?(view.land?140:195):view.compact?(view.land?70:146):150;
+  if (startupError) return <RecoveryScreen message={startupError} />;
   return (
-    <div className="relative h-dvh w-full select-none overflow-hidden bg-[#050a12] text-[#e6e1d6]" onPointerDownCapture={unlockAudio}>
+    <div data-zv-ready={boot.state !== "loading" ? "true" : undefined} className="relative h-dvh w-full select-none overflow-hidden bg-[#050a12] text-[#e6e1d6]" onPointerDownCapture={unlockAudio}>
+      {safeStart && boot.state === "title" && !playing && <a href="/recover.html" className="absolute bottom-3 left-0 right-0 z-[80] text-center text-xs text-[#bfa777]">Безопасный запуск · восстановление</a>}
       <canvas
         ref={canvasRef}
         className={`absolute inset-0 h-full w-full touch-none ${engine.navigationMode ? "cursor-crosshair" : ""}`}

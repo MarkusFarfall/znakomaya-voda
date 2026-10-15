@@ -1,5 +1,6 @@
 import { LocalNavigation, normalizeLocalPosition } from "./navigation";
-import { normalizeWaterPosition, regionAt, regionDestination, waterWidth, waterBedAt } from "./aquatory";
+import { normalizeWaterPosition, regionAt, regionDestination, waterWidth, waterBedAt, waterSwell } from "./aquatory";
+import { currentAt } from "./waterPhysics";
 import { FISH, FISH_BY_ID, RARITY_INFO, VARIANT_INFO } from "./fish";
 import { BITE_WINDOWS, SURGE_WARNING_TIME, biteApproachSeconds } from "./fishing";
 import { FIGHT_STEP, newFightMotion, stepFightMotion, type FightMotion } from "./fishingPhysics";
@@ -578,10 +579,26 @@ export class Engine {
     if (this.paused) return;
     const wasMoving = this.navigation.moving;
     // Physics uses real seconds, not the accelerated fishing/world clock.
-    if (!this.navigationBlock) this.navigation.step(dt, this.boat, this.atmosphere.state.waves);
+    if (!this.navigationBlock) {
+      const atmo = this.atmosphere.state;
+      const calm = this.activeEvents.some((event) => event.id === "calm");
+      const waves = atmo.waves * this.loc.waveMult * waterSwell(this.s.location, this.navigation.x) * (calm ? 0.25 : 1);
+      this.navigation.step(dt, this.boat, waves, (x) => {
+        const habitat = regionAt(this.s.location, x).spot;
+        return currentAt(habitat.feature, x, this.time, habitat.seed, atmo.wind, atmo.windDir);
+      });
+    }
     if (wasMoving) {
+      const previousSpot = this.s.spot;
       const region=regionAt(this.s.location,this.navigation.x);
       this.s.spot=region.spot.id;
+      if (previousSpot !== region.spot.id) {
+        const discovered = `explored_spot_${region.spot.id}`;
+        if (!this.s.flags.includes(discovered)) {
+          this.s.flags.push(discovered);
+          this.toast(`Новый ориентир: ${region.spot.name}`, "event", region.spot.desc);
+        }
+      }
       this.s.waterPosition={location:this.s.location,x:this.navigation.nx,heading:this.navigation.heading};
       this.s.localPosition = { spot: this.s.spot, x: region.nx, heading: this.navigation.heading };
       this.dirty = true;

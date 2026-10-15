@@ -334,6 +334,8 @@ export class Builder {
   readonly snow: THREE.Object3D[] = [];
   prop: THREE.Object3D | null = null;
   top = 2;
+  private hasNameplate = false;
+  private commonFinishAdded = false;
   /** полуширина корпуса на ватерлинии и на палубе, м */
   bw: (s: number) => number = () => 0.5;
   bd: (s: number) => number = () => 0.5;
@@ -377,6 +379,7 @@ export class Builder {
 
   /** Фирменная табличка с названием на обоих бортах */
   nameplate(text: string, s: number, y: number, w: number, color: string) {
+    this.hasNameplate = true;
     const t = texName(text, color);
     const mat = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, toneMapped: false });
     const mk = (side: 1 | -1) => {
@@ -387,6 +390,67 @@ export class Builder {
     };
     mk(1);
     mk(-1);
+  }
+
+  /** Shared fleet finish: a continuous sheer accent, a visible vessel mark and a real propulsor. */
+  private addFleetFinish() {
+    if (this.commonFinishAdded) return;
+    this.commonFinishAdded = true;
+    const lineMat = std(this.spec.trim, { roughness: this.g.wooden ? 0.56 : 0.36, metalness: this.g.wooden ? 0.08 : 0.32 });
+    for (const side of [-1, 1] as const) {
+      const points: V3[] = [];
+      for (let i = 0; i <= 28; i++) {
+        const s = -this.g.L * 0.46 + (this.g.L * 0.92 * i) / 28;
+        const y = Math.min(0.12, this.D(s) * 0.22);
+        points.push(new V3(s, y + 0.015, side * (this.sideZ(s, y) + 0.018)));
+      }
+      this.add(tubeAlong(points, this.g.wooden ? 0.016 : 0.021, lineMat, 56));
+    }
+    if (!this.hasNameplate) {
+      const words = this.spec.name.split(/\s+/);
+      const shortName = this.spec.name.match(/«([^»]+)»/)?.[1] ?? words[words.length - 1] ?? this.spec.name;
+      const s = -this.g.L * 0.09;
+      const y = this.D(s) * 0.48;
+      const hullColor = new THREE.Color(this.spec.hull);
+      const luminance = 0.2126 * hullColor.r + 0.7152 * hullColor.g + 0.0722 * hullColor.b;
+      this.nameplate(shortName, s, y, Math.min(2.15, this.g.L * 0.34), luminance < 0.34 ? '#f3e3bf' : '#20323a');
+    }
+    this.addInboardPropeller();
+  }
+
+  private addInboardPropeller() {
+    if (this.g.motor !== 'inboard' && this.g.motor !== 'aux') return;
+    const s = -this.g.L / 2 + 0.24;
+    const y = -this.g.T * 0.72;
+    const steel = std('#89969a', { roughness: 0.28, metalness: 0.88 });
+    const shaft = strut(new V3(s + 0.68, y + 0.12, 0), new V3(s - 0.08, y, 0), 0.035, steel, 8);
+    this.add(shaft);
+    const rudder = box(0.09, Math.max(0.32, this.g.T * 0.48), Math.max(0.26, this.g.B * 0.12), std('#303a3d', { roughness: 0.44, metalness: 0.7 }), s - 0.16, y - 0.13, 0, 0.025);
+    this.add(rudder);
+    const prop = new THREE.Group();
+    prop.position.set(s - 0.08, y, 0);
+    const hub = cyl(0.075, 0.045, 0.22, steel, 0, 0, 0, 12);
+    hub.rotation.z = Math.PI / 2;
+    prop.add(hub);
+    const rotor = new THREE.Group();
+    rotor.position.x = -0.08;
+    const bladeMat = std('#aeb7b4', { roughness: 0.31, metalness: 0.9, side: THREE.DoubleSide });
+    for (let i = 0; i < 3; i++) {
+      const blade = box(0.035, 0.38, 0.12, bladeMat, 0, 0.15, 0, 0.025);
+      blade.rotation.x = (i * Math.PI * 2) / 3;
+      blade.rotation.z = 0.16;
+      rotor.add(blade);
+    }
+    prop.add(rotor);
+    this.add(prop);
+    this.prop = prop;
+    let spin = 0;
+    this.upd.push((body, _env, dt) => {
+      const target = body.rpm > 0.015 ? body.rpm * 34 * (body.reversing ? -1 : 1) : 0;
+      spin += (target - spin) * (1 - Math.exp(-dt * (target > spin ? 6 : 2.2)));
+      rotor.rotation.x += spin * dt;
+      rudder.rotation.y = clamp(body.yawRate * 0.055, -0.3, 0.3);
+    });
   }
 
   tick(b: VesselBody, e: Env3, dt: number) {
@@ -404,6 +468,7 @@ export class Builder {
   }
 
   finish(): VesselModel {
+    this.addFleetFinish();
     this.root.traverse((o) => {
       const m = o as THREE.Mesh;
       if (m.isMesh && m.userData.noShadow) {

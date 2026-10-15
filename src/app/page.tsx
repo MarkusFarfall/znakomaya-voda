@@ -1,5 +1,6 @@
 import Game from "@/components/game/Game";
+import { GameBoundary } from "@/components/game/Recovery";
 
 export default function HomePage() {
-  return <Game />;
+  return <GameBoundary><Game /></GameBoundary>;
 }

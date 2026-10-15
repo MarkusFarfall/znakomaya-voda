@@ -122,7 +122,17 @@ export function TravelOverlay({ engine, trip, mode, onDone, quality = 1, model3d
     window.addEventListener("resize", resize);
     // первый кадр сразу, чтобы не было чёрного экрана
     scene.voyage = 40;
-    for (let i = 0; i < 3; i++) scene.render(ctx, ve, W, H, 1 / 30);
+    let visualFailed = false;
+    const render = (dt: number) => {
+      if (visualFailed || W <= 0 || H <= 0) return;
+      try { scene.render(ctx, ve, W, H, dt); }
+      catch (error) {
+        visualFailed = true;
+        console.warn("[travel] Анимация недоступна; переход продолжится", error);
+        ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#07131b"; ctx.fillRect(0, 0, c.width, c.height); ctx.restore();
+      }
+    };
+    render(1 / 30);
     const t0 = performance.now();
     let last = t0;
     let raf = 0;
@@ -138,8 +148,9 @@ export function TravelOverlay({ engine, trip, mode, onDone, quality = 1, model3d
       const ease = Math.min(1, 0.35 + el / 1.2) * Math.min(1, (dur - el) / 1.2 + 0.35);
       scene.voyage = cruise * Math.max(0.15, ease);
       ve.s.minutes = startMin + q.minutes * k;
-      ve.update(dt);
-      scene.render(ctx, ve, W, H, dt);
+      // This is a paused decorative copy; its failure must not block arrival.
+      try { ve.update(dt); } catch { visualFailed = true; }
+      render(dt);
       setP(k);
       if (k >= 1) {
         if (!doneRef.current) {

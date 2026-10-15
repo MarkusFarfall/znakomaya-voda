@@ -18,8 +18,6 @@ import { buildVessel } from './index';
 const EL = 0.2;
 const COS = Math.cos(EL);
 const TAN = Math.tan(EL);
-const CW = 1280;
-const CH = 1024;
 
 export interface StageHooks {
   smoke: (sx: number, sy: number, size: number) => void;
@@ -34,28 +32,54 @@ export class VesselStage {
   private scene = new THREE.Scene();
   private cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 400);
   private sun = new THREE.DirectionalLight(0xffffff, 2);
+  private fill = new THREE.DirectionalLight(0x9cc4d0, 0.45);
   private hemi = new THREE.HemisphereLight(0xaac8ff, 0x203040, 0.6);
   private model: VesselModel | null = null;
   private key = '';
   private v = new THREE.Vector3();
 
   private pr = 1;
+  private quality = -1;
+  private lost = false;
+  private readonly mobile = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+  private readonly width = this.mobile ? 960 : 1280;
+  private readonly height = this.mobile ? 768 : 1024;
+
+  get contextLost() {
+    return this.lost || this.renderer.getContext().isContextLost();
+  }
 
   /** плотность рендера под dpr основной сцены — без «пикселей» при приближении */
   setPixelRatio(dpr: number) {
-    const pr = Math.min(2, Math.max(1, dpr));
+    const pr = Math.min(this.mobile ? 1 : 1.5, Math.max(1, Number.isFinite(dpr) ? dpr : 1));
     if (pr === this.pr) return;
     this.pr = pr;
     this.renderer.setPixelRatio(pr);
-    this.renderer.setSize(CW, CH, false);
+    this.renderer.setSize(this.width, this.height, false);
+  }
+
+  setQuality(level: number) {
+    const quality = clamp(Number.isFinite(level) ? Math.round(level) : 1, 0, 2);
+    if (quality === this.quality) return;
+    this.quality = quality;
+    const shadows = quality > 0;
+    this.renderer.shadowMap.enabled = shadows;
+    this.sun.castShadow = shadows;
+    const size = shadows ? (this.mobile ? (quality > 1 ? 768 : 512) : (quality > 1 ? 1536 : 1024)) : 1;
+    if (this.sun.shadow.map) {
+      this.sun.shadow.map.dispose();
+      this.sun.shadow.map = null;
+    }
+    this.sun.shadow.mapSize.set(size, size);
+    this.sun.shadow.needsUpdate = true;
   }
 
   constructor() {
-    this.canvas.width = CW;
-    this.canvas.height = CH;
-    const r = new THREE.WebGLRenderer({ canvas: this.canvas, alpha: true, antialias: true, premultipliedAlpha: true, powerPreference: 'high-performance' });
+    this.canvas.width = this.width;
+    this.canvas.height = this.height;
+    const r = new THREE.WebGLRenderer({ canvas: this.canvas, alpha: true, antialias: !this.mobile, premultipliedAlpha: true, powerPreference: 'default' });
     r.setPixelRatio(1);
-    r.setSize(CW, CH, false);
+    r.setSize(this.width, this.height, false);
     r.setClearColor(0x000000, 0);
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.NeutralToneMapping;
@@ -63,14 +87,21 @@ export class VesselStage {
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFShadowMap;
     this.renderer = r;
+    this.canvas.addEventListener("webglcontextlost", event => { event.preventDefault(); this.lost = true; });
+    this.canvas.addEventListener("webglcontextrestored", () => { this.lost = false; this.key = ""; });
     const pm = new THREE.PMREMGenerator(r);
-    this.scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+    const room = new RoomEnvironment();
+    this.scene.environment = pm.fromScene(room, 0.04).texture;
+    room.dispose();
     pm.dispose();
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    const shadowSize = this.mobile ? 512 : 1024;
+    this.sun.shadow.mapSize.set(shadowSize, shadowSize);
     this.sun.shadow.bias = -0.0006;
-    this.sun.shadow.normalBias = 0.04;
-    this.scene.add(this.sun, this.sun.target, this.hemi);
+    this.sun.shadow.normalBias = 0.035;
+    this.fill.position.set(-24, 12, 30);
+    this.fill.target.position.set(0, 1, 0);
+    this.scene.add(this.sun, this.sun.target, this.fill, this.fill.target, this.hemi);
     this.cam.position.set(0, Math.sin(EL) * 80, Math.cos(EL) * 80);
     this.cam.lookAt(0, 0, 0);
     this.cam.updateMatrixWorld(true);
@@ -99,6 +130,7 @@ export class VesselStage {
 
   /** Рисует судно в 2D-контекст. Возвращает false, если нужно использовать запасную отрисовку */
   draw(ctx: CanvasRenderingContext2D, f: F, sim: SeaSim, hooks: StageHooks): boolean {
+    if (this.contextLost) return false;
     const b = sim.body;
     this.setVessel(b);
     const m = this.model;
@@ -162,6 +194,8 @@ export class VesselStage {
     this.sun.target.updateMatrixWorld();
     this.sun.color.copy(col);
     this.sun.intensity = inten;
+    this.fill.color.copy(rgb(w.palette.seaNear).lerp(new THREE.Color(0xc8e5e3), 0.3));
+    this.fill.intensity = 0.18 + 0.34 * (1 - w.daylight) + 0.12 * w.cover;
     this.hemi.color.copy(rgb(w.palette.skyMid).lerp(new THREE.Color(0xffffff), 0.25));
     this.hemi.groundColor.copy(rgb(w.palette.seaNear).multiplyScalar(0.75));
     this.hemi.intensity = 0.42 + 0.55 * w.daylight + 0.14 * (1 - w.night);
@@ -169,16 +203,16 @@ export class VesselStage {
 
     /* ───── камера: 1 м = ppm пикселей по обеим осям ───── */
     const want = f.PXM * f.dpr * 1.2;
-    const maxW = CW / (2 * (m.halfLen + 2.5));
-    const maxH = (CH * 0.97) / (m.top + 1.6 + m.draft + 1.3);
+    const maxW = this.width / (2 * (m.halfLen + 2.5));
+    const maxH = (this.height * 0.97) / (m.top + 1.6 + m.draft + 1.3);
     const ppm = Math.min(want, maxW, maxH);
-    const ox = CW / 2;
+    const ox = this.width / 2;
     const oy = (m.top + 1.3) * ppm;
     const ppmY = ppm / COS;
     this.cam.left = -ox / ppm;
-    this.cam.right = (CW - ox) / ppm;
+    this.cam.right = (this.width - ox) / ppm;
     this.cam.top = oy / ppmY;
-    this.cam.bottom = (oy - CH) / ppmY;
+    this.cam.bottom = (oy - this.height) / ppmY;
     this.cam.updateProjectionMatrix();
 
     this.renderer.render(this.scene, this.cam);
@@ -186,7 +220,7 @@ export class VesselStage {
     /* ───── композитинг ───── */
     const sx0 = f.X2S(b.x);
     const k = f.PXM / ppm;
-    ctx.drawImage(this.canvas, sx0 - ox * k, f.sY - oy * k, CW * k, CH * k);
+    ctx.drawImage(this.canvas, sx0 - ox * k, f.sY - oy * k, this.width * k, this.height * k);
 
     /* ───── эмиттеры: дым и пузыри винта ───── */
     const toMain = (v: THREE.Vector3): [number, number] => [sx0 + v.x * f.PXM, f.sY - (v.y - v.z * TAN) * f.PXM];

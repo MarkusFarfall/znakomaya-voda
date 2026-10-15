@@ -17,6 +17,8 @@ import type { SeaSim } from "./hull3";
 import { HULLS, VesselBody } from "./hull3";
 import { VesselStage } from "./stage";
 import { clamp, damp } from "./util3";
+import { currentAt } from "../../waterPhysics";
+import { navigationSpeed } from "../../navigation";
 
 let uiPref = true;
 /** предпочтение 2D/3D из настроек — читают превью (верфь, друзья, профиль) */
@@ -54,29 +56,74 @@ export class Boat3D {
       }
     }
     const stage = sharedStage;
+    if (stage.contextLost) return null;
+    stage.setQuality(f.quality);
     stage.setPixelRatio(Math.abs(dpr));
     const spec = f.e.boat;
     if (!this.body || this.body.spec.id !== spec.id) this.body = new VesselBody(spec);
     const b = this.body;
     const g = HULLS[spec.style];
     const PXM = 28 * f.sc;
+    const localHeading = f.localBoat && Math.cos(f.e.navigation.yaw) < 0 ? -1 : 1;
 
-    /* ───── посадка из качки игры ───── */
+    /* ───── гидродинамическая посадка: центр корпуса следует среднему гребню под килем ───── */
     const wl = f.waveY(bx);
+    const sternX = bx - g.L * 0.42 * PXM;
+    const bowX = bx + g.L * 0.42 * PXM;
+    const sternWave = f.waveY(sternX);
+    const bowWave = f.waveY(bowX);
+    const meanWave = (sternWave + 2 * wl + bowWave) / 4;
+    const targetHeave = (f.sY - meanWave) / PXM;
+    const oldHeave = b.y;
+    const oldHeaveVelocity = b.vy;
     b.x = 0;
-    b.y = (f.sY - wl) / PXM;
-    const slope = (f.waveY(bx + 2 * PXM) - f.waveY(bx - 2 * PXM)) / (4 * PXM);
-    b.theta = damp(b.theta, clamp(-Math.atan(slope) * (0.55 + 0.5 * (1 - spec.stability)), -0.22, 0.22), 5, dt);
-    b.roll = damp(b.roll, Math.sin(f.t * 1.1 + 1.7) * 0.035 * (1.25 - spec.stability) + clamp((f.atmo.wind * f.atmo.windDir) / 40, -0.2, 0.2) * 0.2, 3, dt);
+    b.y = damp(b.y, targetHeave, 14 - spec.stability * 4.2, dt);
+    b.vy = clamp((b.y - oldHeave) / Math.max(dt, 1 / 240), -2.4, 2.4);
+    b.heaveAcc = clamp((b.vy - oldHeaveVelocity) / Math.max(dt, 1 / 240), -4, 4);
+    const slope = (bowWave - sternWave) / Math.max(1, 2 * g.L * 0.42 * PXM);
+    const calmSea = f.e.activeEvents.some((event) => event.id === "calm");
+    const seaLoad = clamp(f.atmo.waves * f.loc.waveMult * (f.spot.swell ?? 1) * (calmSea ? 0.34 : 1), 0, 4);
+    const speedTrim = pose === "helm" ? -Math.min(0.08, speed01 * speed01 * 0.08) : 0;
+    const targetPitch = clamp(-Math.atan(slope) * (0.8 + 0.55 * (1 - spec.stability)) + speedTrim, -0.26, 0.26);
+    b.theta = damp(b.theta, targetPitch, 7 + spec.stability * 2, dt);
+    const relativeVelocity = f.localBoat ? f.e.navigation.velocity * localHeading : speed01;
+    const speedSign = relativeVelocity < -0.05 ? -1 : 1;
+    const modelSpeed = pose === "moored" ? 0 : speed01 * g.vMax * 0.75 * speedSign;
+    const modelYawRate = f.localBoat ? clamp(f.e.navigation.yawRate * localHeading, -4, 4) : 0;
+    const localWind = f.atmo.wind * f.atmo.windDir * localHeading;
+    const windHeel = clamp(localWind / 34, -0.3, 0.3) * (0.06 + 0.12 * (1 - spec.stability));
+    const beamRoll = Math.sin(f.t * 1.05 + bx * 0.0021 + f.atmo.windDir) * seaLoad * 0.014 * (1.15 - spec.stability);
+    const sailHeel = g.sail > 0 ? clamp(localWind / 20, -0.35, 0.35) * b.sailK * 0.14 : 0;
+    const turnHeel = clamp(-Math.atan((modelSpeed * modelYawRate) / 9.81) * 0.65, -0.11, 0.11);
+    b.roll = damp(b.roll, clamp(windHeel + beamRoll + sailHeel + turnHeel, -0.2, 0.2), 4.5, dt);
     const rowing = (spec.style === "row" || spec.style === "kayak") && pose === "helm" && speed01 > .015;
     b.stroke += (rowing ? 1.2 + 1.5 * speed01 : 0) * dt;
-    b.vw = pose === "moored" ? 0 : speed01 * g.vMax * 0.75;
-    b.rpm = g.motor !== "none" && pose !== "moored" ? 0.2 + 0.8 * speed01 : 0;
+    b.throttle = pose === "helm" ? speed01 : 0;
+    const sailWind = clamp(f.atmo.wind / 11, 0, 1);
+    const sailTarget = g.sail > 0 && pose === "helm" ? clamp((0.18 + sailWind * 0.82) * (0.35 + speed01 * 0.65), 0, 1) : 0;
+    b.sailK = damp(b.sailK, sailTarget, 2.8, dt);
+    b.reef = clamp(1 - Math.max(0, f.atmo.wind - 12) * 0.025, 0.48, 1);
+    b.vw = modelSpeed;
+    b.rpm = g.motor !== "none" && pose === "helm" && speed01 > 0.015 ? 0.12 + 0.88 * speed01 : 0;
+    b.yawRate = modelYawRate;
+    b.anchored = pose === "moored";
+    b.reversing = !!f.localBoat && relativeVelocity < -0.1;
+    b.ax = f.localBoat ? clamp(f.e.navigation.acceleration * (g.vMax / Math.max(1, navigationSpeed(f.e.boat))) * localHeading, -3.5, 3.5) : 0;
+    const motionDt = clamp(dt, 0, 1 / 15);
+    if (motionDt > 0) {
+      for (const pend of b.pend) {
+        const gravity = clamp(9.81 + b.heaveAcc, 6, 14);
+        const angularAccel = -(gravity / pend.len) * Math.sin(pend.phi) - (b.ax / pend.len) * Math.cos(pend.phi) - 0.85 * pend.om;
+        pend.om = clamp(pend.om + angularAccel * motionDt, -3.5, 3.5);
+        pend.phi = clamp(pend.phi + pend.om * motionDt, -0.85, 0.85);
+      }
+    }
     b.psi = 0;
-    b.lean = clamp(-speed01 * 0.12 - (f.localBoat ? f.e.navigation.acceleration * f.e.navigation.heading * .001 : 0), -0.2, 0.2);
+    b.lean = clamp(-speed01 * 0.12 - (f.localBoat ? f.e.navigation.acceleration * f.e.navigation.heading * .001 : 0) - b.roll * 0.35, -0.24, 0.24);
 
     /* ───── кадр для 3D-сцены ───── */
     const a = f.atmo;
+    const current = (xMeters: number) => localHeading * currentAt(f.spot.feature, bx + xMeters * PXM * localHeading, f.t, f.spot.seed, a.wind, a.windDir);
     const f3: F = {
       t: f.t,
       dt,
@@ -87,7 +134,7 @@ export class Boat3D {
       day: f.day,
       golden: f.golden,
       fog: f.fogK,
-      windS: a.wind * a.windDir,
+      windS: a.wind * a.windDir * localHeading,
       w: {
         lights: a.lights,
         temp: a.temp,
@@ -105,7 +152,7 @@ export class Boat3D {
         palette: { skyMid: a.palette.skyMid, seaNear: a.palette.seaNear },
       },
       ocean: { height: (xm: number) => (f.sY - f.waveY(bx + xm * PXM)) / PXM },
-      lane: { current: () => 0 },
+      lane: { current },
       X2S: (xm: number) => bx + xm * PXM,
     };
     const sim: SeaSim = { body: b };
@@ -117,11 +164,11 @@ export class Boat3D {
     try {
       ok = stage.draw(ctx, f3, sim, { smoke: () => {}, bubble: () => {} });
     } catch {
-      sharedBroken = true;
+      if (!stage.contextLost) sharedBroken = true;
     }
     ctx.restore();
     if (!ok) {
-      sharedBroken = true;
+      if (!stage.contextLost) sharedBroken = true;
       return null;
     }
     const handHeld = spec.style === "row" || spec.style === "kayak";
@@ -178,12 +225,15 @@ export function boat3dSnapshot(style: BoatStyle, w = 480, h = 240): HTMLCanvasEl
     }
   }
   const stage = sharedStage;
+  stage.setQuality(2);
   stage.setPixelRatio(2);
   const spec = BOATS.find((b) => b.style === style);
   if (!spec) return null;
   const body = new VesselBody(spec);
   body.stroke = 0.7;
   body.rpm = 0.25;
+  body.sailK = HULLS[style].sail > 0 ? 0.8 : 0;
+  body.throttle = 0.25;
   const cv = document.createElement("canvas");
   cv.width = w;
   cv.height = h;

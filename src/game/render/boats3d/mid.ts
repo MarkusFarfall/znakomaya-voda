@@ -1,6 +1,6 @@
 /** Катер «Норд» и яхта «Альбатрос» */
 import * as THREE from 'three';
-import { clamp } from './util3';
+import { clamp, damp } from './util3';
 import type { VesselSpec } from './hull3';
 import {
   Builder,
@@ -325,7 +325,7 @@ export function buildYacht(spec: VesselSpec, cbx: number): VesselModel {
   const tmpB = new V3();
   const tmpC = new V3();
   const mainBoomLen = 4.3;
-  b.upd.push((body, e) => {
+  b.upd.push((body, e, dt) => {
     const kk = Math.max(0.04, body.sailK * (0.4 + 0.6 * body.reef));
     const showing = body.sailK > 0.03;
     const phi = 0.2 + 0.75 * smoothstep(-1, 1, body.windRel);
@@ -364,7 +364,7 @@ export function buildYacht(spec: VesselSpec, cbx: number): VesselModel {
     jib.set(jt, jt.clone().add(new V3(0.05, 0, 0)), jTack, jc, jn, (luffing ? -0.05 : 0.7) * kk, luffing ? 0.45 * kk : 0.05 * kk, e.t + 1.3);
     jib.mesh.visible = showing;
     windex.update(e.t, e.aw);
-    wheel.rotation.x = -body.yawRate * 2.2;
+    wheel.rotation.x = damp(wheel.rotation.x, clamp(-body.yawRate * 0.15, -0.58, 0.58), 5.5, dt);
     helm.setLean(clamp(body.lean, -0.3, 0.3) + 0.12);
     b.root.updateMatrixWorld(true);
     hl.getWorldPosition(tmpA);

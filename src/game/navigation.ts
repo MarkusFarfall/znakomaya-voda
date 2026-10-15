@@ -1,4 +1,5 @@
 import type { BoatDef } from './types';
+import { currentSpeedFactor } from './waterPhysics';
 
 /** Canonical horizontal world. A phone is a viewport, never a narrower location. */
 export const SPOT_WORLD_WIDTH = 2400;
@@ -23,6 +24,8 @@ export class LocalNavigation {
   /** 0 = facing right, PI = facing left. Both renderers animate the same turn. */
   yaw: number;
   manual: -1 | 0 | 1 = 0;
+  /** Signed angular velocity; used by rudder/wheel animations in the 3D fleet. */
+  yawRate = 0;
   readonly left: number;
   readonly right: number;
   constructor(position: Pick<LocalPosition,'x'|'heading'> & {spot?:string}, readonly worldWidth=SPOT_WORLD_WIDTH) { this.left=240/worldWidth;this.right=1-this.left;this.x = position.x * worldWidth; this.heading = position.heading; this.yaw = this.heading === 1 ? 0 : Math.PI; }
@@ -35,18 +38,25 @@ export class LocalNavigation {
     this.manual=dir; this.target=dir===0?null:(dir<0?this.left:this.right)*this.worldWidth;
   }
   stop() { this.manual=0; this.target = null; }
-  step(dt: number, boat: Pick<BoatDef,'fuel'|'tier'|'style'|'stability'>, waves = 1) {
+  step(dt: number, boat: Pick<BoatDef,'fuel'|'tier'|'style'|'stability'>, waves = 1, currentAtX: (x: number) => number = () => 0) {
     if (!Number.isFinite(dt) || dt <= 0) return;
     const total = Math.min(dt, .1), count = Math.ceil(total * 120), h = total / count;
-    const max = navigationSpeed(boat) * (1 - clamp(waves - 1, 0, 2) * .1);
+    const seaLoad = clamp(waves - 1, 0, 2);
+    const stability = clamp(boat.stability, 0, 1);
+    const waveFactor = 1 - seaLoad * (0.075 + 0.045 * (1 - stability));
+    const baseMax = navigationSpeed(boat) * clamp(waveFactor, 0.72, 1);
     const accel = boat.fuel ? 22 : 14, brake = boat.tier > 2 ? 25 : 32;
     for (let i = 0; i < count; i++) {
       const distance = this.target === null ? 0 : this.target - this.x;
       const desiredHeading = distance < 0 ? -1 : 1;
       if (this.target !== null && Math.abs(distance) > .3 && Math.abs(this.velocity) < .5) this.heading = desiredHeading;
       const angle = this.heading === 1 ? 0 : Math.PI;
+      const oldYaw = this.yaw;
       this.yaw += clamp(angle - this.yaw, -Math.PI * h / .85, Math.PI * h / .85);
+      this.yawRate = (this.yaw - oldYaw) / h;
       const canDrive = this.target !== null && !this.turning && desiredHeading === this.heading;
+      const current = canDrive ? currentAtX(this.x) : 0;
+      const max = baseMax * currentSpeedFactor(current, desiredHeading);
       const desired = canDrive ? desiredHeading * Math.min(max, Math.sqrt(2 * brake * .65 * Math.abs(distance)), Math.abs(distance) * 1.8) : 0;
       const rate = Math.abs(desired) > Math.abs(this.velocity) && desired * this.velocity >= 0 ? accel : brake;
       const old = this.velocity;

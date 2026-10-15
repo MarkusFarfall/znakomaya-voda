@@ -1,5 +1,6 @@
 import { horizontalView, navigationSpeed, worldNX } from "../navigation";
 import { waterWidth, waterSwell } from "../aquatory";
+import { sampleWave, waveAmplitudePx } from "../waterPhysics";
 import { AquatoryStream } from "./aquatoryStream";
 import { LocalWake } from "./localWake";
 import { depthToU, JUMP_TIME, TIME_SCALE, type Engine, type SonarBand } from "../engine";
@@ -168,7 +169,8 @@ export class Scene {
     const sc = clamp(Math.min(H / 900, W / 1150), 0.5, 1.25);
     const compact = screenW < 820 || H < 560, land = screenW >= H;
     const calm = e.activeEvents.some((a) => a.id === "calm");
-    const amp = (3.2 * atmo.waves * loc.waveMult * (this.voyage===null?waterSwell(loc.id,e.navigation.x):spot.swell??1) * (calm ? 0.25 : 1) + 1) * sc;
+    const localSwell = this.voyage === null ? waterSwell(loc.id, e.navigation.x) : (spot.swell ?? 1);
+    const amp = waveAmplitudePx(atmo.waves, loc.waveMult, localSwell, atmo.wind, sc, calm);
 
     const top = rgbHex(atmo.palette.skyTop);
     const mid = rgbHex(atmo.palette.skyMid);
@@ -184,7 +186,10 @@ export class Scene {
 
     if (this.voyage) this.flow += this.voyage * dt;
     const fl = this.flow;
-    const waveY = (xx: number) => { const x = xx + fl; return sY + amp * (Math.sin(x * 0.011 + t * 1.25) * 0.55 + Math.sin(x * 0.027 - t * 1.9) * 0.28 + Math.sin(x * 0.0045 + t * 0.55) * 0.9) + (this.voyage === null ? this.localWake.heightAt(xx) : 0); };
+    const waveY = (xx: number) => {
+      const x = xx + fl;
+      return sY + sampleWave(x, t, amp, atmo.windDir).height + (this.voyage === null ? this.localWake.heightAt(xx) : 0);
+    };
     const depthPx = (m: number) => K * depthToU(m);
 
     // камера
