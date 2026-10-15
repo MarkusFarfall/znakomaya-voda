@@ -1,5 +1,6 @@
 "use client";
 
+import { DEFAULT_SETTINGS } from "@/game/settings";
 import { useId, useState } from "react";
 import { Toggle, type Settings } from "./Journal";
 import { Icon } from "./Icons";
@@ -61,6 +62,8 @@ export function SettingsModal({
   const [section, setSection] = useState("graphics");
   const set = (patch: Partial<Settings>) =>
     setSettings({ ...settings, ...patch });
+  const setControls = (patch: Partial<Settings["controls"]>) =>
+    set({ controls: { ...settings.controls, ...patch } });
   const setGfx = (patch: Partial<Settings["gfx"]>) =>
     setSettings({ ...settings, gfx: { ...settings.gfx, ...patch } });
   return (
@@ -227,6 +230,87 @@ export function SettingsModal({
           )}
           {section === "controls" && (
             <Sect name="Управление">
+              <OptRow k="Перемещение" hint="Только с убранной снастью">
+                <div className="seg flex w-full">
+                  {(["arrows", "point"] as const).map((v) => (
+                    <button
+                      key={v}
+                      className={settings.controls.sailing === v ? "on" : ""}
+                      aria-pressed={settings.controls.sailing === v}
+                      onClick={() => setControls({ sailing: v })}
+                    >
+                      {v === "arrows" ? "Стрелки" : "Выбор точки"}
+                    </button>
+                  ))}
+                </div>
+              </OptRow>
+              <OptRow
+                k="Рыбалка"
+                hint="Отдельные кнопки защищают от случайных касаний сцены"
+              >
+                <div className="seg flex w-full">
+                  {(["buttons", "canvas"] as const).map((v) => (
+                    <button
+                      key={v}
+                      className={settings.controls.fishing === v ? "on" : ""}
+                      aria-pressed={settings.controls.fishing === v}
+                      onClick={() => setControls({ fishing: v })}
+                    >
+                      {v === "buttons" ? "Кнопки снасти" : "Касания воды"}
+                    </button>
+                  ))}
+                </div>
+              </OptRow>
+              <OptRow k="Основная рука">
+                <div className="seg flex w-full">
+                  {(["left", "right"] as const).map((v) => (
+                    <button
+                      key={v}
+                      className={settings.controls.hand === v ? "on" : ""}
+                      aria-pressed={settings.controls.hand === v}
+                      onClick={() => setControls({ hand: v })}
+                    >
+                      {v === "left" ? "Левая" : "Правая"}
+                    </button>
+                  ))}
+                </div>
+              </OptRow>
+              <OptRow k="Размер кнопок">
+                <input
+                  className="depth-range w-full"
+                  aria-label="Размер кнопок"
+                  type="range"
+                  min={85}
+                  max={120}
+                  step={5}
+                  value={Math.round(settings.controls.size * 100)}
+                  onChange={(ev) =>
+                    setControls({ size: Number(ev.target.value) / 100 })
+                  }
+                />
+                <span>{Math.round(settings.controls.size * 100)}%</span>
+              </OptRow>
+              <OptRow k="Непрозрачность управления">
+                <input
+                  className="depth-range w-full"
+                  aria-label="Непрозрачность управления"
+                  type="range"
+                  min={65}
+                  max={100}
+                  step={5}
+                  value={Math.round(settings.controls.opacity * 100)}
+                  onChange={(ev) =>
+                    setControls({ opacity: Number(ev.target.value) / 100 })
+                  }
+                />
+                <span>{Math.round(settings.controls.opacity * 100)}%</span>
+              </OptRow>
+              <button
+                className="btn btn-quiet"
+                onClick={() => setControls({ ...DEFAULT_SETTINGS.controls })}
+              >
+                Сбросить управление
+              </button>
               <p className="settings-note">
                 На телефоне: удерживайте кнопку снасти для подмотки, меняйте
                 глубину ползунком, гасите рывки боковыми кнопками.
@@ -236,7 +320,7 @@ export function SettingsModal({
                   ["Заброс, подсечка, подмотка", "ЛКМ / Пробел"],
                   ["Перемещение ↔ рыбалка", "N"],
                   ["Остановка на ходу", "Пробел / Esc"],
-                  ["Противодействие рывку", "A · D / курсор к краю"],
+                  ["Ход / противодействие рывку", "A · D / ← · →"],
                   ["Глубина", "Колесо / W · S"],
                   ["Приближение", "Shift + колесо"],
                   ["Наживка", "1 – 9, 0"],

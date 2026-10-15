@@ -23,6 +23,7 @@ import { setBoat3dPref } from "@/game/render/boats3d/boat3d";
 import { CatchModal, fmt, PortModal, type PortTab } from "./Panels";
 import { Codex } from "./Codex";
 import { TravelChoice, TravelOverlay } from "./Travel";
+import { MobileFishing } from "./MobileFishing";
 import { LocalNavigationPanel } from "./LocalNavigation";
 import { PortHub } from "./PortHub";
 import { RestTransition } from "./RestTransition";
@@ -82,7 +83,7 @@ export default function Game() {
       w.__zv = engine;
       w.__zvAudio = GameAudio;
       // Срез состояния звука — для поддержки и автотестов.
-      w.__zvSound = () => ({ ...audioRef.current.debug(), audioFails: audioFails.current, frameFails: frameFails.current });
+      w.__zvSound = () => ({ ...audioRef.current.debug(), audioFails: audioFails.current, frameFails: frameFails.current, streamedRegions: sceneRef.current.streamedRegions });
     }
     const vis = () => {
       const hidden = document.visibilityState === "hidden";
@@ -354,6 +355,9 @@ export default function Game() {
     };
   }, [engine, playing, persist]);
 
+  const mobileControls=touch||view.compact;
+  const buttonFishing=mobileControls&&settings.controls.fishing==='buttons';
+  useEffect(()=>{sceneRef.current.mobileButtons=buttonFishing;engineRef.current.cancelInput();},[buttonFishing,settings.controls.sailing]);
   const quality = settings.quality;
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -527,12 +531,12 @@ export default function Game() {
         const b = BAITS[n === 0 ? 9 : n - 1];
         if (b) engine.setBait(b.id);
       }
-      else if ((ev.code === "ArrowLeft" || ev.code === "KeyA") && !engine.paused) { ev.preventDefault(); engine.keyDir = -1; engine.pullDir = -1; }
-      else if ((ev.code === "ArrowRight" || ev.code === "KeyD") && !engine.paused) { ev.preventDefault(); engine.keyDir = 1; engine.pullDir = 1; }
+      else if ((ev.code === "ArrowLeft" || ev.code === "KeyA") && !engine.paused) { ev.preventDefault(); if(engine.navigationMode)engine.steerNavigation(-1);else{engine.keyDir=-1;engine.pullDir=-1;} }
+      else if ((ev.code === "ArrowRight" || ev.code === "KeyD") && !engine.paused) { ev.preventDefault(); if(engine.navigationMode)engine.steerNavigation(1);else{engine.keyDir=1;engine.pullDir=1;} }
     };
     const up = (ev: KeyboardEvent) => {
       if (ev.code === "Space") engine.pointerUp();
-      if (["ArrowLeft", "KeyA", "ArrowRight", "KeyD"].includes(ev.code)) { engine.keyDir = 0; engine.pullDir = 0; }
+      if (["ArrowLeft", "KeyA", "ArrowRight", "KeyD"].includes(ev.code)) { const dir=ev.code==="ArrowLeft"||ev.code==="KeyA"?-1:1;if(engine.navigation.manual===dir)engine.steerNavigation(0);engine.keyDir=0;engine.pullDir=0; }
     };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
@@ -611,6 +615,7 @@ export default function Game() {
   };
   const [stTitle, stSub] = status[engine.phase];
 
+  const controlReserve=engine.navigationMode?(view.land&&view.compact?130:205):buttonFishing?(view.land?140:195):view.compact?(view.land?70:146):150;
   return (
     <div className="relative h-dvh w-full select-none overflow-hidden bg-[#050a12] text-[#e6e1d6]" onPointerDownCapture={unlockAudio}>
       <canvas
@@ -619,10 +624,12 @@ export default function Game() {
         onPointerDown={(e) => {
           if (e.button === 0 && playing && !engine.paused && !panel && !letter && !engine.lastCatch && !engine.lastFind && !engine.s.atPort) {
             if (engine.navigationMode) {
+              if(mobileControls&&settings.controls.sailing==="arrows")return;
               const rect = e.currentTarget.getBoundingClientRect();
               if (sceneRef.current.isWaterPoint(e.clientY - rect.top)) engine.navigateTo(sceneRef.current.screenToWorldNX(e.clientX - rect.left));
               return;
             }
+            if(buttonFishing)return;
             e.currentTarget.setPointerCapture(e.pointerId);
             engine.pointerDown();
             const k = e.clientX / window.innerWidth;
@@ -630,19 +637,19 @@ export default function Game() {
           }
         }}
         onPointerMove={(e) => {
-          if (engine.reeling) {
+          if (!buttonFishing && engine.reeling) {
             const k = e.clientX / window.innerWidth;
             engine.setPointerDir(k < 0.4 ? -1 : k > 0.6 ? 1 : 0);
           }
         }}
         onPointerUp={(e) => {
-          if (e.button !== 0) return;
+          if (e.button !== 0 || buttonFishing || engine.navigationMode) return;
           engine.pointerUp();
           if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
         }}
-        onPointerCancel={() => engine.cancelInput()}
-        onLostPointerCapture={() => engine.cancelInput()}
-        onPointerLeave={(e) => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) engine.cancelInput(); }}
+        onPointerCancel={() => (!buttonFishing&&!engine.navigationMode)&&engine.cancelInput()}
+        onLostPointerCapture={() => (!buttonFishing&&!engine.navigationMode)&&engine.cancelInput()}
+        onPointerLeave={(e) => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) (!buttonFishing&&!engine.navigationMode)&&engine.cancelInput(); }}
         onContextMenu={(e) => e.preventDefault()}
       />
 
@@ -704,8 +711,8 @@ export default function Game() {
       {playing && (
         <>
           {!engine.s.atPort && !panel && !tripReq && !travelling && !settingsOpen && letter === null && !authOpen && !engine.lastCatch && !engine.lastFind && (
-            engine.navigationMode ? <LocalNavigationPanel engine={engine} scene={scene0} landscape={view.compact && view.land} /> :
-            <button className="zv-ui navigation-entry" style={{ bottom: (view.compact ? (view.land ? 76 : 154) : 126) + (view.compact ? (engine.tipNow ? 60 : 0) + Math.min(engine.toasts.length, 2) * 36 : 0) }} disabled={!!engine.navigationBlock} onClick={() => engine.setNavigationMode(true)} title={engine.navigationBlock ?? "Выбрать точку и плыть · N"}>
+            engine.navigationMode ? <LocalNavigationPanel engine={engine} scene={scene0} landscape={view.compact && view.land} mobile={mobileControls} controls={settings.controls} /> : ["idle","waiting","sinking"].includes(engine.phase) &&
+            <button className="zv-ui navigation-entry" style={{bottom:controlReserve+12,right:58}} disabled={!!engine.navigationBlock} onClick={() => engine.setNavigationMode(true)} title={engine.navigationBlock ?? "Выбрать точку и плыть · N"}>
               <span aria-hidden="true">↔</span> Перемещение
               {!!engine.navigationBlock && <small>уберите снасть</small>}
             </button>
@@ -741,11 +748,11 @@ export default function Game() {
                 {spotsOf(s.location).map((sp) => {
                   const on = s.spot === sp.id;
                   return (
-                    <button key={sp.id} disabled={busy || on} title={sp.desc} onClick={() => { audio.ui("click"); engine.moveSpot(sp.id); }} className={`group flex w-full items-center gap-2 py-[3px] text-left text-[12px] transition disabled:cursor-default ${on ? "text-[#f1ebdd]" : "muted hover:text-white"}`}>
+                    <div key={sp.id} aria-current={on?"location":undefined} title={sp.desc}  className={`group flex w-full items-center gap-2 py-[3px] text-left text-[12px] transition disabled:cursor-default ${on ? "text-[#f1ebdd]" : "muted hover:text-white"}`}>
                       <span className={`h-1.5 w-1.5 rotate-45 ${on ? "bg-[var(--brass)]" : "border border-white/30"}`} />
                       <span className="flex-1 truncate">{sp.name}</span>
                       <span className={`num text-[10px] ${sp.maxDepth > engine.line.value ? "text-[var(--color-bad)]" : "dim"}`}>{sp.maxDepth} м</span>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
@@ -836,16 +843,16 @@ export default function Game() {
                       <span className="flex items-center gap-2"><Icon name="map" size={14} />Карта акваторий</span>
                       <span className="text-[9px] normal-case tracking-normal muted">расстояние и топливо</span>
                     </button>
-                    <div className="label mt-4">Точки ловли</div>
+                    <div className="label mt-4">Ориентиры акватории</div>
                     <div className="mt-1">
                       {spotsOf(s.location).map((sp) => {
                         const on = s.spot === sp.id;
                         return (
-                          <button key={sp.id} disabled={busy || on} onClick={() => { audio.ui("click"); engine.moveSpot(sp.id); setInfo(false); }} className={`flex min-w-0 w-full items-center gap-2 border-b border-[var(--line)] py-2.5 text-left text-[13px] ${on ? "text-[#f1ebdd]" : "muted"}`}>
+                          <div key={sp.id} aria-current={on?"location":undefined}  className={`flex min-w-0 w-full items-center gap-2 border-b border-[var(--line)] py-2.5 text-left text-[13px] ${on ? "text-[#f1ebdd]" : "muted"}`}>
                             <span className={`h-1.5 w-1.5 shrink-0 rotate-45 ${on ? "bg-[var(--brass)]" : "border border-white/30"}`} />
                             <span className="min-w-0 flex-1 truncate">{sp.name}</span>
                             <span className={`num text-[11px] ${sp.maxDepth > engine.line.value ? "text-[var(--color-bad)]" : "dim"}`}>{sp.maxDepth} м</span>
-                          </button>
+                          </div>
                         );
                       })}
                     </div>
@@ -895,7 +902,7 @@ export default function Game() {
           )}
 
           {/* ───────── ЛЕНТА ───────── */}
-          <div className="pointer-events-none absolute left-3 z-20 flex max-w-[78vw] flex-col gap-1.5" style={{ bottom: engine.navigationMode ? (view.compact && view.land ? 122 : 190) : view.compact ? (view.land ? 70 : 142) : 116 }}>
+          <div className="pointer-events-none absolute left-3 z-20 flex max-w-[78vw] flex-col gap-1.5" style={{bottom:controlReserve+(engine.phase==="charging"?96:64),display:["fight","bite"].includes(engine.phase)?"none":undefined}}>
             {(view.compact ? engine.toasts.slice(-2) : engine.toasts).map((t) => (
               <div key={t.id} className={`log-item log-${t.kind}`}>
                 <div>
@@ -914,13 +921,13 @@ export default function Game() {
               else if (message.type === "outcome") audio.play("quest");
               else if (message.type === "omen" || message.type === "start") audio.play("event");
             }}
-            hidden={engine.navigationMode || panel !== null || letter !== null || authOpen !== null || !!travelling || !!tripReq || (touch && engine.phase === "fight")}
+            hidden={buttonFishing || engine.navigationMode || panel !== null || letter !== null || authOpen !== null || !!travelling || !!tripReq || (touch && engine.phase === "fight")}
             compact={view.compact}
             land={view.land}
             port={engine.s.atPort}
           />
 
-          {!view.compact && !engine.s.atPort && !engine.navigationMode && (
+          {!buttonFishing && !view.compact && !engine.s.atPort && !engine.navigationMode && (
             <>
           {/* ───────── НИЖНЯЯ ПАНЕЛЬ ───────── */}
           <div className="zv-ui game-controls absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-2 px-4 pb-4" onPointerDown={(e) => e.stopPropagation()}>
@@ -974,7 +981,7 @@ export default function Game() {
 
             </>
           )}
-          {view.compact && !engine.s.atPort && !engine.navigationMode && (
+          {!buttonFishing && view.compact && !engine.s.atPort && !engine.navigationMode && (
             <div className="zv-ui game-controls absolute inset-x-0 bottom-0 z-20 px-2 pb-[max(8px,env(safe-area-inset-bottom))] pl-[max(8px,env(safe-area-inset-left))] pr-[max(8px,env(safe-area-inset-right))]" onPointerDown={(e) => e.stopPropagation()}>
               {engine.tipNow && engine.phase !== "fight" && engine.phase !== "bite" && !engine.nibbling && (
                 <div key={engine.tipNow.id} className="tip glass mx-auto mb-1.5 flex max-w-[560px] items-start gap-2 px-3 py-2">
@@ -1047,7 +1054,7 @@ export default function Game() {
               )}
             </div>
           )}
-          {touch && engine.phase === "fight" && (
+          {!buttonFishing && touch && engine.phase === "fight" && (
             <div className="pointer-events-none absolute inset-x-0 z-30 flex justify-between px-4" style={{ bottom: view.compact ? (view.land ? 84 : 146 + FIGHT_PANEL_HEIGHT + 26) : 150 + FIGHT_PANEL_HEIGHT + 26 }}>
               {([-1, 1] as const).map((d) => (
                 <button
@@ -1058,7 +1065,7 @@ export default function Game() {
                   onPointerDown={(e) => {
                     e.stopPropagation();
                     if (engine.paused || e.button !== 0) return;
-                    e.currentTarget.setPointerCapture(e.pointerId);
+            e.currentTarget.setPointerCapture(e.pointerId);
                     engine.keyDir = d; engine.pullDir = d; engine.reeling = true;
                   }}
                   onPointerUp={(e) => {
@@ -1076,10 +1083,11 @@ export default function Game() {
 
           {!engine.s.atPort && !panel && !tripReq && !travelling && !settingsOpen && letter === null && !authOpen && engine.phase !== "caught" && (
             <div className="pointer-events-none absolute inset-0 z-[25]">
-              <button style={{ position: "absolute", bottom: engine.navigationMode ? (view.compact && view.land ? 124 : 190) : 12, right: 12 }} className="iconbtn pointer-events-auto !bg-[rgba(6,12,18,0.72)]" onClick={() => setSettingsOpen(true)} title="Настройки" aria-label="Настройки"><Icon name="gear" size={16} /></button>
+              <button style={{ position: "absolute", ...(["fight","bite","charging","casting"].includes(engine.phase)?{top:view.compact?(view.land?102:122):220}:{bottom:controlReserve+12}),right:12 }} className="iconbtn pointer-events-auto !bg-[rgba(6,12,18,0.72)]" onClick={() => setSettingsOpen(true)} title="Настройки" aria-label="Настройки"><Icon name="gear" size={16} /></button>
             </div>
           )}
 
+          {buttonFishing&&!engine.navigationMode&&!engine.s.atPort&&!panel&&!tripReq&&!travelling&&!settingsOpen&&letter===null&&!authOpen&&!engine.lastCatch&&!engine.lastFind&&<MobileFishing engine={engine} controls={settings.controls} landscape={view.land&&view.compact}/>}
           {engine.phase === "caught" && engine.lastCatch && <CatchModal engine={engine} />}
           {engine.phase === "caught" && engine.lastFind && <FindModal engine={engine} />}
           {panel === "codex" && <Codex codex={engine.s.codex} onClose={closePanel} />}

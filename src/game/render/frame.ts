@@ -15,6 +15,11 @@ export interface EngineView {
 }
 
 export interface Frame {
+  buttonControls?: boolean;
+  viewLeft?: number;
+  viewWidth?: number;
+  chunkOffset?: number;
+  bedDepth?: (x:number)=>number;
   ctx: CanvasRenderingContext2D;
   e: Engine;
   loc: LocationDef;
@@ -67,4 +72,11 @@ export interface Frame {
   waveY: (x: number) => number;
   /** откуда светит солнце/луна: dx −1 (слева) … 1 (справа), k — сила 0..1 */
   light?: { dx: number; k: number };
+}
+
+/** Internal coasts converge to one horizon; physical outer shores remain intact. */
+export function shoreEnvelope(f: Frame,x:number) {
+  if(f.chunkOffset===undefined)return 1;
+  const smooth=(n:number)=>{const t=Math.max(0,Math.min(1,n/280));return t*t*(3-2*t);};
+  return (f.chunkOffset>0?smooth(x):1)*(f.chunkOffset+f.W<(f.worldWidth??f.W)?smooth(f.W-x):1);
 }

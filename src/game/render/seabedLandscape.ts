@@ -49,7 +49,7 @@ export class SeabedLandscape {
     const key = `${f.spot.id}|${f.W}|${f.H}|${f.sc}`;
     if (key === this.key) return;
     this.key = key;
-    this.formations = bedFormations(f.W, f.sc, f.spot.seed);
+    this.formations = bedFormations(f.W, f.sc, f.spot.seed).filter(o=>f.chunkOffset===undefined || (o.x-o.width*.6>4 && o.x+o.width*.6<f.W-4));
     const random = rng(f.spot.seed * 43 + 19);
     this.grains = Array.from(
       { length: Math.min(950, Math.round(f.W * 0.7)) },
@@ -67,7 +67,7 @@ export class SeabedLandscape {
     const { ctx, W, H, sc } = f;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, f.sY + 1, W, Math.max(1, f.cam + H - f.sY));
+    ctx.rect(-2, f.sY + 1, W+4, Math.max(1, f.cam + H - f.sY));
     ctx.clip();
     // Two distant ridgelines fade into the habitat's water; they never replace the real floor.
     for (const layer of [0, 1]) {
@@ -83,8 +83,8 @@ export class SeabedLandscape {
         const q = clamp(x / W, 0, 1),
           remap = q * 0.72 + 0.1 + layer * 0.06;
         const ridge =
-          bed(remap * W) -
-          (50 + (1 - layer) * 65 + Math.sin(q * 8 + f.spot.seed + layer) * 25) *
+          (f.bedDepth?f.sY+f.depthPx(f.bedDepth(x)):bed(remap * W)) -
+          (50 + (1 - layer) * 65 + Math.sin(f.chunkOffset!==undefined?(x+f.chunkOffset)*.0033+layer:q * 8 + f.spot.seed + layer) * 25) *
             sc;
         ctx.lineTo(x, Math.max(f.sY + 20 * sc, ridge));
       }
@@ -103,27 +103,27 @@ export class SeabedLandscape {
     const material = mix(
       f.loc.bed,
       "#82938b",
-      f.spot.maxDepth > 100 ? 0.28 : 0.08,
+      f.loc.maxDepth > 100 ? 0.28 : 0.08,
     );
-    const bands = f.quality === 0 ? 3 : 7;
+    const bands = f.quality === 0 ? 3 : 7, start=f.chunkOffset!==undefined?-8:0;
     for (let k = 0; k < bands; k++) {
       ctx.beginPath();
       const offset = (10 + k * k * 7) * sc;
-      for (let x = 0; x <= W + 8; x += 8) {
+      for (let x = start; x <= W + 8; x += 8) {
         const y =
           bed(x) +
           offset +
-          Math.sin(x * 0.012 + k * 2 + f.spot.seed) * (4 + k * 2) * sc;
-        if (x === 0) ctx.moveTo(x, y);
+          Math.sin((x+(f.chunkOffset??0)) * 0.012 + k * 2 + (f.chunkOffset!==undefined?1:f.spot.seed)) * (4 + k * 2) * sc;
+        if (x === start) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
-      for (let x = W + 8; x >= 0; x -= 8)
+      for (let x = W + 8; x >= start; x -= 8)
         ctx.lineTo(
           x,
           bed(x) +
             offset +
             (12 + k * 4) * sc +
-            Math.sin(x * 0.014 + k) * 5 * sc,
+            Math.sin((x+(f.chunkOffset??0)) * 0.014 + k) * 5 * sc,
         );
       ctx.closePath();
       ctx.fillStyle = hexA(

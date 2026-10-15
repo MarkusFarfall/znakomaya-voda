@@ -52,20 +52,16 @@ export function atlasRoute(engine: Engine, target: AtlasTarget, spot?: string) {
   const here =
     target.kind === "port"
       ? engine.s.atPort && engine.s.port === target.id
-      : local && trip.kind === "loc" && engine.s.spot === trip.spot;
+      : local;
   const sail = local
     ? {
-        minutes: 20,
-        fuel: Math.min(engine.s.money, Math.round(engine.boat.fuel / 3)),
+        minutes: 0,
+        fuel: 0,
       }
     : engine.tripQuote(trip, "sail");
   const motor = local ? sail : engine.tripQuote(trip, "motor");
   const blocked = here
     ? "Вы уже здесь"
-    : local
-      ? ["fight", "caught", "bite"].includes(engine.phase)
-        ? "Сначала закончите с рыбой"
-        : null
-      : engine.tripBlock(trip, "sail");
+    : engine.tripBlock(trip, "sail");
   return { trip, local, here, sail, motor, blocked };
 }

@@ -1,4 +1,4 @@
-import type { Frame } from "./frame";
+import { shoreEnvelope, type Frame } from "./frame";
 import type { LandRenderer } from "./land";
 import { clamp, fbm, glow, hash1, hexA, mix, rng, af } from "./util";
 
@@ -43,9 +43,15 @@ export class ExtraLand {
   private steamT = 0;
   private lavaX = 0;
 
+  stitch(f:Frame,warp:(pts:number[])=>void){
+    warp(this.far);if(this.cliff){warp(this.cliff.pts);if(f.loc.land!=="ice")warp(this.cliff.top);}
+    const away=<T extends {x:number}>(items:T[])=>items.filter(o=>shoreEnvelope(f,o.x)>.9);
+    this.islands=away(this.islands);this.reeds=away(this.reeds);this.huts=away(this.huts);this.stacks=away(this.stacks);
+    this.mangroves=away(this.mangroves);this.sandbars=away(this.sandbars);this.cypress=away(this.cypress);this.bergs=away(this.bergs);
+  }
   build(L: LandRenderer, f: Frame) {
     const { W, H, hY, sY, spot, loc } = f;
-    const key = `${spot.id}|${W}|${H}`;
+    const key = `${spot.id}|${W}|${H}|${f.e.season}|${f.atmo.snowCover>0.18}`;
     if (key === this.key) return;
     this.key = key;
     this.far = [];
@@ -652,6 +658,7 @@ export class ExtraLand {
     for (let i = 2; i < p.length; i += 2) ctx.lineTo(p[i], p[i + 1]);
     ctx.closePath();
     ctx.fill();
+    ctx.save();ctx.clip();
     // трава на вершине
     ctx.strokeStyle = L.colorOf(f, e.season === 2 ? "#8a7a3a" : e.season === 3 ? "#6a6a4a" : "#5a6a3a", 0.3);
     ctx.lineWidth = 3;
@@ -670,6 +677,7 @@ export class ExtraLand {
       ctx.lineTo(x + (hash1(k * 3) - 0.5) * 16, hY - 4);
       ctx.stroke();
     }
+    ctx.restore();
     // кипарисы
     for (const cy of this.cypress) this.drawCypress(L, f, cy);
     // прибой у подножия
@@ -1112,6 +1120,7 @@ export class ExtraLand {
     for (let i = 2; i < p.length; i += 2) ctx.lineTo(p[i], p[i + 1]);
     ctx.closePath();
     ctx.fill();
+    ctx.save();ctx.clip();
     // вертикальные трещины и тени
     for (let x = sx0 + 8; x < W; x += 9) {
       const hsh = hash1(x * 0.37);
@@ -1129,6 +1138,7 @@ export class ExtraLand {
       ctx.fillStyle = hexA("#ffffff", (0.3 + q * 0.3) * (1 - night * 0.6));
       ctx.fillRect(x, hY + q * 1.5, 10, 1.3);
     }
+    ctx.restore();
     // откол ледника
     if (f.e.activeEvents.some((a) => a.id === "calving")) {
       const cx = sx0 + (W - sx0) * 0.4;

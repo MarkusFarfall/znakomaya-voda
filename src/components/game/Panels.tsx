@@ -421,7 +421,7 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
 
         {tab === "map" && <WorldAtlas engine={engine} onSail={(id) => onTravel({ kind: "port", port: id })} onGo={(l, sp) => {
           if (!engine.s.atPort && l === engine.s.location) {
-            if (engine.moveSpot(sp)) onClose();
+            onClose();
             return;
           }
           onTravel({ kind: "loc", loc: l, spot: sp });

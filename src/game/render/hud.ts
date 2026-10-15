@@ -1,7 +1,6 @@
 import { depthToU, type SonarBand } from "../engine";
 import { RARITY_INFO } from "../fish";
 import { FIGHT_PANEL_HEIGHT, SURGE_WARNING_TIME } from "../fishing";
-import { bedFrac } from "../world";
 import type { Frame } from "./frame";
 import { clamp, FONTS, hash1, roundRect } from "./util";
 
@@ -74,7 +73,7 @@ export function drawRuler(f: Frame) {
   ctx.font = `500 10px ${FONTS.sans}`;
   ctx.textAlign = "right";
   for (const m of marks) {
-    if (m > f.spot.maxDepth * 1.05) break;
+    if (m > f.loc.maxDepth * 1.05) break;
     const y = sY + f.depthPx(m) - cam;
     if (y < surf + 12 || y < f.topRes || y > H - f.botRes + 20) continue;
     const reach = m <= e.line.value;
@@ -117,7 +116,7 @@ export function drawPower(f: Frame) {
   ctx.beginPath();
   for (let i = 0; i <= 50; i++) {
     const p = i / 50;
-    const d = bedFrac(f.spot, e.castNX(0.15 + p * 0.85));
+    const d=e.bedAt(e.castNX(0.15+p*.85))/e.loc.maxDepth;
     const y = by + 6 + d * 16;
     if (i === 0) ctx.moveTo(bx + p * bw, y);
     else ctx.lineTo(bx + p * bw, y);
@@ -136,9 +135,10 @@ export function drawFightPanel(f: Frame) {
   const { ctx, W, H, e, t } = f;
   const h = e.hooked;
   if (e.phase !== "fight" || !h) return;
-  const w = f.compact ? Math.min(430, W - (f.land ? 250 : 24)) : Math.min(480, W * 0.56);
-  const ph = FIGHT_PANEL_HEIGHT;
-  const x0 = W / 2 - w / 2, y0 = H - f.botRes - ph - 8;
+  const slim=f.compact&&f.land&&f.buttonControls;
+  const w = slim?Math.min(610,W-112): f.compact ? Math.min(430, W - (f.land ? 250 : 24)) : Math.min(480, W * 0.56);
+  const ph = slim?86:FIGHT_PANEL_HEIGHT;
+  const x0 = W / 2 - w / 2, y0 = Math.max(slim?94:0,H-f.botRes-ph-8);
   const bx = x0 + 18, bw = w - 36;
   ctx.save();
   panel(ctx, x0, y0, w, ph);
@@ -151,19 +151,19 @@ export function drawFightPanel(f: Frame) {
     ctx.stroke();
   }
   const known = !!e.s.codex[h.fish.id];
-  label(ctx, "Вываживание", bx, y0 + 22);
+  label(ctx, "Вываживание", bx, y0 + (slim ? 16 : 22));
   ctx.font = `500 ${f.compact ? 16 : 18}px ${FONTS.serif}`;
   ctx.textAlign = "right";
   ctx.fillStyle = known ? RARITY_INFO[h.fish.rarity].color : MUTED;
-  ctx.fillText(known ? h.fish.name : "Неизвестный вид", bx + bw, y0 + 23, bw * 0.57);
+  ctx.fillText(known ? h.fish.name : "Неизвестный вид", bx + bw, y0 + (slim ? 17 : 23), bw * 0.57);
 
   ctx.font = `500 10px ${FONTS.sans}`;
   ctx.fillStyle = MUTED;
   ctx.textAlign = "left";
-  ctx.fillText("НАТЯЖЕНИЕ", bx, y0 + 40);
+  ctx.fillText("НАТЯЖЕНИЕ", bx, y0 + (slim ? 31 : 40));
   ctx.textAlign = "right";
-  ctx.fillText(`до рыбы ${Math.max(0, h.line).toFixed(1)} м`, bx + bw, y0 + 40);
-  const by = y0 + 47;
+  ctx.fillText(`до рыбы ${Math.max(0, h.line).toFixed(1)} м`, bx + bw, y0 + (slim ? 31 : 40));
+  const by = y0 + (slim ? 36 : 47);
   const zones: [number, number, string][] = [[0, 0.15, "rgba(143,179,200,0.22)"], [0.15, 0.75, "rgba(134,180,148,0.32)"], [0.75, 0.92, "rgba(210,170,90,0.45)"], [0.92, 1, "rgba(201,115,92,0.6)"]];
   for (const [a, b, c] of zones) {
     ctx.fillStyle = c;
@@ -182,13 +182,13 @@ export function drawFightPanel(f: Frame) {
   ctx.fillStyle = col;
   ctx.font = `500 11px ${FONTS.sans}`;
   ctx.textAlign = "center";
-  ctx.fillText(state, bx + bw / 2, y0 + 77, bw - 48);
+  ctx.fillText(state, bx + bw / 2, y0 + (slim ? 57 : 77), bw - 48);
   if (h.surgeWarning > 0) {
     const sw = bw * 0.5;
     ctx.fillStyle = "rgba(200,164,106,0.12)";
-    ctx.fillRect(bx + bw * 0.25, y0 + 85, sw, 2);
+    ctx.fillRect(bx + bw * 0.25, y0 + (slim ? 61 : 85), sw, 2);
     ctx.fillStyle = BRASS;
-    ctx.fillRect(bx + bw * 0.25, y0 + 85, sw * (1 - h.surgeWarning / SURGE_WARNING_TIME), 2);
+    ctx.fillRect(bx + bw * 0.25, y0 + (slim ? 61 : 85), sw * (1 - h.surgeWarning / SURGE_WARNING_TIME), 2);
   }
 
   // Все риски нормированы теми же пределами, которые завершат борьбу.
@@ -203,13 +203,13 @@ export function drawFightPanel(f: Frame) {
     ctx.font = `500 9px ${FONTS.sans}`;
     ctx.textAlign = "left";
     ctx.fillStyle = i > 0 && value > 0.3 ? color : MUTED;
-    ctx.fillText(name, x, y0 + 104);
+    ctx.fillText(name, x, y0 + (slim ? 72 : 104));
     ctx.textAlign = "right";
-    ctx.fillText(`${Math.round(value * 100)}%`, x + mw, y0 + 104);
+    ctx.fillText(`${Math.round(value * 100)}%`, x + mw, y0 + (slim ? 72 : 104));
     ctx.fillStyle = "rgba(230,225,214,0.09)";
-    ctx.fillRect(x, y0 + 111, mw, 3);
+    ctx.fillRect(x, y0 + (slim ? 79 : 111), mw, 3);
     ctx.fillStyle = color;
-    ctx.fillRect(x, y0 + 111, mw * value, 3);
+    ctx.fillRect(x, y0 + (slim ? 79 : 111), mw * value, 3);
   });
   if (h.running && h.jump <= 0) {
     const side = Math.sign(h.swayV), dir = side > 0 ? -1 : 1;
@@ -219,9 +219,9 @@ export function drawFightPanel(f: Frame) {
     for (let i = 0; i < 2; i++) {
       const ox = cx + dir * i * 6;
       ctx.beginPath();
-      ctx.moveTo(ox - dir * 3, y0 + 67);
-      ctx.lineTo(ox + dir * 3, y0 + 73);
-      ctx.lineTo(ox - dir * 3, y0 + 79);
+      ctx.moveTo(ox - dir * 3, y0 + (slim ? 47 : 67));
+      ctx.lineTo(ox + dir * 3, y0 + (slim ? 53 : 73));
+      ctx.lineTo(ox - dir * 3, y0 + (slim ? 59 : 79));
       ctx.stroke();
     }
   }
@@ -247,7 +247,8 @@ export function drawSonar(f: Frame, bands: SonarBand[]) {
   ctx.clip();
   ctx.fillStyle = "#03070c";
   ctx.fillRect(px0, py0, pw, pht);
-  const maxU = depthToU(f.spot.maxDepth);
+  const maxU = depthToU(f.loc.maxDepth);
+  const near=e.navigation.nx,far=e.castNX(1),left=Math.min(near,far),span=Math.max(.0001,Math.abs(far-near));
   const dy = (d: number) => py0 + (depthToU(d) / maxU) * pht * 0.96;
   ctx.strokeStyle = "rgba(143,179,200,0.07)";
   ctx.lineWidth = 1;
@@ -281,7 +282,7 @@ export function drawSonar(f: Frame, bands: SonarBand[]) {
   });
   ctx.beginPath();
   ctx.moveTo(px0, py0 + pht);
-  for (let i = 0; i <= 40; i++) ctx.lineTo(px0 + (i / 40) * pw, dy(e.bedAt(0.3 + (i / 40) * 0.55)));
+  for (let i = 0; i <= 40; i++) ctx.lineTo(px0 + (i / 40) * pw, dy(e.bedAt(left+(i/40)*span)));
   ctx.lineTo(px0 + pw, py0 + pht);
   ctx.closePath();
   const g = ctx.createLinearGradient(0, py0, 0, py0 + pht);
@@ -289,7 +290,7 @@ export function drawSonar(f: Frame, bands: SonarBand[]) {
   g.addColorStop(1, "rgba(90,60,30,0.85)");
   ctx.fillStyle = g;
   ctx.fill();
-  if (e.line.value < f.spot.maxDepth) {
+  if (e.line.value < f.loc.maxDepth) {
     const ly = dy(e.line.value);
     ctx.setLineDash([2, 3]);
     ctx.strokeStyle = "rgba(201,115,92,0.8)";
@@ -305,7 +306,7 @@ export function drawSonar(f: Frame, bands: SonarBand[]) {
   ctx.moveTo(px0, ty);
   ctx.lineTo(px0 + pw, ty);
   ctx.stroke();
-  const nx2px = (nx: number) => px0 + ((nx - 0.3) / 0.55) * pw;
+  const nx2px = (nx: number) => px0 + ((nx-left)/span) * pw;
   ctx.fillStyle = "rgba(230,225,214,0.04)";
   ctx.fillRect(nx2px(e.castNX(0.15)), py0, nx2px(e.castNX(1)) - nx2px(e.castNX(0.15)), pht);
   if (["sinking", "waiting", "bite", "fight"].includes(e.phase)) {
@@ -321,7 +322,7 @@ export function drawSonar(f: Frame, bands: SonarBand[]) {
   ctx.font = `500 9px ${FONTS.sans}`;
   ctx.fillStyle = DIM;
   ctx.textAlign = "left";
-  for (const d of [0, f.spot.maxDepth * 0.1, f.spot.maxDepth * 0.4, f.spot.maxDepth]) {
+  for (const d of [0, f.loc.maxDepth * 0.1, f.loc.maxDepth * 0.4, f.loc.maxDepth]) {
     const y = d === 0 ? py0 + 7 : dy(d);
     ctx.fillText(`${Math.round(d)}`, px0 + pw + 4, Math.min(py0 + pht, y + 3));
   }

@@ -1,3 +1,4 @@
+import { normalizeWaterPosition, regionAt, waterWidth } from "@/game/aquatory";
 import { normalizeLocalPosition } from "@/game/navigation";
 import { FISH_BY_ID } from "@/game/fish";
 import { EventDirector } from "@/game/events";
@@ -114,6 +115,10 @@ export function sanitizeSave(data: Record<string, unknown>, options: SanitizeOpt
     clamped.push("spot");
   }
   if (out.localPosition !== undefined) out.localPosition = normalizeLocalPosition(out.localPosition, typeof out.spot === "string" ? out.spot : spotsOf(spotLoc)[0].id);
+  if(out.waterPosition!==undefined || out.localPosition!==undefined || out.spot!==undefined){
+    const position=normalizeWaterPosition(out.waterPosition,spotLoc,typeof out.spot==='string'?out.spot:spotsOf(spotLoc)[0].id,out.localPosition);
+    out.waterPosition=position;out.spot=regionAt(spotLoc,position.x*waterWidth(spotLoc)).spot.id;
+  }
   if (out.wind !== undefined && (typeof out.wind !== "number" || !Number.isFinite(out.wind))) { out.wind = 0.3; clamped.push("wind"); }
 
   // ── списки мира: только то, что есть в игре ──

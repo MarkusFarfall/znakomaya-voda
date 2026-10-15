@@ -1,4 +1,5 @@
-import { LocalNavigation, normalizeLocalPosition, SPOT_WORLD_WIDTH } from "./navigation";
+import { LocalNavigation, normalizeLocalPosition } from "./navigation";
+import { normalizeWaterPosition, regionAt, regionDestination, waterWidth, waterBedAt } from "./aquatory";
 import { FISH, FISH_BY_ID, RARITY_INFO, VARIANT_INFO } from "./fish";
 import { BITE_WINDOWS, SURGE_WARNING_TIME, biteApproachSeconds } from "./fishing";
 import { FIGHT_STEP, newFightMotion, stepFightMotion, type FightMotion } from "./fishingPhysics";
@@ -36,7 +37,6 @@ import {
   SONARS,
   SPOT_BY_ID,
   WEATHER_INFO,
-  bedFrac,
   hotFish,
   nextWeather,
   priceMult,
@@ -237,6 +237,8 @@ export function migrateSave(raw: unknown): SaveData | null {
   if (!s.flags.includes("visit_bay")) s.flags.push("visit_bay");
   if (!s.flags.includes(`visit_${s.location}`)) s.flags.push(`visit_${s.location}`);
   s.localPosition = normalizeLocalPosition(s.localPosition, s.spot);
+  s.waterPosition = normalizeWaterPosition(s.waterPosition,s.location,s.spot,s.localPosition);
+  s.spot = regionAt(s.location,s.waterPosition.x*waterWidth(s.location)).spot.id;
   s.version = SAVE_VERSION;
   s.atPort = !!r.atPort && !!PORT_BY_ID[s.port];
   s.hook = Math.max(0, Math.min(HOOKS.length - 1, (s.hook as number) | 0));
@@ -257,8 +259,9 @@ export class Engine {
   private resetNavigation() {
     this.navigationMode = false;
     this.navEmit = 0;
-    this.save.localPosition = normalizeLocalPosition(this.save.localPosition, this.save.spot);
-    this.navigation = new LocalNavigation(this.save.localPosition);
+    this.save.waterPosition = normalizeWaterPosition(this.save.waterPosition,this.save.location,this.save.spot,this.save.localPosition);
+    this.navigation = new LocalNavigation(this.save.waterPosition,waterWidth(this.save.location));
+    this.save.spot = regionAt(this.save.location,this.navigation.x).spot.id;
   }
   get navigationBlock(): string | null {
     return this.s.atPort ? "Сначала выйдите из порта" : this.phase !== "idle" ? "Сначала уберите снасть и закончите с рыбой" : null;
@@ -272,6 +275,10 @@ export class Engine {
     if (this.paused || !this.navigationMode || this.navigationBlock) return false;
     if (!this.navigation.go(nx)) return false;
     this.markDirty(); return true;
+  }
+  steerNavigation(dir: -1 | 0 | 1) {
+    if(dir && (this.paused || !this.navigationMode || this.navigationBlock))return false;
+    this.navigation.steer(dir);this.markDirty();return true;
   }
   stopNavigation() { this.navigation.stop(); this.markDirty(); }
   private atmosphereInstance: Atmosphere | null = null;
@@ -345,8 +352,9 @@ export class Engine {
 
   constructor(save?: SaveData) {
     this.save = save ?? newSave();
-    this.save.localPosition = normalizeLocalPosition(this.save.localPosition, this.save.spot);
-    this.navigation = new LocalNavigation(this.save.localPosition);
+    this.save.waterPosition = normalizeWaterPosition(this.save.waterPosition,this.save.location,this.save.spot,this.save.localPosition);
+    this.navigation = new LocalNavigation(this.save.waterPosition,waterWidth(this.save.location));
+    this.save.spot = regionAt(this.save.location,this.navigation.x).spot.id;
     this.initializeEventDirector();
     this.initializeAtmosphere();
   }
@@ -463,7 +471,7 @@ export class Engine {
   get reel() { return REELS[this.s.reel]; }
   get line() { return LINES[this.s.line]; }
   get sonar() { return SONARS[this.s.sonar]; }
-  get maxDepth() { return Math.min(this.spot.maxDepth, this.line.value); }
+  get maxDepth() { return Math.min(this.loc.maxDepth, this.line.value); }
   get timeOfDay(): "night" | "twilight" | "day" {
     // Игровые окна для рыбы и событий остаются прежними; атмосферные сумерки
     // меняют только картинку, не правила клёва.
@@ -504,8 +512,8 @@ export class Engine {
   get forecast() { return { w: this.s.weatherQueued, inMin: Math.max(0, this.s.weatherNext - this.s.minutes) }; }
 
   /** Cast coordinates share the fixed world with the boat and canonical seabed. */
-  castNX(d = this.castDist) { return Math.max(.025, Math.min(.975, this.navigation.nx + this.navigation.heading * (70 + Math.max(0, Math.min(1, d)) * 230) / SPOT_WORLD_WIDTH)); }
-  bedAt(nx: number) { return this.spot.maxDepth * bedFrac(this.spot, nx); }
+  castNX(d = this.castDist) { return Math.max(.025, Math.min(.975, this.navigation.nx + this.navigation.heading * (70 + Math.max(0, Math.min(1, d)) * 230) / this.navigation.worldWidth)); }
+  bedAt(nx: number) { return waterBedAt(this.s.location,nx*this.navigation.worldWidth); }
 
   subscribe(fn: () => void) {
     this.listeners.add(fn);
@@ -572,7 +580,10 @@ export class Engine {
     // Physics uses real seconds, not the accelerated fishing/world clock.
     if (!this.navigationBlock) this.navigation.step(dt, this.boat, this.atmosphere.state.waves);
     if (wasMoving) {
-      this.s.localPosition = { spot: this.s.spot, x: this.navigation.nx, heading: this.navigation.heading };
+      const region=regionAt(this.s.location,this.navigation.x);
+      this.s.spot=region.spot.id;
+      this.s.waterPosition={location:this.s.location,x:this.navigation.nx,heading:this.navigation.heading};
+      this.s.localPosition = { spot: this.s.spot, x: region.nx, heading: this.navigation.heading };
       this.dirty = true;
       this.navEmit += dt;
       if (this.navEmit >= .1 || !this.navigation.moving) { this.navEmit = 0; this.emit(); }
@@ -717,6 +728,7 @@ export class Engine {
 
   /** Потеря фокуса/касания — отмена, а не отпускание с выполнением заброса. */
   cancelInput() {
+    if(this.navigation.manual)this.navigation.steer(0);
     this.reeling = false;
     this.keyDir = 0;
     this.pullDir = 0;
@@ -773,7 +785,7 @@ export class Engine {
     const tod = this.timeOfDay;
     const currentEv = this.activeEvents.some((e) => e.id === "current");
     const bait = s.currentBait;
-    const spot = this.spot;
+    const spot = regionAt(s.location,this.castNX()*this.navigation.worldWidth).spot;
     const eventEffects = this.eventEffects;
     const eventLuck = Math.max(0, Math.min(2, eventEffects.luck));
     const res: { fish: FishDef; w: number }[] = [];
@@ -830,7 +842,7 @@ export class Engine {
 
   sonarScan(bands = 18): SonarBand[] {
     const out: SonarBand[] = [];
-    const maxU = depthToU(this.spot.maxDepth);
+    const maxU = depthToU(this.loc.maxDepth);
     const order: Rarity[] = ["common", "uncommon", "rare", "epic", "legendary"];
     for (let i = 0; i < bands; i++) {
       const d = uToDepth((maxU * (i + 0.5)) / bands);
@@ -1537,11 +1549,12 @@ export class Engine {
     return this.travel({ kind: "loc", loc: to, spot: spotId }, this.canMotor ? mode : "sail");
   }
 
-  private arriveAt(to: LocId, spotId?: string) {
+  private arriveAt(to: LocId, _spotId?: string) {
     const l = LOC_BY_ID[to];
     const changed = to !== this.s.location;
     this.s.location = to;
-    const sp = spotId && SPOT_BY_ID[spotId]?.loc === to ? spotId : changed || SPOT_BY_ID[this.s.spot]?.loc !== to ? spotsOf(to)[0].id : this.s.spot;
+    const sp = changed || SPOT_BY_ID[this.s.spot]?.loc !== to ? spotsOf(to)[0].id : this.s.spot;
+    if(changed){this.s.waterPosition=undefined;this.s.localPosition=undefined;}
     this.s.spot = sp;
     this.resetNavigation();
     this.s.atPort = false;
@@ -1559,22 +1572,10 @@ export class Engine {
 
 
   moveSpot(id: string) {
-    const sp = SPOT_BY_ID[id];
-    if (!sp || sp.loc !== this.s.location || id === this.s.spot || this.navigation.moving) return false;
-    if (this.phase === "fight" || this.phase === "caught" || this.phase === "bite") return false;
-    this.phase = "idle";
-    this.hookDepth = 0;
-    this.s.minutes += 20;
-    this.payFuel(Math.round(this.boat.fuel / 3));
-    this.s.spot = id;
-    this.resetNavigation();
-    this.s.targetDepth = Math.min(this.s.targetDepth, this.maxDepth);
-    this.syncAtmosphere(0);
-    this.fade = 0.9;
-    this.sfx.push("travel");
-    this.toast(sp.name, "info", `${sp.maxDepth} м`);
-    this.markDirty();
-    return true;
+    const destination=regionDestination(this.s.location,id);
+    if(destination===null || this.paused || this.navigation.moving || this.navigationBlock)return false;
+    if(!this.setNavigationMode(true))return false;
+    return this.navigateTo(destination);
   }
 
   // ─────────── market ───────────

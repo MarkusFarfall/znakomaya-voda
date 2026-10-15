@@ -1,4 +1,6 @@
-import { horizontalView, navigationSpeed, SPOT_WORLD_WIDTH, worldNX, NAV_LEFT, NAV_RIGHT } from "../navigation";
+import { horizontalView, navigationSpeed, worldNX } from "../navigation";
+import { waterWidth, waterSwell } from "../aquatory";
+import { AquatoryStream } from "./aquatoryStream";
 import { LocalWake } from "./localWake";
 import { depthToU, JUMP_TIME, TIME_SCALE, type Engine, type SonarBand } from "../engine";
 import { FISH } from "../fish";
@@ -41,6 +43,10 @@ export type CamMode = "auto" | "surface" | "hook" | "bottom";
 export const CAM_MODES: CamMode[] = ["auto", "surface", "hook", "bottom"];
 
 export class Scene {
+  mobileButtons = false;
+  private stream = new AquatoryStream();
+  get streamedRegions(){return this.stream.residentIds;}
+  private bottomAt(f:Frame,x:number){return f.bedDepth?f.sY+f.depthPx(f.bedDepth(x)):this.bed.bedY(x);}
   camY = 0;
   cameraX = 0;
   viewWidth = 0;
@@ -48,7 +54,7 @@ export class Scene {
   private waterTop = 0;
   private navigationInstance: Engine["navigation"] | null = null;
   private localWake = new LocalWake();
-  screenToWorldNX(x: number) { return worldNX(x, this.cameraX, this.pixelScale); }
+  screenToWorldNX(x: number) { return worldNX(x, this.cameraX, this.pixelScale,this.W); }
   isWaterPoint(y: number) { return y >= this.waterTop && y <= this.H; }
   camMode: CamMode = "auto";
   /** Режим перехода: скорость хода в px/с (null — обычная рыбалка) */
@@ -115,7 +121,7 @@ export class Scene {
     const { ctx, W, H, sc, hY, sY, cam, t, atmo } = f;
     const mast: readonly [number, number] = [boatX - 15 * sc, f.waveY(boatX) - 30 * sc];
     const tip: readonly [number, number] = rodTip ?? [boatX + 70 * sc, f.waveY(boatX) - 50 * sc];
-    const rocks = this.land.seaRocks.slice(0, 8).map((rock) => [rock.x, rock.y - rock.h] as [number, number]);
+    const rocks = this.voyage===null?this.stream.rocks():this.land.seaRocks.slice(0,8).map(rock=>[rock.x,rock.y-rock.h] as [number,number]);
     return {
       c: ctx, t, W, H, s: sc, q: Math.max(0, Math.min(2, this.quality)) as 0 | 1 | 2,
       horizon: hY, surface: sY, seabed: sY + f.depthPx(f.spot.maxDepth), visW: W, cam,
@@ -131,7 +137,7 @@ export class Scene {
 
   render(ctx: CanvasRenderingContext2D, e: Engine, W: number, H: number, dt: number) {
     const screenW = W;
-    if (this.voyage === null) W = SPOT_WORLD_WIDTH;
+    if (this.voyage === null) W = waterWidth(e.s.location);
     this.init(W, H);
     this.t += dt;
     const t = this.t;
@@ -139,10 +145,10 @@ export class Scene {
     const changedPosition = this.navigationInstance !== e.navigation;
     this.navigationInstance = e.navigation;
     if (changedPosition) this.localWake.reset();
-    const changedSpot = this.spotKey !== spot.id;
+    const changedSpot = this.spotKey !== loc.id;
     if (changedSpot) {
       this.localWake.reset();
-      this.spotKey = spot.id;
+      this.spotKey = loc.id;
       this.ambient = [];
       this.creatures = [];
       this.schools = [];
@@ -162,7 +168,7 @@ export class Scene {
     const sc = clamp(Math.min(H / 900, W / 1150), 0.5, 1.25);
     const compact = screenW < 820 || H < 560, land = screenW >= H;
     const calm = e.activeEvents.some((a) => a.id === "calm");
-    const amp = (3.2 * atmo.waves * loc.waveMult * (spot.swell ?? 1) * (calm ? 0.25 : 1) + 1) * sc;
+    const amp = (3.2 * atmo.waves * loc.waveMult * (this.voyage===null?waterSwell(loc.id,e.navigation.x):spot.swell??1) * (calm ? 0.25 : 1) + 1) * sc;
 
     const top = rgbHex(atmo.palette.skyTop);
     const mid = rgbHex(atmo.palette.skyMid);
@@ -184,7 +190,8 @@ export class Scene {
     // камера
     const inWater = ["sinking", "waiting", "bite", "fight"].includes(e.phase) && !(e.hooked && e.hooked.jump > 0);
     const hookY = sY + depthPx(e.hookDepth);
-    const bedMaxPx = sY + depthPx(spot.maxDepth * 1.05);
+    const bedMaxPx = sY + depthPx(loc.maxDepth*1.05);
+    const bottomCam=Math.max(0,sY+depthPx((this.voyage===null?e.bedAt(e.navigation.nx):spot.maxDepth)*1.05)-H*.73);
     const topRes = compact ? (land ? 64 : 118) : 210;
     const maxCam = Math.max(0, bedMaxPx - H * 0.73);
     let target = 0;
@@ -197,7 +204,7 @@ export class Scene {
         target = inWater ? hookY - H * 0.55 : 0;
         break;
       case "bottom":
-        target = maxCam;
+        target = bottomCam;
         break;
       default:
         target = inWater ? hookY - H * 0.55 : 0;
@@ -216,7 +223,7 @@ export class Scene {
       sunX, sunY, sunElev, sunVis, moonX, moonY, moonUp, moonVis, amp,
       wind: this.voyage ? Math.min(3, atmo.wind / 18 + this.voyage / 90) : Math.min(1.5, atmo.wind / 18),
       clarity: loc.clarity ?? 0.6, quality: this.quality, compact, land, bottomFocus: !e.navigationMode && this.camMode === "bottom",
-      topRes: compact ? (land ? 64 : 118) : 210, botRes: compact ? (land ? 70 : 146) : 150, depthPx, waveY,
+      topRes: compact ? (land ? 64 : 118) : 210, buttonControls:this.mobileButtons, botRes: compact ? (this.mobileButtons?(land?140:195):(land ? 70 : 146)) : this.mobileButtons?195:150, depthPx, waveY,
       light: { dx: clamp((sunX / W) * 2 - 1, -1, 1), k: sunVis * (1 - night * 0.7) },
     };
     const fxCalls = this.eventFxCalls(e);
@@ -234,6 +241,8 @@ export class Scene {
     this.viewWidth = view.width;
     this.cameraX = this.voyage !== null ? 0 : changedSpot || changedPosition ? view.x : clamp(this.cameraX + (view.x - this.cameraX) * -Math.expm1(-dt * 3.4), 0, W - view.width);
     const screenX = (x: number) => (x - this.cameraX) * z;
+    f.viewLeft=this.cameraX;f.viewWidth=view.width;
+    if(this.voyage===null){f.bedDepth=x=>e.bedAt(x/W);this.stream.update(f,this.cameraX,view.width,e.navigation.heading);}
 
     const shake = e.shake * 4;
     ctx.save();
@@ -248,20 +257,20 @@ export class Scene {
       if (fxCalls.length) drawEventFx(this.fxScene(f, fxBoatX), "sky", fxCalls);
       this.life.update(f);
       this.life.drawSky(f);
-      this.land.drawAbove(f);
+      if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.land.drawAbove(cf));else this.land.drawAbove(f);
       if (fxCalls.length) drawEventFx(this.fxScene(f, fxBoatX), "horizon", fxCalls);
-      drawSeaBand(f, () => { if (this.quality > 0 && this.gfx.refl) this.land.drawReflection(f, seaSurfaceColor(f)); });
+      drawSeaBand(f, () => { if (this.quality > 0 && this.gfx.refl) {if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.land.drawReflection(cf,seaSurfaceColor(f)));else this.land.drawReflection(f,seaSurfaceColor(f));} });
       if (fxCalls.length) drawEventFx(this.fxScene(f, fxBoatX), "surface", fxCalls);
-      this.land.drawSea(f);
+      if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.land.drawSea(cf));else this.land.drawSea(f);
       if (!this.voyage) this.life.drawSea(f);
-      this.land.drawDivers(f);
+      if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.land.drawDivers(cf));else this.land.drawDivers(f);
       this.drawSurfaceEvents(f);
     }
 
     // ───── ПОД ВОДОЙ ─────
     drawUnderwaterBody(f);
     if (fxCalls.length) drawEventFx(this.fxScene(f, fxBoatX), "under", fxCalls);
-    this.bed.draw(f, this.gfx.caustics);
+    if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.bed.draw(cf,this.gfx.caustics));else this.bed.draw(f,this.gfx.caustics);
     this.drawWhale(f);
     this.updateSchools(f);
     this.updateCreatures(f);
@@ -272,7 +281,7 @@ export class Scene {
     if (this.quality > 0 && this.gfx.shafts) drawShafts(f);
     if (this.quality > 1 && this.gfx.caustics) drawSurfaceCaustics(f);
     // светящийся проход
-    this.bed.drawGlow(f);
+    if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.bed.drawGlow(cf));else this.bed.drawGlow(f);
     this.glowPass(f);
     this.drawHooked(f, bobX, hookY, true);
     const deepK = clamp((e.hookDepth - 30) / 250, 0, 1);
@@ -293,7 +302,7 @@ export class Scene {
     this.drawBubbles(f);
 
     // ───── ПОВЕРХНОСТЬ ─────
-    this.land.drawFront(f);
+    if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.land.drawFront(cf));else this.land.drawFront(f);
     const bx = fxBoatX;
     const flowPx = this.voyage ?? Math.abs(e.navigation.velocity);
     const speed01 = Math.min(1, flowPx / (this.voyage !== null ? 230 : navigationSpeed(e.boat)));
@@ -385,7 +394,7 @@ export class Scene {
   private drawNavigation(f: Frame) {
     const { ctx, W, e, sc, t } = f;
     ctx.save();
-    for (const nx of [NAV_LEFT, NAV_RIGHT]) {
+    for (const nx of [e.navigation.left,e.navigation.right]) {
       const x = nx * W, y = f.waveY(x);
       ctx.strokeStyle = "rgba(223,211,166,.35)"; ctx.setLineDash([3, 6]);
       ctx.beginPath(); ctx.moveTo(x, y - 35 * sc); ctx.lineTo(x, y + 22 * sc); ctx.stroke();
@@ -496,6 +505,7 @@ export class Scene {
   }
 
   private updateSchools(f: Frame) {
+    const left=f.viewLeft??0,right=left+(f.viewWidth??f.W);
     const { ctx, e, W, sY, t, sc, loc } = f;
     this.schoolT -= f.dt;
     const maxD = Math.min(f.spot.maxDepth * 0.8, loc.id === "abyss" ? 300 : 60);
@@ -504,7 +514,7 @@ export class Scene {
       this.schoolT = shoal ? 4 : 18 + Math.random() * 22;
       const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
       const cols: Record<string, string> = { reef: Math.random() < 0.5 ? "#f0c040" : "#60a0ff", fjord: "#a8b8c8", abyss: "#8090a0" };
-      this.schools.push({ x: dir > 0 ? -260 : W + 260, depth: 1.5 + Math.random() * (maxD - 1.5), dir, n: 22 + Math.floor(Math.random() * 26), speed: (35 + Math.random() * 30) * sc, phase: Math.random() * 10, seed: Math.random() * 100, col: cols[loc.id] ?? "#c8d4dc", size: (0.7 + Math.random() * 0.5) * sc });
+      this.schools.push({ x: dir > 0 ? left-260 : right+260, depth: 1.5 + Math.random() * (maxD - 1.5), dir, n: 22 + Math.floor(Math.random() * 26), speed: (35 + Math.random() * 30) * sc, phase: Math.random() * 10, seed: Math.random() * 100, col: cols[loc.id] ?? "#c8d4dc", size: (0.7 + Math.random() * 0.5) * sc });
     }
     for (const sch of this.schools) {
       sch.x += sch.dir * sch.speed * f.dt;
@@ -520,6 +530,7 @@ export class Scene {
         const y = cy + oy + wave;
         const glint = Math.max(0, Math.sin(sch.phase * 3 + i * 0.9 + ox * 0.05));
         const L = 8 * sch.size;
+        if(y-L*.4<sY || y+L*.4>Math.min(this.bottomAt(f,x-L),this.bottomAt(f,x+L)))continue;
         ctx.fillStyle = glint > 0.85 ? "#ffffff" : mix(sch.col, "#203040", 0.25 - glint * 0.25);
         ctx.beginPath();
         ctx.ellipse(x, y, L, L * 0.32, Math.cos(sch.phase * 1.4 + ox * 0.02) * 0.25, 0, Math.PI * 2);
@@ -531,11 +542,12 @@ export class Scene {
         ctx.fill();
       }
     }
-    this.schools = this.schools.filter((sch) => sch.x > -400 && sch.x < W + 400);
+    this.schools = this.schools.filter((sch) => sch.x > left-400 && sch.x < right+400);
     void t;
   }
 
   private updateCreatures(f: Frame) {
+    const left=f.viewLeft??0,right=left+(f.viewWidth??f.W);
     const { ctx, e, W, sY, t, sc, loc } = f;
     this.creatureT -= f.dt;
     if (this.creatureT <= 0 && this.creatures.length < 3) {
@@ -545,13 +557,13 @@ export class Scene {
       if (r < 0.45 && !["fjord", "estuary", "skerries", "mangrove"].includes(loc.id)) {
         const deep = loc.id === "abyss" || e.isNight;
         const d = Math.min(maxD * 0.8, 3 + Math.random() * Math.min(maxD, loc.id === "abyss" ? 900 : 60));
-        this.creatures.push({ kind: "jelly", x: Math.random() * W, y: sY + f.depthPx(d), vx: (Math.random() - 0.5) * 6, vy: -3 - Math.random() * 3, s: (0.6 + Math.random() * 0.8) * sc, phase: Math.random() * 6, hue: deep ? (Math.random() < 0.5 ? "#60e0ff" : "#c080ff") : "#e8d0f0" });
+        this.creatures.push({ kind: "jelly", x: left+Math.random()*(right-left), y: sY + f.depthPx(d), vx: (Math.random() - 0.5) * 6, vy: -3 - Math.random() * 3, s: (0.6 + Math.random() * 0.8) * sc, phase: Math.random() * 6, hue: deep ? (Math.random() < 0.5 ? "#60e0ff" : "#c080ff") : "#e8d0f0" });
       } else if (r < 0.65 && ["reef", "ocean", "mangrove", "volcano"].includes(loc.id)) {
         const d = Math.min(maxD * 0.7, 4 + Math.random() * 25);
         const dir = Math.random() < 0.5 ? 1 : -1;
-        this.creatures.push({ kind: "turtle", x: dir > 0 ? -80 : W + 80, y: sY + f.depthPx(d), vx: dir * (18 + Math.random() * 10) * sc, vy: 0, s: (0.8 + Math.random() * 0.5) * sc, phase: 0, hue: "#6a7a40" });
+        this.creatures.push({ kind: "turtle", x: dir > 0 ? left-80 : right+80, y: sY + f.depthPx(d), vx: dir * (18 + Math.random() * 10) * sc, vy: 0, s: (0.8 + Math.random() * 0.5) * sc, phase: 0, hue: "#6a7a40" });
       } else if (maxD < 70 && loc.id !== "abyss") {
-        const x = Math.random() * W;
+        const x = left+Math.random()*(right-left);
         this.creatures.push({ kind: "crab", x, y: 0, vx: (Math.random() < 0.5 ? -1 : 1) * 12 * sc, vy: 0, s: (0.7 + Math.random() * 0.5) * sc, phase: Math.random() * 6, hue: loc.id === "reef" ? "#e05030" : "#c86040" });
       }
     }
@@ -562,6 +574,10 @@ export class Scene {
         c.y += (c.vy * pulse * 3 + 2) * f.dt;
         c.x += c.vx * f.dt;
         if (c.y < sY + 10) c.vy = Math.abs(c.vy);
+        const floor=Math.min(this.bottomAt(f,c.x-16*c.s),this.bottomAt(f,c.x+16*c.s))-40*c.s;
+        if(floor<sY+12*c.s)continue;
+        if(c.y>floor){c.y=floor;c.vy=-Math.abs(c.vy);}
+        c.y=Math.max(sY+12*c.s,c.y);
         ctx.save();
         ctx.translate(c.x, c.y);
         const bw = 12 * c.s * (1 - pulse * 0.15), bh = 9 * c.s * (1 + pulse * 0.1);
@@ -583,6 +599,9 @@ export class Scene {
         ctx.restore();
       } else if (c.kind === "turtle") {
         c.x += c.vx * f.dt;
+        const floor=Math.min(this.bottomAt(f,c.x-35*c.s),this.bottomAt(f,c.x+35*c.s))-26*c.s;
+        if(floor<sY+16*c.s)continue;
+        c.y=Math.max(sY+16*c.s,Math.min(c.y,floor));
         const dir = c.vx > 0 ? 1 : -1;
         const fl = Math.sin(c.phase * 2.5) * 0.5;
         ctx.save();
@@ -623,7 +642,7 @@ export class Scene {
         ctx.restore();
       } else {
         c.x += c.vx * f.dt * (Math.sin(c.phase * 1.5) > 0 ? 1 : 0.1);
-        c.y = this.bed.bedY(c.x) - 3 * c.s;
+        c.y = this.bottomAt(f,c.x) - 3 * c.s;
         ctx.save();
         ctx.translate(c.x, c.y);
         ctx.scale(c.s, c.s);
@@ -653,10 +672,11 @@ export class Scene {
         ctx.restore();
       }
     }
-    this.creatures = this.creatures.filter((c) => c.x > -120 && c.x < W + 120 && c.y < f.cam + f.H * 3 && c.phase < 90);
+    this.creatures = this.creatures.filter((c) => c.x > left-120 && c.x < right+120 && c.y < f.cam + f.H * 3 && c.phase < 90);
   }
 
   private updateAmbient(f: Frame) {
+    const left=f.viewLeft??0,right=left+(f.viewWidth??f.W);
     const { ctx, e, W, sY, cam, H, loc } = f;
     this.spawnT -= f.dt;
     const shoal = e.activeEvents.some((a) => a.id === "shoal");
@@ -684,7 +704,7 @@ export class Scene {
         if (hi > lo) {
           const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
           const w = fi.weight[0] + (fi.weight[1] - fi.weight[0]) * Math.random() * 0.6;
-          this.ambient.push({ f: fi, dir, x: dir === 1 ? -150 : W + 150, depth: lo + Math.random() * (hi - lo), speed: (20 + Math.random() * 40 + fi.strength * 4) * f.sc, len: fishScreenLen(fi, w, 0.75 * f.sc), phase: Math.random() * 10, known: !!e.s.codex[fi.id] });
+          this.ambient.push({ f: fi, dir, x: dir === 1 ? left-150 : right+150, depth: lo + Math.random() * (hi - lo), speed: (20 + Math.random() * 40 + fi.strength * 4) * f.sc, len: fishScreenLen(fi, w, 0.75 * f.sc), phase: Math.random() * 10, known: !!e.s.codex[fi.id] });
         }
       }
     }
@@ -692,19 +712,19 @@ export class Scene {
       a.x += a.dir * a.speed * f.dt;
       a.phase += f.dt * (3 + a.speed * 0.05);
       let y = sY + f.depthPx(a.depth) + Math.sin(a.phase * 0.3) * 6;
-      const by = this.bed.bedY(a.x) - a.len * 0.3;
+      const by = this.bottomAt(f,a.x) - a.len * 0.3;
       if (y > by) y = by;
       if (y < cam - 100 || y > cam + H + 100) continue;
       drawFish(ctx, a.f, a.x, y, a.len, a.dir, { wag: a.phase, alpha: 0.92, silhouette: a.known ? null : "rgba(4,10,18,0.72)" });
     }
-    this.ambient = this.ambient.filter((a) => a.x > -220 && a.x < W + 220);
+    this.ambient = this.ambient.filter((a) => a.x > left-220 && a.x < right+220);
   }
 
   private glowPass(f: Frame) {
     const { ctx, sY, cam, H, e, t, W } = f;
     for (const a of this.ambient) {
       if (!a.f.glow || !a.known) continue;
-      const y = Math.min(sY + f.depthPx(a.depth) + Math.sin(a.phase * 0.3) * 6, this.bed.bedY(a.x) - a.len * 0.3);
+      const y = Math.min(sY + f.depthPx(a.depth) + Math.sin(a.phase * 0.3) * 6, this.bottomAt(f,a.x) - a.len * 0.3);
       if (y < cam - 50 || y > cam + H + 50) continue;
       drawFishGlow(ctx, a.f, a.x, y, a.len, a.dir, a.phase, 1);
     }
@@ -970,8 +990,9 @@ export class Scene {
       let yy = (((p[1] % (H * 1.2)) + H * 1.2) % (H * 1.2)) + cam - H * 0.1;
       if (yy < sY + 4) continue;
       if (yy > cam + H) yy -= H;
-      const xx = ((p[0] % W) + W) % W;
-      if (yy > this.bed.bedY(xx) - 2) continue;
+      const width=f.viewWidth??W,left=f.viewLeft??0;
+      const xx = left+(((p[0]-left)%width)+width)%width;
+      if (yy > this.bottomAt(f,xx) - 2) continue;
       ctx.globalAlpha = clamp((yy - sY) / (H * 0.5), 0.15, 1) * 0.6;
       ctx.fillRect(xx, yy, p[2], p[2]);
     }

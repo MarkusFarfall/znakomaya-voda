@@ -45,8 +45,8 @@ function DepartSheet({ engine, onClose, onTravel, onMap }: { engine: Engine; onC
             <span className="flex h-11 w-11 shrink-0 items-center justify-center border border-[var(--brass)] text-[var(--brass)]"><Icon name="pin" size={20} /></span>
             <span className="min-w-0 flex-1">
               <span className="label-brass block">Вернуться</span>
-              <span className="block font-serif text-[20px] leading-tight text-[#f1ebdd]">{engine.spot.name}</span>
-              <span className="block text-[11px] dim">{LOC_BY_ID[s.location].name}</span>
+              <span className="block font-serif text-[20px] leading-tight text-[#f1ebdd]">{LOC_BY_ID[s.location].name}</span>
+              <span className="block text-[11px] dim">Единая акватория · все ориентиры доступны по воде</span>
             </span>
             <span className="num shrink-0 text-right text-[12px] muted">{fmtH(quote(last).minutes)}</span>
           </button>
@@ -61,21 +61,7 @@ function DepartSheet({ engine, onClose, onTravel, onMap }: { engine: Engine; onC
                 <span className="font-serif text-[18px] text-[#ece6d8]">{fog ? "Не разведано" : L.name}</span>
                 <span className="text-[11px] dim">{fog ? engine.unlockState(lid).reqs.filter((r) => !r.ok).map((r) => r.label).join(" · ") : locked ? `нужно судно класса ${L.boatTier + 1}` : `до ${L.maxDepth} м`}</span>
               </div>
-              <div className="grid gap-1.5 sm:grid-cols-3">
-                {spotsOf(lid).map((sp) => {
-                  const t: Trip = { kind: "loc", loc: lid, spot: sp.id };
-                  const q = quote(t);
-                  return (
-                    <button key={sp.id} disabled={locked} onClick={() => onTravel(t)} className="cell cell-hover p-3 text-left disabled:cursor-not-allowed disabled:opacity-40">
-                      <span className="block text-[13px] leading-tight text-[#ece6d8]">{sp.name}</span>
-                      <span className="mt-1 flex justify-between text-[10.5px] dim">
-                        <span className={sp.maxDepth > engine.line.value ? "text-[var(--color-bad)]" : ""}>{sp.maxDepth} м</span>
-                        <span className="num">{fmtH(q.minutes)}{q.fuel ? ` · ${fmt(q.fuel)} ₽` : ""}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              <button disabled={locked} onClick={()=>onTravel({kind:"loc",loc:lid,spot:spotsOf(lid)[0].id})} className="cell cell-hover w-full p-3 text-left disabled:opacity-40"><span className="block text-[13px]">Выйти в акваторию</span><small className="dim">{spotsOf(lid).map(sp=>sp.name).join(" · ")}</small><span className="block num text-[11px] mt-2">{fmtH(quote({kind:"loc",loc:lid,spot:spotsOf(lid)[0].id}).minutes)}</span></button>
             </div>
           );
         })}

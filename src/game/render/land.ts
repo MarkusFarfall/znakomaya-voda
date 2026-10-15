@@ -1,4 +1,4 @@
-import type { Frame } from "./frame";
+import { shoreEnvelope, type Frame } from "./frame";
 import { ExtraLand } from "./lands2";
 import { clamp, fbm, glow, hash1, hexA, mix, rng, sstep, tracePoly, af, rgbHex } from "./util";
 
@@ -238,6 +238,16 @@ export class LandRenderer {
       default:
         this.extra.build(this, f);
         break;
+    }
+    if(f.chunkOffset!==undefined){
+      const visited=new Set<number[]>();
+      const warp=(pts:number[])=>{if(visited.has(pts))return;visited.add(pts);for(let i=0;i<pts.length;i+=2)pts[i+1]=hY+(pts[i+1]-hY)*shoreEnvelope(f,pts[i]);};
+      for(const layer of this.layers)warp(layer.pts);
+      for(const layer of this.strata)warp(layer.pts);
+      if(this.grass)warp(this.grass.pts);
+      for(const o of [...this.trees,...this.houses,...this.lights,...this.palms]){const k=shoreEnvelope(f,o.x);o.y=hY+(o.y-hY)*k;if('h' in o)o.h*=k;}
+      if(this.lighthouse){const o=this.lighthouse,k=shoreEnvelope(f,o.x);o.y=hY+(o.y-hY)*k;o.h*=k;}
+      this.extra.stitch(f,warp);
     }
     if (winter && loc.climate === "temperate") {
       const blanket = 0.45 + f.atmo.snowCover * 0.55;

@@ -48,7 +48,7 @@ export function tileCaustics(ctx: CanvasRenderingContext2D, x0: number, y0: numb
     const oy = ((layer ? t * 4 : -t * 3) % S + S) % S;
     ctx.globalAlpha = (layer ? 0.55 : 0.7) * alpha;
     for (let y = y0 - oy - (layer ? S * 0.37 : 0); y < y0 + h; y += S) {
-      for (let x = x0 - ox - (layer ? S * 0.5 : 0); x < x0 + w; x += S) {
+      for (let x = Math.floor(x0/S)*S - ox - (layer ? S * 0.5 : 0); x < x0 + w; x += S) {
         ctx.drawImage(tile, x, y, S, S);
       }
     }
@@ -141,7 +141,7 @@ export function drawUnderwaterBody(f: Frame) {
   const bottom = cam + H + 10;
   const top = Math.max(sY - f.amp * 2 - 4, cam - 10);
   if (bottom <= top) return;
-  const span = f.depthPx(Math.max(f.spot.maxDepth * 1.3, 60));
+  const span = f.depthPx(Math.max(f.loc.maxDepth * 1.3, 60));
   const ug = ctx.createLinearGradient(0, sY, 0, sY + span);
   const nk = f.night * 0.78 + (1 - f.day) * 0.08;
   const dk = "#01040a";
@@ -193,22 +193,23 @@ export function drawSurfaceCaustics(f: Frame) {
   const a = f.sunVis * (1 - f.cover * 0.65) * f.clarity;
   if (a < 0.05 || cam > sY + 120) return;
   const bh = Math.round(110 * f.sc);
-  if (!bandCanvas || bandCanvas.width !== Math.ceil(W) || bandCanvas.height !== bh) bandCanvas = makeCanvas(Math.ceil(W), bh);
+  const left=Math.floor((f.viewLeft??0)/128)*128, width=Math.ceil((f.viewWidth??W)+256);
+  if (!bandCanvas || bandCanvas.width !== width || bandCanvas.height !== bh) bandCanvas = makeCanvas(width, bh);
   const b = ctx2d(bandCanvas);
   b.globalCompositeOperation = "source-over";
   b.clearRect(0, 0, bandCanvas.width, bh);
-  tileCaustics(b, 0, 0, W, bh, t, 1.6 * f.sc);
+  b.save();b.translate(-left,0);tileCaustics(b,left,0,width,bh,t,1.6*f.sc);b.restore();
   b.globalCompositeOperation = "destination-in";
   const g = b.createLinearGradient(0, 0, 0, bh);
   g.addColorStop(0, "rgba(0,0,0,0.9)");
   g.addColorStop(1, "rgba(0,0,0,0)");
   b.fillStyle = g;
-  b.fillRect(0, 0, W, bh);
+  b.fillRect(0,0,width,bh);
   ctx.save();
   clipWaterToBed(f);
   ctx.globalCompositeOperation = "lighter";
   ctx.globalAlpha = 0.28 * a;
-  ctx.drawImage(bandCanvas, 0, sY + 2);
+  ctx.drawImage(bandCanvas,left,sY+2);
   ctx.restore();
   void H;
 }
@@ -217,8 +218,8 @@ export function drawSurfaceCaustics(f: Frame) {
 export function clipWaterToBed(f: Frame) {
   const { ctx, W, sY } = f;
   ctx.beginPath(); ctx.moveTo(0, sY); ctx.lineTo(W, sY);
-  for (let x = W; x >= 0; x -= 8) ctx.lineTo(x, sY + f.depthPx(f.spot.maxDepth * bedFrac(f.spot, x / W)));
-  ctx.lineTo(0, sY + f.depthPx(f.spot.maxDepth * bedFrac(f.spot, 0))); ctx.closePath(); ctx.clip();
+  for (let x = W; x >= 0; x -= 8) ctx.lineTo(x, sY + f.depthPx((f.bedDepth?f.bedDepth(x):f.spot.maxDepth * bedFrac(f.spot, x / W))));
+  ctx.lineTo(0, sY + f.depthPx((f.bedDepth?f.bedDepth(0):f.spot.maxDepth * bedFrac(f.spot, 0)))); ctx.closePath(); ctx.clip();
 }
 
 /** Затемнение по глубине (поверх всех подводных объектов) */
@@ -232,7 +233,7 @@ export function drawDepthOverlay(f: Frame) {
   const dark = mix(f.loc.water.deep, "#000308", 0.65);
   // Bottom inspection exposes nearby relief, not the entire deep ocean. Surface/auto retain darkness.
   const attenuation = f.bottomFocus ? .60 : .955;
-  const maxD = Math.max(f.spot.maxDepth * 1.3, 40);
+  const maxD = Math.max(f.loc.maxDepth * 1.3, 40);
   const span = f.depthPx(maxD);
   const g = ctx.createLinearGradient(0, sY, 0, sY + span);
   const stops = [0, 2, 6, 15, 35, 80, 180, 400, 900, 2000];

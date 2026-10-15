@@ -216,6 +216,7 @@ export interface ActiveEvent {
 
 export interface SaveData {
   /** Position only; an interrupted route never resumes on loading. */
+  waterPosition?: import("./aquatory").WaterPosition;
   localPosition?: import("./navigation").LocalPosition;
   version: number;
   name: string;

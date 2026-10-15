@@ -654,12 +654,12 @@ export function WorldAtlas({
                   </span>
                 </div>
                 <div className="atlas-spots">
-                  <span className="atlas-eyebrow">ТОЧКИ ЛОВЛИ</span>
+                  <span className="atlas-eyebrow">ОРИЕНТИРЫ АКВАТОРИИ</span>
                   {spots.map((sp) => (
-                    <button
+                    <div className="atlas-region"
                       key={sp.id}
-                      aria-pressed={chosenSpot?.id === sp.id}
-                      onClick={() => setSpot(sp.id)}
+                      aria-current={engine.s.location===sp.loc&&engine.s.spot===sp.id?"location":undefined}
+                      title="Соединены одной акваторией — плывите вдоль берега"
                     >
                       <span>
                         <b>{sp.name}</b>
@@ -669,7 +669,7 @@ export function WorldAtlas({
                         {sp.maxDepth}
                         <small> м</small>
                       </strong>
-                    </button>
+                    </div>
                   ))}
                 </div>
               </>
@@ -773,7 +773,7 @@ export function WorldAtlas({
                 {!unlocked
                   ? "Нужно исследовать"
                   : (route.blocked ??
-                    (route.local ? "Перейти к точке" : "Выбрать переход"))}
+                    (route.local ? "Вы уже здесь" : "Выбрать переход"))}
               </span>
               {!route.blocked && unlocked && <span>→</span>}
             </button>

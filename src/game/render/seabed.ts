@@ -1,6 +1,6 @@
 import { SeabedLandscape } from "./seabedLandscape";
 import { bedFrac } from "../world";
-import type { Frame } from "./frame";
+import { shoreEnvelope, type Frame } from "./frame";
 import { tileCaustics } from "./water";
 import { clamp, glow, hash1, hexA, mix, rng, tracePoly } from "./util";
 
@@ -51,19 +51,20 @@ export class SeabedRenderer {
     this.back = [];
     this.pts = [];
     for (let x = 0; x <= W + this.step; x += this.step) {
-      const y = sY + f.depthPx(spot.maxDepth * bedFrac(spot, x / W));
+      const y = sY + f.depthPx(f.bedDepth?f.bedDepth(x):spot.maxDepth * bedFrac(spot, x / W));
       this.ys.push(y);
       this.pts.push(x, y);
-      const yb = sY + f.depthPx(spot.maxDepth * bedFrac(spot, clamp((x / W) * 0.8 + 0.12, 0, 1)) * 0.86) - 14 * f.sc;
+      const yb = sY + f.depthPx((f.bedDepth?f.bedDepth(x):spot.maxDepth * bedFrac(spot, clamp((x / W) * 0.8 + 0.12, 0, 1))) * 0.86) - 14 * f.sc;
       this.back.push(x, yb);
     }
+    if(f.chunkOffset!==undefined){this.pts[0]=-2;this.back[0]=-2;}
     this.minY = Math.min(...this.ys);
     const r = rng(spot.seed * 97);
     const list = HABITAT[f.loc.seabed] ?? HABITAT.sand;
     this.decor = [];
     const n = Math.round(W / 20);
     for (let i = 0; i < n; i++) {
-      const x = r() * W;
+      const x = f.chunkOffset!==undefined?100*f.sc+r()*(W-200*f.sc):r()*W;
       this.decor.push({ x, y: this.bedY(x), kind: list[Math.floor(r() * list.length)], s: 0.55 + r() * 0.9, c: CORAL_COLS[Math.floor(r() * CORAL_COLS.length)], seed: r() * 100 });
     }
     // склон — гуще
@@ -77,8 +78,8 @@ export class SeabedRenderer {
     const feat = spot.feature;
     if (feat === "lagoon") for (let i = 0; i < 5; i++) { const x = W * (0.3 + r() * 0.6); this.decor.push({ x, y: this.bedY(x), kind: "anemoneClown", s: 1 + r() * 0.4, c: "#c060ff", seed: r() * 100 }); }
     if (feat === "vents") for (let i = 0; i < 5; i++) { const x = W * (0.48 + i * 0.05 + r() * 0.02); this.decor.push({ x, y: this.bedY(x) + 3, kind: "vent", s: 0.8 + r() * 0.8, c: "#ff6a20", seed: r() * 100 }); }
-    if (feat === "deep" || feat === "icebay") for (let i = 0; i < 12; i++) { const x = r() * W; this.decor.push({ x, y: this.bedY(x), kind: "lophelia", s: 0.7 + r() * 0.8, c: "#f0ece0", seed: r() * 100 }); }
-    if (feat === "twilight" || feat === "blue") for (let i = 0; i < 10; i++) { const x = r() * W; this.decor.push({ x, y: this.bedY(x), kind: "glassSponge", s: 0.8 + r() * 0.8, c: "#e8e0d0", seed: r() * 100 }); }
+    if (feat === "deep" || feat === "icebay") for (let i = 0; i < 12; i++) { const x = f.chunkOffset!==undefined?100*f.sc+r()*(W-200*f.sc):r()*W; this.decor.push({ x, y: this.bedY(x), kind: "lophelia", s: 0.7 + r() * 0.8, c: "#f0ece0", seed: r() * 100 }); }
+    if (feat === "twilight" || feat === "blue") for (let i = 0; i < 10; i++) { const x = f.chunkOffset!==undefined?100*f.sc+r()*(W-200*f.sc):r()*W; this.decor.push({ x, y: this.bedY(x), kind: "glassSponge", s: 0.8 + r() * 0.8, c: "#e8e0d0", seed: r() * 100 }); }
     if (feat === "wreck" || feat === "ridge") { const x = W * 0.3; this.decor.push({ x, y: this.bedY(x), kind: "anchor", s: 1, c: "#5a4a3a", seed: 1 }); }
     if (feat === "wreck") for (let i = 0; i < 4; i++) { const x = W * (0.2 + r() * 0.3); this.decor.push({ x, y: this.bedY(x), kind: "amphora", s: 0.8 + r() * 0.4, c: "#b06a40", seed: r() * 100 }); }
     this.decor.sort((a, b) => a.s - b.s);
@@ -87,7 +88,7 @@ export class SeabedRenderer {
     const fk: Record<string, string[]> = { sand: ["grass", "dune"], rock: ["pillar", "kelp"], kelp: ["kelp", "kelp", "pillar"], coral: ["bommie", "bommie", "fan"], mud: ["spire", "dune"], vents: ["spire", "chimney"], silt: ["grass", "dune", "dune"], granite: ["dune", "pillar"], kelpforest: ["kelp", "kelp", "kelp", "pillar"], roots: ["grass", "dune"], basalt: ["pillar", "spire", "chimney"], polar: ["dune", "spire"] };
     const kinds = fk[f.loc.seabed] ?? ["dune"];
     for (let i = 0; i < Math.round(W / 55); i++) {
-      const x = r() * W;
+      const x = f.chunkOffset!==undefined?100*f.sc+r()*(W-200*f.sc):r()*W;
       const bi = clamp(Math.round(x / this.step) * 2 + 1, 1, this.back.length - 1);
       this.far.push({ x, y: this.back[bi] + 6, h: (40 + r() * 110) * f.sc, w: (14 + r() * 40) * f.sc, kind: kinds[Math.floor(r() * kinds.length)], seed: r() * 100 });
     }
@@ -98,7 +99,7 @@ export class SeabedRenderer {
     const { ctx, W, sY, cam, H, t } = f;
     // Surface-reaching kelp, roots and pier piles must not disappear because their roots are offscreen.
     if (this.minY - 400 * f.sc > cam + H) { this.drawFeatures(f); return; }
-    const bedC = mix(f.loc.bed, "#708980", f.spot.maxDepth > 100 ? .28 : .08);
+    const bedC = mix(f.loc.bed, "#708980", f.loc.maxDepth > 100 ? .28 : .08);
     this.landscape.backdrop(f, x => this.bedY(x));
     // дальние силуэты
     const farC = mix(mix(bedC, f.loc.water.mid, 0.72), "#000000", 0.1);
@@ -149,7 +150,8 @@ export class SeabedRenderer {
     // основной
     const pts = [...this.pts, W + 10, this.minY + 4000, -10, this.minY + 4000];
     tracePoly(ctx, pts);
-    const g = ctx.createLinearGradient(0, this.minY, 0, this.minY + 300);
+    const top=f.bedDepth?sY+f.depthPx(f.loc.maxDepth*.4):this.minY;
+    const g = ctx.createLinearGradient(0, top, 0, top + 300);
     g.addColorStop(0, mix(bedC, "#ffffff", 0.1));
     g.addColorStop(1, mix(bedC, "#000000", 0.55));
     ctx.fillStyle = g;
@@ -167,7 +169,7 @@ export class SeabedRenderer {
       ctx.strokeStyle = hexA(mix(bedC, "#000000", 0.4), 0.25);
       ctx.beginPath();
       for (let i = 0; i < this.pts.length; i += 2) {
-        const y = this.pts[i + 1] + k * 14 * f.sc + Math.sin(this.pts[i] * 0.03 + k) * 3;
+        const y = this.pts[i + 1] + k * 14 * f.sc + Math.sin((this.pts[i]+(f.chunkOffset??0)) * 0.03 + k) * 3;
         if (i === 0) ctx.moveTo(this.pts[i], y);
         else ctx.lineTo(this.pts[i], y);
       }
@@ -237,7 +239,7 @@ export class SeabedRenderer {
     if (feat === "sargassum") {
       const r = rng(5);
       for (let i = 0; i < 9; i++) {
-        const x = r() * W;
+        const x = f.chunkOffset!==undefined?100*f.sc+r()*(W-200*f.sc):r()*W;
         const len = (30 + r() * 50) * sc;
         ctx.strokeStyle = "#8a6a24";
         ctx.lineWidth = 2;
@@ -377,6 +379,7 @@ export class SeabedRenderer {
         const n = feat === "flats" ? 5 : 14;
         for (let i = 0; i < n; i++) {
           const x0 = side ? W * (0.84 + r() * 0.16) : r() * W * (feat === "flats" ? 0.1 : 0.2);
+          if(f.chunkOffset!==undefined && shoreEnvelope(f,x0)<.85)continue;
           const x1 = x0 + (side ? -1 : 1) * (10 + r() * 50) * sc;
           const yb = this.bedY(x1);
           ctx.strokeStyle = "#3e3024";
@@ -423,7 +426,8 @@ export class SeabedRenderer {
     // подводные части льда
     if (feat === "icebergs" || feat === "iceedge") {
       const x = feat === "icebergs" ? W * 0.87 : W * 0.72;
-      const w = (feat === "icebergs" ? 170 : W * 0.6) * sc;
+      const rawW=(feat === "icebergs" ? 170 : W * 0.6)*sc;
+      const w=f.chunkOffset!==undefined?Math.min(rawW,(W-x-50)/.7,(x-50)/.8):rawW;
       const depth = (feat === "icebergs" ? 300 : 520) * sc;
       const g = ctx.createLinearGradient(0, sY, 0, sY + depth);
       g.addColorStop(0, "rgba(200,232,244,0.75)");
@@ -449,13 +453,13 @@ export class SeabedRenderer {
         const x0 = W * a, x1 = W * b;
         ctx.fillStyle = "rgba(214,236,246,0.92)";
         ctx.beginPath();
-        ctx.moveTo(x0, sY - 3);
-        ctx.lineTo(x1, sY - 3);
-        for (let x = x1; x >= x0; x -= 8) ctx.lineTo(x, sY + (10 + Math.sin(x * 0.07) * 4 + hash1(x) * 6) * sc);
+        ctx.moveTo(x0,sY-3*shoreEnvelope(f,x0));
+        ctx.lineTo(x1,sY-3*shoreEnvelope(f,x1));
+        for (let x = x1; x >= x0; x -= 8) ctx.lineTo(x, sY + (10 + Math.sin(x * 0.07) * 4 + hash1(x) * 6) * sc * shoreEnvelope(f,x));
         ctx.closePath();
         ctx.fill();
         ctx.fillStyle = "rgba(160,200,220,0.5)";
-        for (let x = x0; x < x1; x += 13) ctx.fillRect(x, sY + (12 + hash1(x * 2) * 8) * sc, 3, (4 + hash1(x) * 10) * sc);
+        for(let x=x0;x<x1;x+=13){const k=shoreEnvelope(f,x);if(k>.25)ctx.fillRect(x,sY+(12+hash1(x*2)*8)*sc*k,3,(4+hash1(x)*10)*sc*k);}
       }
     }
   }
@@ -1028,7 +1032,7 @@ export class SeabedRenderer {
     if (f.spot.feature === "trench" || f.spot.feature === "vents" || f.spot.feature === "twilight") {
       const r = rng(3);
       for (let i = 0; i < 40; i++) {
-        const x = r() * W;
+        const x = f.chunkOffset!==undefined?100*f.sc+r()*(W-200*f.sc):r()*W;
         const y = this.bedY(x) - r() * 300 * f.sc;
         const a = Math.max(0, Math.sin(t * (0.5 + r()) + i * 1.7));
         if (a > 0.1) glow(ctx, x, y, 1.2, i % 3 ? "#50e0ff" : "#80ffb0", a * 0.7);

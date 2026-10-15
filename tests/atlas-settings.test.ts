@@ -83,8 +83,9 @@ test("atlas previews use engine travel rules, including locks, hull tier and fis
     );
   }
 });
-test("local point quotes match actual 20-minute move and charged fuel, not an offshore journey", () => {
+test("merged aquatory has no separate point journey or charge", () => {
   const e = new Engine();
+  e.paused = false;
   e.s.atPort = false;
   e.s.location = "bay";
   const [first, second] = spotsOf("bay");
@@ -95,9 +96,12 @@ test("local point quotes match actual 20-minute move and charged fuel, not an of
     time = e.s.minutes,
     money = e.s.money;
   assert.equal(r.local, true);
-  assert.equal(r.here, false);
-  assert.equal(r.blocked, null);
+  assert.equal(r.here, true);
+  assert.equal(r.blocked, "Вы уже здесь");
+  const x = e.navigation.x;
   assert.equal(e.moveSpot(second.id), true);
+  assert.equal(e.navigation.x, x);
+  assert.ok(e.navigation.target !== null);
   assert.equal(e.s.minutes - time, r.sail.minutes);
   assert.equal(money - e.s.money, r.sail.fuel);
 });

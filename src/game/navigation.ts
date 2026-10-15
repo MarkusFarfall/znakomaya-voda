@@ -22,13 +22,19 @@ export class LocalNavigation {
   heading: 1 | -1;
   /** 0 = facing right, PI = facing left. Both renderers animate the same turn. */
   yaw: number;
-  constructor(position: LocalPosition) { this.x = position.x * SPOT_WORLD_WIDTH; this.heading = position.heading; this.yaw = this.heading === 1 ? 0 : Math.PI; }
-  get nx() { return this.x / SPOT_WORLD_WIDTH; }
+  manual: -1 | 0 | 1 = 0;
+  readonly left: number;
+  readonly right: number;
+  constructor(position: Pick<LocalPosition,'x'|'heading'> & {spot?:string}, readonly worldWidth=SPOT_WORLD_WIDTH) { this.left=240/worldWidth;this.right=1-this.left;this.x = position.x * worldWidth; this.heading = position.heading; this.yaw = this.heading === 1 ? 0 : Math.PI; }
+  get nx() { return this.x / this.worldWidth; }
   get turning() { return Math.abs(this.yaw - (this.heading === 1 ? 0 : Math.PI)) > .002; }
   get moving() { return this.target !== null || Math.abs(this.velocity) > .05 || this.turning; }
   get state() { return this.turning ? 'turning' : this.target === null && Math.abs(this.velocity) > .05 ? 'braking' : this.moving ? 'cruising' : 'stopped'; }
-  go(nx: number) { if (!Number.isFinite(nx)) return false; this.target = clamp(nx, NAV_LEFT, NAV_RIGHT) * SPOT_WORLD_WIDTH; if (Math.abs(this.target - this.x) < .5 && Math.abs(this.velocity) < .2) this.target = null; return true; }
-  stop() { this.target = null; }
+  go(nx: number) { if (!Number.isFinite(nx)) return false; this.manual=0; this.target = clamp(nx, this.left, this.right) * this.worldWidth; if (Math.abs(this.target - this.x) < .5 && Math.abs(this.velocity) < .2) this.target = null; return true; }
+  steer(dir: -1 | 0 | 1) {
+    this.manual=dir; this.target=dir===0?null:(dir<0?this.left:this.right)*this.worldWidth;
+  }
+  stop() { this.manual=0; this.target = null; }
   step(dt: number, boat: Pick<BoatDef,'fuel'|'tier'|'style'|'stability'>, waves = 1) {
     if (!Number.isFinite(dt) || dt <= 0) return;
     const total = Math.min(dt, .1), count = Math.ceil(total * 120), h = total / count;
@@ -47,9 +53,9 @@ export class LocalNavigation {
       this.velocity += clamp(desired - this.velocity, -rate * h, rate * h);
       this.acceleration += ((this.velocity - old) / h - this.acceleration) * -Math.expm1(-h * 6);
       this.x += (old + this.velocity) * .5 * h;
-      const bounded = clamp(this.x, NAV_LEFT * SPOT_WORLD_WIDTH, NAV_RIGHT * SPOT_WORLD_WIDTH);
-      if (bounded !== this.x) { this.x = bounded; this.velocity = 0; this.target = null; }
-      if (this.target !== null && Math.abs(this.target - this.x) < .4 && Math.abs(this.velocity) < .8) { this.x = this.target; this.target = null; this.velocity = 0; }
+      const bounded = clamp(this.x, this.left * this.worldWidth, this.right * this.worldWidth);
+      if (bounded !== this.x) { this.x = bounded; this.velocity = 0; this.target = null; this.manual=0; }
+      if (this.target !== null && Math.abs(this.target - this.x) < .4 && Math.abs(this.velocity) < .8) { this.x = this.target; this.target = null; this.manual=0; this.velocity = 0; }
       if (this.target === null && Math.abs(this.velocity) < .05) this.velocity = 0;
     }
   }
@@ -58,6 +64,6 @@ export function horizontalView(worldWidth: number, screenWidth: number, scale: n
   const width = Math.min(worldWidth, screenWidth / Math.max(.01, scale));
   return { width, x: clamp(focus - width * .5, 0, Math.max(0, worldWidth - width)) };
 }
-export function worldNX(screenX: number, viewX: number, scale: number) {
-  return clamp((viewX + screenX / Math.max(.01, scale)) / SPOT_WORLD_WIDTH, 0, 1);
+export function worldNX(screenX: number, viewX: number, scale: number, worldWidth=SPOT_WORLD_WIDTH) {
+  return clamp((viewX + screenX / Math.max(.01, scale)) / worldWidth, 0, 1);
 }

@@ -1,8 +1,9 @@
+import { waterBedAt } from "../src/game/aquatory";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Engine, migrateSave, newSave, type Phase } from '../src/game/engine';
 import { LocalNavigation, normalizeLocalPosition, NAV_LEFT, NAV_RIGHT, SPOT_WORLD_WIDTH, horizontalView, worldNX } from '../src/game/navigation';
-import { BOATS, spotsOf, bedFrac } from '../src/game/world';
+import { BOATS, spotsOf } from '../src/game/world';
 import { sanitizeSave } from '../src/lib/sanitize';
 import { projectFightFish } from '../src/game/render/fishingGeometry';
 import { FISH } from '../src/game/fish';
@@ -75,12 +76,12 @@ test('pause, port and save replacement never let an old route move the vessel', 
   const e = engine(); e.setNavigationMode(true); e.navigateTo(.8); e.update(.1); const x = e.navigation.x;
   e.paused = true; e.update(3); assert.equal(e.navigation.x, x); assert.equal(e.navigateTo(.7), false);
   e.s = { ...newSave(), localPosition: { spot: newSave().spot, x: .65, heading: -1 } };
-  assert.equal(e.navigation.nx, .65); assert.equal(e.navigation.velocity, 0); assert.equal(e.navigation.target, null); assert.equal(e.navigationMode, false);
+  assert.equal(e.navigation.nx, .65 / 3); assert.equal(e.navigation.velocity, 0); assert.equal(e.navigation.target, null); assert.equal(e.navigationMode, false);
   e.s.atPort = true; assert.equal(e.setNavigationMode(true), false);
 });
 test('position checkpoints persist while travelling, but velocity/route do not', () => {
   const e = engine(); e.setNavigationMode(true); e.navigateTo(.8); for (let i = 0; i < 150; i++) e.update(1 / 60);
-  assert.equal(e.s.localPosition!.x, e.navigation.nx); assert.ok(e.dirty);
+  assert.equal(e.s.waterPosition!.x, e.navigation.nx); assert.ok(e.dirty);
   const restored = new Engine(migrateSave(JSON.parse(JSON.stringify(e.s)))!);
   assert.equal(restored.navigation.nx, e.navigation.nx); assert.equal(restored.navigation.moving, false); assert.equal(restored.navigationMode, false);
 });
@@ -94,9 +95,9 @@ test('client/server position migration rejects foreign spots and non-finite valu
   assert.equal(normalizeLocalPosition({spot:s.spot,x:4,heading:-1},s.spot).x,NAV_RIGHT);
   assert.equal(normalizeLocalPosition({spot:s.spot,x:-4,heading:8},s.spot).heading,1);
 });
-test('switching spot resets the local position before recalculating fishing depth', () => {
-  const e = engine(); e.s.localPosition = {spot:e.s.spot,x:.8,heading:-1}; e.s = {...e.s};
-  assert.equal(e.moveSpot(spotsOf('bay')[1].id), true); assert.equal(e.navigation.nx,.3); assert.equal(e.navigation.heading,1);
+test('legacy moveSpot queues a physical route without resetting position', () => {
+  const e = engine(), x=e.navigation.x, spot=e.s.spot;
+  assert.equal(e.moveSpot(spotsOf('bay')[1].id), true); assert.equal(e.navigation.x,x); assert.equal(e.s.spot,spot); assert.ok(e.navigation.target!>2400);
 });
 test('screen-to-world mapping is invertible at every viewport and zoom, without shrinking terrain', () => {
   for (const width of [320,390,844,1440,3400]) for (const zoom of [1,1.5,2]) for (const nx of [.1,.5,.9]) {
@@ -110,7 +111,7 @@ test('screen-to-world mapping is invertible at every viewport and zoom, without 
 test('casts and canonical bed depth follow position and facing, not viewport size', () => {
   const e = engine(); const right = e.castNX(1); e.navigation.heading=-1; const left=e.castNX(1);
   assert.ok(left<e.navigation.nx && right>e.navigation.nx); assert.ok(Math.abs(right+left-e.navigation.nx*2)<1e-9);
-  e.navigation.x = 1800; assert.equal(e.bedAt(e.castNX()), e.spot.maxDepth*bedFrac(e.spot,e.castNX()));
+  e.navigation.x = 1800; assert.equal(e.bedAt(e.castNX()), waterBedAt(e.s.location,e.castNX()*e.navigation.worldWidth));
 });
 test('left-facing fight projection reels to the left rod anchor; mouth remains attached', () => {
   const e=engine(); e.phase='bite'; e.pendingFish={fish:FISH[0],weight:1,variant:null}; e.pointerDown(); const h=e.hooked!;

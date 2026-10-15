@@ -1,4 +1,11 @@
 export interface Settings {
+  controls: {
+    sailing: "arrows" | "point";
+    fishing: "buttons" | "canvas";
+    hand: "left" | "right";
+    size: number;
+    opacity: number;
+  };
   quality: number;
   sound: boolean;
   music: boolean;
@@ -14,6 +21,13 @@ export interface Settings {
   model3d: boolean;
 }
 export const DEFAULT_SETTINGS: Settings = {
+  controls: {
+    sailing: "arrows",
+    fishing: "buttons",
+    hand: "right",
+    size: 1,
+    opacity: 0.95,
+  },
   quality: 2,
   sound: true,
   music: true,
@@ -36,8 +50,16 @@ const num = (v: unknown, fallback: number, lo: number, hi: number) =>
 export function normalizeSettings(value: unknown): Settings {
   const a = record(value),
     g = record(a.gfx),
+    c = record(a.controls),
     d = DEFAULT_SETTINGS;
   return {
+    controls: {
+      sailing: c.sailing === "point" ? "point" : "arrows",
+      fishing: c.fishing === "canvas" ? "canvas" : "buttons",
+      hand: c.hand === "left" ? "left" : "right",
+      size: num(c.size, 1, 0.85, 1.2),
+      opacity: num(c.opacity, 0.95, 0.65, 1),
+    },
     quality: Math.round(num(a.quality, d.quality, 0, 2)),
     sound: bool(a.sound, d.sound),
     music: bool(a.music, d.music),

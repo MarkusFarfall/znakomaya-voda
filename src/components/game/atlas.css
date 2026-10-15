@@ -372,7 +372,7 @@
   display: block;
   margin: 0 5px 10px;
 }
-.atlas-spots button {
+.atlas-spots .atlas-region {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -384,7 +384,7 @@
   padding: 10px;
   color: #b4c9c5;
 }
-.atlas-spots button[aria-pressed="true"] {
+.atlas-spots .atlas-region[aria-current="location"] {
   background: #b9caad0a;
   border-color: #baa67855;
 }
