@@ -215,6 +215,8 @@ export interface ActiveEvent {
 }
 
 export interface SaveData {
+  /** Position only; an interrupted route never resumes on loading. */
+  localPosition?: import("./navigation").LocalPosition;
   version: number;
   name: string;
   money: number;

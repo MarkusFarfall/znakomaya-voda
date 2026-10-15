@@ -964,8 +964,9 @@ export class GameAudio {
         }
       }
     }
-    this.tgt(this.engineG.gain, !port && tier >= 2 && !e.paused ? 0.02 + (tier - 2) * 0.012 : 0, now, 0.8, "engineG#13");
-    this.tgt(this.engineO.frequency, tier >= 4 ? 30 : 36, now, 1, "engineO#14");
+    const localSpeed = Math.min(1, Math.abs(e.navigation?.velocity ?? 0) / 100);
+    this.tgt(this.engineG.gain, !port && tier >= 2 && !e.paused ? (0.02 + (tier - 2) * 0.012) * (1 + localSpeed * 1.8) : 0, now, 0.8, "engineG#13");
+    this.tgt(this.engineO.frequency, (tier >= 4 ? 30 : 36) + localSpeed * 24, now, 1, "engineO#14");
 
     // чайки
     this.gullT -= dt;

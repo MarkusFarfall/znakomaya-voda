@@ -71,7 +71,7 @@ interface Particle {
 const foam: Foam[] = [];
 const parts: Particle[] = [];
 /** состояние движения (единственное судно в сцене) */
-const mo = { id: "", last: 0, acc: 0, sail: 0, emitF: 0, emitB: 0, emitS: 0 };
+const mo = { id: "", last: 0, stroke: 0, acc: 0, sail: 0, emitF: 0, emitB: 0, emitS: 0 };
 
 export function drawBoat(f: Frame, x: number, pose: Pose = "fish", speedIn?: number, flowIn?: number): [number, number] {
   const { ctx, e, t, night, sc: s } = f;
@@ -109,7 +109,7 @@ export function drawBoat(f: Frame, x: number, pose: Pose = "fish", speedIn?: num
   const rainy = ["rain", "storm", "snow"].includes(f.weather);
   const cold = e.temperature < 5;
   const emit: R["emit"] = (kind, bx, by, size = 0.1) => {
-    if (parts.length > 300) return;
+    if (f.localBoat || parts.length > 300) return;
     const sx = x + k * (bx * ca - by * sa);
     const sy = y + k * (bx * sa + by * ca);
     if (kind === "smoke") parts.push({ kind, x: sx, y: sy, t: 0, vx: (-flow * 0.55 + (f.wind * 26 + 4) * s) * (0.7 + Math.random() * 0.6), vy: -(14 + Math.random() * 6) * s, s: size * k });
@@ -117,7 +117,9 @@ export function drawBoat(f: Frame, x: number, pose: Pose = "fish", speedIn?: num
     else parts.push({ kind, x: sx, y: sy, t: 0, vx: (Math.random() - 0.35) * 70 * s - flow * 0.25, vy: -(70 + Math.random() * 90) * s, s: size * k });
   };
 
+  if (pose === "helm" && speed > .015) mo.stroke += (1.2 + 1.5 * speed) * dt;
   const r: R = {
+    stroke: mo.stroke,
     p: makePen(f),
     ctx,
     b,
@@ -145,6 +147,12 @@ export function drawBoat(f: Frame, x: number, pose: Pose = "fish", speedIn?: num
   const tip = drawArt(r, b.style);
   ctx.restore();
 
+  // Local sailing owns a world-anchored wake; the voyage renderer keeps its scrolling-water FX.
+  if (f.localBoat) {
+    foam.length = 0; parts.length = 0;
+    if (tip) return [x + (tip[0] * ca - tip[1] * sa) * k, y + (tip[0] * sa + tip[1] * ca) * k];
+    return [x + .6 * k, y - 1.5 * k];
+  }
   const half = spec.half * k;
   const dim = 1 - night * 0.4;
 

@@ -38,15 +38,19 @@ export function drawBobberPointer(f: Frame) {
   const { ctx, e, sY, cam, W, t } = f;
   if (e.phase !== "bite" && e.phase !== "waiting") return;
   const y = sY - cam;
-  if (y > f.topRes + 10) return;
-  const x = W * e.castNX();
-  const py = f.topRes + 18;
+  const rawX = f.worldToScreenX ? f.worldToScreenX((f.worldWidth ?? W) * e.castNX()) : W * e.castNX();
+  if (y > f.topRes + 10 && rawX >= 50 && rawX <= W - 50) return;
+  const x = Math.max(60, Math.min(W - 60, rawX));
+  const py = Math.max(f.topRes + 18, Math.min(f.H - f.botRes - 40, y));
   ctx.save();
   ctx.fillStyle = e.phase === "bite" ? `rgba(227,201,150,${0.7 + Math.sin(t * 12) * 0.3})` : "rgba(230,225,214,0.5)";
   ctx.beginPath();
-  ctx.moveTo(x, py - 8);
-  ctx.lineTo(x - 6, py);
-  ctx.lineTo(x + 6, py);
+  if (rawX < 50 || rawX > W - 50) {
+    const dir = rawX < 50 ? -1 : 1;
+    ctx.moveTo(x + dir * 8, py - 4); ctx.lineTo(x - dir * 2, py - 10); ctx.lineTo(x - dir * 2, py + 2);
+  } else {
+    ctx.moveTo(x, py - 8); ctx.lineTo(x - 6, py); ctx.lineTo(x + 6, py);
+  }
   ctx.fill();
   label(ctx, e.phase === "bite" ? "подсекайте" : e.nibbling ? "пробует — ждите" : "поплавок", x, py + 13, "center", e.phase === "bite" ? BRASS : DIM);
   ctx.restore();

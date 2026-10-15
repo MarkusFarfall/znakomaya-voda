@@ -1,3 +1,4 @@
+import { normalizeLocalPosition } from "@/game/navigation";
 import { FISH_BY_ID } from "@/game/fish";
 import { EventDirector } from "@/game/events";
 import type { DirectorSave } from "@/game/events/types";
@@ -112,6 +113,7 @@ export function sanitizeSave(data: Record<string, unknown>, options: SanitizeOpt
     out.spot = spotsOf(spotLoc)[0].id;
     clamped.push("spot");
   }
+  if (out.localPosition !== undefined) out.localPosition = normalizeLocalPosition(out.localPosition, typeof out.spot === "string" ? out.spot : spotsOf(spotLoc)[0].id);
   if (out.wind !== undefined && (typeof out.wind !== "number" || !Number.isFinite(out.wind))) { out.wind = 0.3; clamped.push("wind"); }
 
   // ── списки мира: только то, что есть в игре ──

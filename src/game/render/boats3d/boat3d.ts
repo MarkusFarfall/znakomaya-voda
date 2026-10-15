@@ -54,7 +54,7 @@ export class Boat3D {
       }
     }
     const stage = sharedStage;
-    stage.setPixelRatio(dpr);
+    stage.setPixelRatio(Math.abs(dpr));
     const spec = f.e.boat;
     if (!this.body || this.body.spec.id !== spec.id) this.body = new VesselBody(spec);
     const b = this.body;
@@ -68,12 +68,12 @@ export class Boat3D {
     const slope = (f.waveY(bx + 2 * PXM) - f.waveY(bx - 2 * PXM)) / (4 * PXM);
     b.theta = damp(b.theta, clamp(-Math.atan(slope) * (0.55 + 0.5 * (1 - spec.stability)), -0.22, 0.22), 5, dt);
     b.roll = damp(b.roll, Math.sin(f.t * 1.1 + 1.7) * 0.035 * (1.25 - spec.stability) + clamp((f.atmo.wind * f.atmo.windDir) / 40, -0.2, 0.2) * 0.2, 3, dt);
-    const rowing = spec.style === "row" && pose === "helm";
+    const rowing = (spec.style === "row" || spec.style === "kayak") && pose === "helm" && speed01 > .015;
     b.stroke += (rowing ? 1.2 + 1.5 * speed01 : 0) * dt;
     b.vw = pose === "moored" ? 0 : speed01 * g.vMax * 0.75;
     b.rpm = g.motor !== "none" && pose !== "moored" ? 0.2 + 0.8 * speed01 : 0;
     b.psi = 0;
-    b.lean = clamp(-speed01 * 0.12, -0.2, 0.2);
+    b.lean = clamp(-speed01 * 0.12 - (f.localBoat ? f.e.navigation.acceleration * f.e.navigation.heading * .001 : 0), -0.2, 0.2);
 
     /* ───── кадр для 3D-сцены ───── */
     const a = f.atmo;

@@ -22,6 +22,10 @@ export interface Frame {
   weather: WeatherId;
   atmo: AtmosphereState;
   W: number;
+  boatX?: number;
+  localBoat?: boolean;
+  worldWidth?: number;
+  worldToScreenX?: (x: number) => number;
   H: number;
   t: number;
   dt: number;

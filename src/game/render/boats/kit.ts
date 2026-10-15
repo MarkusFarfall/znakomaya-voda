@@ -46,6 +46,7 @@ export function makePen(f: Frame): Pen {
 
 /** Всё, что нужно отдельному судну при рисовании */
 export interface R {
+  stroke?: number;
   p: Pen;
   ctx: CanvasRenderingContext2D;
   b: BoatDef;

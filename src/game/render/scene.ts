@@ -1,3 +1,5 @@
+import { horizontalView, navigationSpeed, SPOT_WORLD_WIDTH, worldNX, NAV_LEFT, NAV_RIGHT } from "../navigation";
+import { LocalWake } from "./localWake";
 import { depthToU, JUMP_TIME, TIME_SCALE, type Engine, type SonarBand } from "../engine";
 import { FISH } from "../fish";
 import { drawFish, drawFishGlow, fishScreenLen } from "../fishDraw";
@@ -5,7 +7,7 @@ import type { FishDef } from "../types";
 import { PrecipitationField } from "./precipitation";
 import { projectFightFish } from "./fishingGeometry";
 import { BAIT_BY_ID } from "../world";
-import { drawBoat } from "./boat";
+import { BOAT_SPECS, drawBoat } from "./boat";
 import { Boat3D } from "./boats3d/boat3d";
 import type { Frame } from "./frame";
 import { drawBobberPointer, drawFightPanel, drawPower, drawRuler, drawSonar } from "./hud";
@@ -40,6 +42,14 @@ export const CAM_MODES: CamMode[] = ["auto", "surface", "hook", "bottom"];
 
 export class Scene {
   camY = 0;
+  cameraX = 0;
+  viewWidth = 0;
+  private pixelScale = 1;
+  private waterTop = 0;
+  private navigationInstance: Engine["navigation"] | null = null;
+  private localWake = new LocalWake();
+  screenToWorldNX(x: number) { return worldNX(x, this.cameraX, this.pixelScale); }
+  isWaterPoint(y: number) { return y >= this.waterTop && y <= this.H; }
   camMode: CamMode = "auto";
   /** Режим перехода: скорость хода в px/с (null — обычная рыбалка) */
   voyage: number | null = null;
@@ -120,11 +130,18 @@ export class Scene {
   }
 
   render(ctx: CanvasRenderingContext2D, e: Engine, W: number, H: number, dt: number) {
+    const screenW = W;
+    if (this.voyage === null) W = SPOT_WORLD_WIDTH;
     this.init(W, H);
     this.t += dt;
     const t = this.t;
     const loc = e.loc, spot = e.spot;
-    if (this.spotKey !== spot.id) {
+    const changedPosition = this.navigationInstance !== e.navigation;
+    this.navigationInstance = e.navigation;
+    if (changedPosition) this.localWake.reset();
+    const changedSpot = this.spotKey !== spot.id;
+    if (changedSpot) {
+      this.localWake.reset();
       this.spotKey = spot.id;
       this.ambient = [];
       this.creatures = [];
@@ -143,7 +160,7 @@ export class Scene {
     const hY = sY - H * 0.095;
     const K = H * 0.42;
     const sc = clamp(Math.min(H / 900, W / 1150), 0.5, 1.25);
-    const compact = W < 820 || H < 560, land = W >= H;
+    const compact = screenW < 820 || H < 560, land = screenW >= H;
     const calm = e.activeEvents.some((a) => a.id === "calm");
     const amp = (3.2 * atmo.waves * loc.waveMult * (spot.swell ?? 1) * (calm ? 0.25 : 1) + 1) * sc;
 
@@ -161,18 +178,18 @@ export class Scene {
 
     if (this.voyage) this.flow += this.voyage * dt;
     const fl = this.flow;
-    const waveY = (xx: number) => { const x = xx + fl; return sY + amp * (Math.sin(x * 0.011 + t * 1.25) * 0.55 + Math.sin(x * 0.027 - t * 1.9) * 0.28 + Math.sin(x * 0.0045 + t * 0.55) * 0.9); };
+    const waveY = (xx: number) => { const x = xx + fl; return sY + amp * (Math.sin(x * 0.011 + t * 1.25) * 0.55 + Math.sin(x * 0.027 - t * 1.9) * 0.28 + Math.sin(x * 0.0045 + t * 0.55) * 0.9) + (this.voyage === null ? this.localWake.heightAt(xx) : 0); };
     const depthPx = (m: number) => K * depthToU(m);
 
     // камера
     const inWater = ["sinking", "waiting", "bite", "fight"].includes(e.phase) && !(e.hooked && e.hooked.jump > 0);
     const hookY = sY + depthPx(e.hookDepth);
     const bedMaxPx = sY + depthPx(spot.maxDepth * 1.05);
-    const topRes = W < 820 || H < 560 ? (W >= H ? 64 : 118) : 210;
+    const topRes = compact ? (land ? 64 : 118) : 210;
     const maxCam = Math.max(0, bedMaxPx - H * 0.73);
     let target = 0;
     let speed = 2.2;
-    switch (this.voyage ? "surface" : this.camMode) {
+    switch (this.voyage !== null || e.navigationMode ? "surface" : this.camMode) {
       case "surface":
         target = 0;
         break;
@@ -198,22 +215,31 @@ export class Scene {
       ctx, e, loc, spot, weather, atmo, W, H, t, dt, sY, hY, cam, K, sc, night, day, golden, cover, fogK, top, mid, hor,
       sunX, sunY, sunElev, sunVis, moonX, moonY, moonUp, moonVis, amp,
       wind: this.voyage ? Math.min(3, atmo.wind / 18 + this.voyage / 90) : Math.min(1.5, atmo.wind / 18),
-      clarity: loc.clarity ?? 0.6, quality: this.quality, compact, land, bottomFocus: this.camMode === "bottom",
+      clarity: loc.clarity ?? 0.6, quality: this.quality, compact, land, bottomFocus: !e.navigationMode && this.camMode === "bottom",
       topRes: compact ? (land ? 64 : 118) : 210, botRes: compact ? (land ? 70 : 146) : 150, depthPx, waveY,
       light: { dx: clamp((sunX / W) * 2 - 1, -1, 1), k: sunVis * (1 - night * 0.7) },
     };
     const fxCalls = this.eventFxCalls(e);
-    const fxBoatX = W * 0.3;
+    const fxBoatX = this.voyage !== null ? W * .3 : e.navigation.x;
+    f.boatX = fxBoatX;
+    if (this.voyage === null) this.localWake.update(f);
+    const z = Math.max(screenW / W, clamp(this.zoom, 1, 2));
+    this.pixelScale = z;
+    this.waterTop = sY + (hY - sY) * z - cam * z;
+    const followingTackle = !e.navigationMode && e.phase !== "idle";
+    const hullHalf = BOAT_SPECS[e.boat.style].half * 28 * sc;
+    const lookAhead = Math.min(100, screenW / z * .16, Math.max(0, screenW / z * .5 - hullHalf - 24));
+    const focus = followingTackle ? (fxBoatX + W * e.castNX()) * .5 : fxBoatX + Math.cos(e.navigation.yaw) * lookAhead + e.navigation.velocity / 3.4;
+    const view = horizontalView(W, screenW, z, focus);
+    this.viewWidth = view.width;
+    this.cameraX = this.voyage !== null ? 0 : changedSpot || changedPosition ? view.x : clamp(this.cameraX + (view.x - this.cameraX) * -Math.expm1(-dt * 3.4), 0, W - view.width);
+    const screenX = (x: number) => (x - this.cameraX) * z;
 
     const shake = e.shake * 4;
     ctx.save();
-    ctx.clearRect(0, 0, W, H);
-    // приближение камеры: масштабируем вокруг точки у воды возле лодки
-    const z = clamp(this.zoom, 1, 2);
-    if (z > 1.001) {
-      ctx.translate(W * 0.3 * (1 - z), sY * (1 - z));
-      ctx.scale(z, z);
-    }
+    ctx.clearRect(0, 0, screenW, H);
+    ctx.translate(-this.cameraX * z, sY * (1 - z));
+    ctx.scale(z, z);
     ctx.translate(shake ? (Math.random() - 0.5) * shake : 0, -cam + (shake ? (Math.random() - 0.5) * shake : 0));
 
     // ───── НАД ВОДОЙ ─────
@@ -268,13 +294,18 @@ export class Scene {
 
     // ───── ПОВЕРХНОСТЬ ─────
     this.land.drawFront(f);
-    const bx = W * 0.3;
-    const flowPx = this.voyage ?? 0;
-    const speed01 = Math.min(1, flowPx / 230);
-    const pose = this.voyage ? "helm" : "fish";
+    const bx = fxBoatX;
+    const flowPx = this.voyage ?? Math.abs(e.navigation.velocity);
+    const speed01 = Math.min(1, flowPx / (this.voyage !== null ? 230 : navigationSpeed(e.boat)));
+    const pose = this.voyage !== null || e.navigationMode ? "helm" : "fish";
+    const facing = this.voyage !== null ? 1 : Math.cos(e.navigation.yaw);
+    const mirror = facing < 0 ? -1 : 1;
+    const turnScale = mirror * Math.max(.22, Math.abs(facing));
+    ctx.save(); ctx.translate(bx, 0); ctx.scale(turnScale, 1); ctx.translate(-bx, 0);
+    const boatFrame: Frame = { ...f, localBoat: this.voyage === null, waveY: x => waveY(bx + (x - bx) * turnScale) };
     if (!this.boat3d && typeof window !== "undefined") this.boat3d = new Boat3D();
     this.boat3d?.setEnabled(this.boat3dOn);
-    const r3 = this.boat3d?.draw(ctx, f, bx, pose, speed01, ctx.getTransform().a || 1) ?? null;
+    const r3 = this.boat3d?.draw(ctx, boatFrame, bx, pose, speed01, Math.abs(ctx.getTransform().a / turnScale) || 1) ?? null;
     let tip: [number, number];
     if (r3) {
       // кроссфейд 2D↔3D: старая модель тонет, новая всплывает
@@ -282,15 +313,19 @@ export class Scene {
         ctx.save();
         ctx.globalAlpha *= 1 - r3.k;
         ctx.translate(0, r3.k * 10);
-        tip = drawBoat(f, bx, pose, speed01, flowPx);
+        tip = drawBoat(boatFrame, bx, pose, speed01, flowPx);
         ctx.restore();
         if (r3.k > 0.5) tip = r3.tip;
       } else {
         tip = r3.tip;
       }
     } else {
-      tip = drawBoat(f, bx, pose, speed01, flowPx);
+      tip = drawBoat(boatFrame, bx, pose, speed01, flowPx);
     }
+    ctx.restore();
+    tip = [bx + (tip[0] - bx) * turnScale, tip[1]];
+    if (this.voyage === null && this.gfx.foam) this.localWake.draw(f);
+    if (this.voyage === null && e.navigationMode) this.drawNavigation(f);
     if (this.gfx.foam) drawSurfaceFront(f, this.rings);
     this.rings = this.rings.filter((r) => r.t < 0.7);
     if (atmo.ice > 0.02) {
@@ -303,44 +338,69 @@ export class Scene {
     this.drawSprays(f);
     if (fxCalls.length) drawEventFx(this.fxScene(f, bx, tip), "front", fxCalls);
 
-    if (!this.voyage && (e.phase === "idle" || e.phase === "charging")) {
+    if (this.voyage === null && !e.navigationMode && (e.phase === "idle" || e.phase === "charging")) {
       const dy = sY + depthPx(Math.min(e.s.targetDepth, e.maxDepth));
       ctx.save();
       ctx.setLineDash([6, 8]);
       ctx.strokeStyle = "rgba(255,230,150,0.5)";
       ctx.beginPath();
-      ctx.moveTo(bx + 60, dy);
-      ctx.lineTo(W - 70, dy);
+      ctx.moveTo(bx + e.navigation.heading * 60, dy);
+      ctx.lineTo(W * e.castNX(), dy);
       ctx.stroke();
       ctx.setLineDash([]);
       ctx.fillStyle = "rgba(255,230,150,0.9)";
       ctx.font = "600 12px ui-sans-serif, system-ui";
-      ctx.fillText(`${Math.min(e.s.targetDepth, e.maxDepth)} м`, bx + 64, dy - 6);
+      ctx.fillText(`${Math.min(e.s.targetDepth, e.maxDepth)} м`, W * e.castNX() - 16, dy - 6);
       ctx.restore();
     }
     this.drawPrecipitation(f);
     ctx.restore();
 
-    // ───── ЭКРАН ─────
-    this.drawWeather(f);
-    this.drawLightning(f);
-    this.grade(f);
+    // HUD/weather are screen-space, never stretched to the canonical world width.
+    const screen: Frame = { ...f, W: screenW, worldWidth: W, worldToScreenX: screenX,
+      sY, hY: sY + (hY - sY) * z, cam: cam * z,
+      depthPx: m => depthPx(m) * z, waveY: x => sY + (waveY(this.cameraX + x / z) - sY) * z,
+      sunX: screenX(sunX), moonX: screenX(moonX) };
+    this.drawWeather(screen);
+    this.drawLightning(screen);
+    this.grade(screen);
     if (!this.voyage) {
-      drawRuler(f);
-      drawBobberPointer(f);
+      drawRuler(screen);
+      drawBobberPointer(screen);
     }
     this.sonarT -= dt;
     if (this.sonarT <= 0) {
       this.sonarT = 0.6;
       this.sonar = e.s.sonar > 0 ? e.sonarScan() : [];
     }
-    drawSonar(f, this.sonar);
-    drawPower(f);
-    drawFightPanel(f);
+    drawSonar(screen, this.sonar);
+    drawPower(screen);
+    drawFightPanel(screen);
     if (e.fade > 0) {
       ctx.fillStyle = `rgba(2,4,10,${smooth(clamp(e.fade, 0, 1))})`;
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, screenW, H);
     }
+  }
+
+  private drawNavigation(f: Frame) {
+    const { ctx, W, e, sc, t } = f;
+    ctx.save();
+    for (const nx of [NAV_LEFT, NAV_RIGHT]) {
+      const x = nx * W, y = f.waveY(x);
+      ctx.strokeStyle = "rgba(223,211,166,.35)"; ctx.setLineDash([3, 6]);
+      ctx.beginPath(); ctx.moveTo(x, y - 35 * sc); ctx.lineTo(x, y + 22 * sc); ctx.stroke();
+      ctx.setLineDash([]); ctx.fillStyle = "#ddc48d";
+      ctx.beginPath(); ctx.ellipse(x, y, 4 * sc, 2 * sc, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    const dest = e.navigation.target;
+    if (dest !== null) {
+      const y = f.waveY(dest), pulse = 1 + Math.sin(t * 3) * .12;
+      ctx.strokeStyle = "rgba(247,220,151,.85)"; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.ellipse(dest, y, 16 * sc * pulse, 4 * sc * pulse, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(dest, y - 26 * sc); ctx.lineTo(dest, y - 9 * sc); ctx.stroke();
+      ctx.fillStyle = "#f3dca1"; ctx.beginPath(); ctx.arc(dest, y - 29 * sc, 2.5 * sc, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
   }
 
   private drawSurfaceEvents(f: Frame) {
@@ -665,7 +725,7 @@ export class Scene {
     const { ctx, e, W, t, sY } = f;
     if (e.hooked) {
       const h = e.hooked;
-      const pose = projectFightFish(h, { boatX: W * 0.3, castX: bobX, scale: f.sc, waveY: f.waveY, depthPx: f.depthPx });
+      const pose = projectFightFish(h, { boatX: f.boatX ?? W * .3, castX: bobX, scale: f.sc, waveY: f.waveY, depthPx: f.depthPx });
       const { x: fishX, y: fishY, len, dir } = pose;
       if (h.jump > 0) return pose.mouth;
       ctx.save(); ctx.translate(fishX, fishY); ctx.rotate(pose.angle); ctx.scale(pose.turn, 1);
@@ -707,7 +767,7 @@ export class Scene {
     const h = e.hooked;
     if (!h || h.jump <= 0) return;
     const p = 1 - h.jump / JUMP_TIME;
-    const pose = projectFightFish(h, { boatX: W * 0.3, castX: bobX, scale: f.sc, waveY: f.waveY, depthPx: f.depthPx });
+    const pose = projectFightFish(h, { boatX: f.boatX ?? W * .3, castX: bobX, scale: f.sc, waveY: f.waveY, depthPx: f.depthPx });
     ctx.save(); ctx.translate(pose.x, pose.y); ctx.rotate(pose.angle); ctx.scale(pose.turn, 1);
     drawFish(ctx, h.fish, 0, 0, pose.len, pose.dir, { wag: h.motion.swimPhase, variant: h.variant });
     ctx.restore();
@@ -953,7 +1013,7 @@ export class Scene {
 
   private drawWeather(f: Frame) {
     const { ctx, W, H, sY, cam, t, atmo, sc } = f;
-    const surf = sY - clamp(this.zoom, 1, 2) * cam;
+    const surf = sY - cam;
     const windPx = atmo.wind * atmo.windDir * 26 * sc;
     if (surf > 0) {
       if (atmo.leaves > 0.02 && surf > 8) drawLeaves(ctx, t, 0, W, 0, Math.min(H, surf), windPx, atmo.leaves, "leaf", sc);

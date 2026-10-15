@@ -23,6 +23,7 @@ import { setBoat3dPref } from "@/game/render/boats3d/boat3d";
 import { CatchModal, fmt, PortModal, type PortTab } from "./Panels";
 import { Codex } from "./Codex";
 import { TravelChoice, TravelOverlay } from "./Travel";
+import { LocalNavigationPanel } from "./LocalNavigation";
 import { PortHub } from "./PortHub";
 import { RestTransition } from "./RestTransition";
 import { FriendsModal, useFriends } from "./Friends";
@@ -467,6 +468,7 @@ export default function Game() {
   const closePanel = useCallback(() => { audioRef.current.ui("close"); setPanel(null); }, []);
   const openPort = useCallback(() => {
     if (engine.s.atPort) return;
+    if (engine.navigation.moving) { engine.toast("Сначала остановите лодку", "info"); return; }
     if (engine.phase === "fight" || engine.phase === "bite" || engine.phase === "caught") { engine.toast("Сначала закончите с рыбой", "bad"); return; }
     audioRef.current.ui("open");
     setTripReq({ kind: "port", port: engine.nearestPort() });
@@ -506,16 +508,18 @@ export default function Game() {
         tgt.blur();
       }
       if (tgt?.closest("[data-game-dialog]")) return;
+      if (tgt?.closest("button") && (ev.code === "Space" || ev.code === "Enter")) return;
       unlockAudio();
       if (travelling) return;
-      if (ev.code === "Space") { ev.preventDefault(); if (!ev.repeat && !panel && !letter && !engine.lastCatch && !engine.lastFind && !engine.s.atPort && !tripReq) engine.pointerDown(); }
+      if (ev.code === "Space") { ev.preventDefault(); if (!ev.repeat && !panel && !letter && !engine.lastCatch && !engine.lastFind && !engine.s.atPort && !tripReq) { if (engine.navigationMode) engine.stopNavigation(); else engine.pointerDown(); } }
+      else if (ev.code === "KeyN" && !panel && !letter && !settingsOpen && !tripReq && !authOpen && !engine.paused) engine.setNavigationMode(!engine.navigationMode);
       else if (ev.code === "KeyC") openPanel("codex");
       else if (ev.code === "KeyJ") openPanel("journal");
       else if (ev.code === "KeyF") openPanel("friends");
       else if (ev.code === "KeyP" && !panel) openPort();
       else if (ev.code === "KeyV" && !panel) cycleCam();
       else if (ev.code === "KeyM") setSettings({ ...settings, sound: !settings.sound });
-      else if (ev.code === "Escape") { if (authOpen) setAuthOpen(null); else if (tripReq) setTripReq(null); else if (panel) closePanel(); setLetter(null); }
+      else if (ev.code === "Escape") { if (authOpen) setAuthOpen(null); else if (tripReq) setTripReq(null); else if (panel) closePanel(); else if (engine.navigationMode) { if (engine.navigation.moving) engine.stopNavigation(); else engine.setNavigationMode(false); } setLetter(null); }
       else if ((ev.code === "ArrowUp" || ev.code === "KeyW") && !panel) engine.setDepth(uToDepth(depthToU(engine.s.targetDepth) - 0.08));
       else if ((ev.code === "ArrowDown" || ev.code === "KeyS") && !panel) engine.setDepth(uToDepth(depthToU(engine.s.targetDepth) + 0.08));
       else if (/^Digit[0-9]$/.test(ev.code) && !panel) {
@@ -533,7 +537,7 @@ export default function Game() {
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
     return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
-  }, [playing, panel, letter, engine, openPort, openPanel, closePanel, unlockAudio, settings, setSettings, cycleCam, travelling, tripReq, authOpen]);
+  }, [playing, panel, letter, engine, openPort, openPanel, closePanel, unlockAudio, settings, setSettings, cycleCam, travelling, tripReq, authOpen, settingsOpen]);
 
   const start = (fresh: boolean) => {
     unlockAudio();
@@ -590,7 +594,7 @@ export default function Game() {
   const atmo = engine.atmosphere.summary();
   const moonPhase = Math.round(engine.atmosphere.state.moonPhase * 8) % 8;
   const fc = engine.forecast;
-  const busy = engine.phase === "fight" || engine.phase === "bite" || engine.phase === "caught";
+  const busy = engine.navigation.moving || engine.phase === "fight" || engine.phase === "bite" || engine.phase === "caught";
   const events = engine.eventDirector.activeList();
 
   const status: Record<string, [string, string]> = {
@@ -611,9 +615,14 @@ export default function Game() {
     <div className="relative h-dvh w-full select-none overflow-hidden bg-[#050a12] text-[#e6e1d6]" onPointerDownCapture={unlockAudio}>
       <canvas
         ref={canvasRef}
-        className="absolute inset-0 h-full w-full touch-none"
+        className={`absolute inset-0 h-full w-full touch-none ${engine.navigationMode ? "cursor-crosshair" : ""}`}
         onPointerDown={(e) => {
           if (e.button === 0 && playing && !engine.paused && !panel && !letter && !engine.lastCatch && !engine.lastFind && !engine.s.atPort) {
+            if (engine.navigationMode) {
+              const rect = e.currentTarget.getBoundingClientRect();
+              if (sceneRef.current.isWaterPoint(e.clientY - rect.top)) engine.navigateTo(sceneRef.current.screenToWorldNX(e.clientX - rect.left));
+              return;
+            }
             e.currentTarget.setPointerCapture(e.pointerId);
             engine.pointerDown();
             const k = e.clientX / window.innerWidth;
@@ -694,6 +703,14 @@ export default function Game() {
 
       {playing && (
         <>
+          {!engine.s.atPort && !panel && !tripReq && !travelling && !settingsOpen && letter === null && !authOpen && !engine.lastCatch && !engine.lastFind && (
+            engine.navigationMode ? <LocalNavigationPanel engine={engine} scene={scene0} landscape={view.compact && view.land} /> :
+            <button className="zv-ui navigation-entry" style={{ bottom: (view.compact ? (view.land ? 76 : 154) : 126) + (view.compact ? (engine.tipNow ? 60 : 0) + Math.min(engine.toasts.length, 2) * 36 : 0) }} disabled={!!engine.navigationBlock} onClick={() => engine.setNavigationMode(true)} title={engine.navigationBlock ?? "Выбрать точку и плыть · N"}>
+              <span aria-hidden="true">↔</span> Перемещение
+              {!!engine.navigationBlock && <small>уберите снасть</small>}
+            </button>
+          )}
+
           {!view.compact && !engine.s.atPort && (
             <>
           {/* ───────── ЛЕВЫЙ ВЕРХ ───────── */}
@@ -878,7 +895,7 @@ export default function Game() {
           )}
 
           {/* ───────── ЛЕНТА ───────── */}
-          <div className="pointer-events-none absolute left-3 z-20 flex max-w-[78vw] flex-col gap-1.5" style={{ bottom: view.compact ? (view.land ? 70 : 142) : 116 }}>
+          <div className="pointer-events-none absolute left-3 z-20 flex max-w-[78vw] flex-col gap-1.5" style={{ bottom: engine.navigationMode ? (view.compact && view.land ? 122 : 190) : view.compact ? (view.land ? 70 : 142) : 116 }}>
             {(view.compact ? engine.toasts.slice(-2) : engine.toasts).map((t) => (
               <div key={t.id} className={`log-item log-${t.kind}`}>
                 <div>
@@ -897,13 +914,13 @@ export default function Game() {
               else if (message.type === "outcome") audio.play("quest");
               else if (message.type === "omen" || message.type === "start") audio.play("event");
             }}
-            hidden={panel !== null || letter !== null || authOpen !== null || !!travelling || !!tripReq || (touch && engine.phase === "fight")}
+            hidden={engine.navigationMode || panel !== null || letter !== null || authOpen !== null || !!travelling || !!tripReq || (touch && engine.phase === "fight")}
             compact={view.compact}
             land={view.land}
             port={engine.s.atPort}
           />
 
-          {!view.compact && !engine.s.atPort && (
+          {!view.compact && !engine.s.atPort && !engine.navigationMode && (
             <>
           {/* ───────── НИЖНЯЯ ПАНЕЛЬ ───────── */}
           <div className="zv-ui game-controls absolute inset-x-0 bottom-0 z-20 flex flex-col items-center gap-2 px-4 pb-4" onPointerDown={(e) => e.stopPropagation()}>
@@ -957,7 +974,7 @@ export default function Game() {
 
             </>
           )}
-          {view.compact && !engine.s.atPort && (
+          {view.compact && !engine.s.atPort && !engine.navigationMode && (
             <div className="zv-ui game-controls absolute inset-x-0 bottom-0 z-20 px-2 pb-[max(8px,env(safe-area-inset-bottom))] pl-[max(8px,env(safe-area-inset-left))] pr-[max(8px,env(safe-area-inset-right))]" onPointerDown={(e) => e.stopPropagation()}>
               {engine.tipNow && engine.phase !== "fight" && engine.phase !== "bite" && !engine.nibbling && (
                 <div key={engine.tipNow.id} className="tip glass mx-auto mb-1.5 flex max-w-[560px] items-start gap-2 px-3 py-2">
@@ -1059,7 +1076,7 @@ export default function Game() {
 
           {!engine.s.atPort && !panel && !tripReq && !travelling && !settingsOpen && letter === null && !authOpen && engine.phase !== "caught" && (
             <div className="pointer-events-none absolute inset-0 z-[25]">
-              <button style={{ position: "absolute", bottom: 12, right: 12 }} className="iconbtn pointer-events-auto !bg-[rgba(6,12,18,0.72)]" onClick={() => setSettingsOpen(true)} title="Настройки" aria-label="Настройки"><Icon name="gear" size={16} /></button>
+              <button style={{ position: "absolute", bottom: engine.navigationMode ? (view.compact && view.land ? 124 : 190) : 12, right: 12 }} className="iconbtn pointer-events-auto !bg-[rgba(6,12,18,0.72)]" onClick={() => setSettingsOpen(true)} title="Настройки" aria-label="Настройки"><Icon name="gear" size={16} /></button>
             </div>
           )}
 

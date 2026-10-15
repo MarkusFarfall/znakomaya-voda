@@ -241,10 +241,10 @@ export function drawArt(r: R, style: BoatStyle): P | null {
   let H: P = [0, 0], Bn: P = [0, 0], Bf: P = [0, 0];
   let drive = false;
   let rowPhase = 0;
-  const rowing = style === "row" && r.pose === "helm";
+  const rowing = style === "row" && r.pose === "helm" && r.speed > .015;
   if (style === "row") {
     const rate = rowing ? 1.2 + 1.5 * r.speed : 0;
-    const u = (((r.t * rate) / TAU) % 1 + 1) % 1;
+    const u = ((((r.stroke ?? r.t * rate)) / TAU) % 1 + 1) % 1;
     rowPhase = u;
     drive = u < 0.42;
     const sweep = drive ? 0.75 - 1.5 * (u / 0.42) : -0.75 + 1.5 * ((u - 0.42) / 0.58);
@@ -374,7 +374,7 @@ export function drawArt(r: R, style: BoatStyle): P | null {
       const seat = Y(0.33);
       const bob = Math.sin(r.t * 1.1) * 0.01;
       const rate = helm ? 1.0 + 1.3 * r.speed : 0;
-      const ph = r.t * rate;
+      const ph = r.stroke ?? r.t * rate;
       const psi = helm ? 0.72 * Math.sin(ph) : -0.12;
       const pc: P = [sx + 0.1, seat - 0.55];
       const half = 1.25;

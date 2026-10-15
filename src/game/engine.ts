@@ -1,3 +1,4 @@
+import { LocalNavigation, normalizeLocalPosition, SPOT_WORLD_WIDTH } from "./navigation";
 import { FISH, FISH_BY_ID, RARITY_INFO, VARIANT_INFO } from "./fish";
 import { BITE_WINDOWS, SURGE_WARNING_TIME, biteApproachSeconds } from "./fishing";
 import { FIGHT_STEP, newFightMotion, stepFightMotion, type FightMotion } from "./fishingPhysics";
@@ -235,6 +236,7 @@ export function migrateSave(raw: unknown): SaveData | null {
   s.quest = Number.isFinite(s.quest) ? s.quest : 0;
   if (!s.flags.includes("visit_bay")) s.flags.push("visit_bay");
   if (!s.flags.includes(`visit_${s.location}`)) s.flags.push(`visit_${s.location}`);
+  s.localPosition = normalizeLocalPosition(s.localPosition, s.spot);
   s.version = SAVE_VERSION;
   s.atPort = !!r.atPort && !!PORT_BY_ID[s.port];
   s.hook = Math.max(0, Math.min(HOOKS.length - 1, (s.hook as number) | 0));
@@ -249,12 +251,36 @@ const ri = (n: number) => Math.floor(Math.random() * n);
 
 export class Engine {
   private save: SaveData;
+  navigation: LocalNavigation;
+  navigationMode = false;
+  private navEmit = 0;
+  private resetNavigation() {
+    this.navigationMode = false;
+    this.navEmit = 0;
+    this.save.localPosition = normalizeLocalPosition(this.save.localPosition, this.save.spot);
+    this.navigation = new LocalNavigation(this.save.localPosition);
+  }
+  get navigationBlock(): string | null {
+    return this.s.atPort ? "Сначала выйдите из порта" : this.phase !== "idle" ? "Сначала уберите снасть и закончите с рыбой" : null;
+  }
+  setNavigationMode(on: boolean) {
+    if (on && this.navigationBlock) return false;
+    if (!on && this.navigation.moving) return false;
+    this.navigationMode = on; this.cancelInput(); this.emit(); return true;
+  }
+  navigateTo(nx: number) {
+    if (this.paused || !this.navigationMode || this.navigationBlock) return false;
+    if (!this.navigation.go(nx)) return false;
+    this.markDirty(); return true;
+  }
+  stopNavigation() { this.navigation.stop(); this.markDirty(); }
   private atmosphereInstance: Atmosphere | null = null;
   private eventDirectorInstance: EventDirector | null = null;
   private lastEventCheckpoint = -1;
   get s(): SaveData { return this.save; }
   set s(value: SaveData) {
     this.save = value;
+    this.resetNavigation();
     if (this.atmosphereInstance || this.eventDirectorInstance) {
       this.initializeEventDirector();
       this.initializeAtmosphere();
@@ -319,6 +345,8 @@ export class Engine {
 
   constructor(save?: SaveData) {
     this.save = save ?? newSave();
+    this.save.localPosition = normalizeLocalPosition(this.save.localPosition, this.save.spot);
+    this.navigation = new LocalNavigation(this.save.localPosition);
     this.initializeEventDirector();
     this.initializeAtmosphere();
   }
@@ -475,8 +503,8 @@ export class Engine {
   }
   get forecast() { return { w: this.s.weatherQueued, inMin: Math.max(0, this.s.weatherNext - this.s.minutes) }; }
 
-  /** нормализованная X-координата поплавка (0..1 ширины экрана) */
-  castNX(d = this.castDist) { return 0.34 + d * 0.42; }
+  /** Cast coordinates share the fixed world with the boat and canonical seabed. */
+  castNX(d = this.castDist) { return Math.max(.025, Math.min(.975, this.navigation.nx + this.navigation.heading * (70 + Math.max(0, Math.min(1, d)) * 230) / SPOT_WORLD_WIDTH)); }
   bedAt(nx: number) { return this.spot.maxDepth * bedFrac(this.spot, nx); }
 
   subscribe(fn: () => void) {
@@ -540,6 +568,15 @@ export class Engine {
     this.shake = Math.max(0, this.shake - dt * 2);
     this.tickNotices();
     if (this.paused) return;
+    const wasMoving = this.navigation.moving;
+    // Physics uses real seconds, not the accelerated fishing/world clock.
+    if (!this.navigationBlock) this.navigation.step(dt, this.boat, this.atmosphere.state.waves);
+    if (wasMoving) {
+      this.s.localPosition = { spot: this.s.spot, x: this.navigation.nx, heading: this.navigation.heading };
+      this.dirty = true;
+      this.navEmit += dt;
+      if (this.navEmit >= .1 || !this.navigation.moving) { this.navEmit = 0; this.emit(); }
+    }
 
     const wdt = dt;
 
@@ -641,7 +678,7 @@ export class Engine {
 
   // ─────────── input ───────────
   pointerDown() {
-    if (this.paused) return;
+    if (this.paused || this.navigationMode || this.navigation.moving) return;
     switch (this.phase) {
       case "idle":
         if (this.coolerFull) {
@@ -1426,6 +1463,7 @@ export class Engine {
     return { minutes: Math.round(motor || !this.canMotor ? base : base * 2.2), fuel: motor ? this.fuelTo(pt) : 0, hours: base / 60 };
   }
   tripBlock(t: Trip, mode: TravelMode): string | null {
+    if (this.navigation.moving) return "Сначала остановите лодку";
     if (this.phase === "fight" || this.phase === "caught" || this.phase === "bite") return "Сначала закончите с рыбой";
     if (t.kind === "loc" && !this.isUnlocked(t.loc)) return "Акватория ещё не разведана";
     if (t.kind === "loc" && LOC_BY_ID[t.loc].boatTier > this.boat.tier) return "Нужно судно старшего класса";
@@ -1454,6 +1492,7 @@ export class Engine {
     } else {
       this.arriveAt(t.loc, t.spot);
     }
+    this.resetNavigation();
     this.syncAtmosphere(0);
     this.fade = 0.6;
     this.markDirty();
@@ -1504,6 +1543,7 @@ export class Engine {
     this.s.location = to;
     const sp = spotId && SPOT_BY_ID[spotId]?.loc === to ? spotId : changed || SPOT_BY_ID[this.s.spot]?.loc !== to ? spotsOf(to)[0].id : this.s.spot;
     this.s.spot = sp;
+    this.resetNavigation();
     this.s.atPort = false;
     this.s.targetDepth = Math.min(this.s.targetDepth, this.maxDepth);
     if (changed) this.fixWeatherForClimate();
@@ -1520,13 +1560,14 @@ export class Engine {
 
   moveSpot(id: string) {
     const sp = SPOT_BY_ID[id];
-    if (!sp || sp.loc !== this.s.location || id === this.s.spot) return false;
+    if (!sp || sp.loc !== this.s.location || id === this.s.spot || this.navigation.moving) return false;
     if (this.phase === "fight" || this.phase === "caught" || this.phase === "bite") return false;
     this.phase = "idle";
     this.hookDepth = 0;
     this.s.minutes += 20;
     this.payFuel(Math.round(this.boat.fuel / 3));
     this.s.spot = id;
+    this.resetNavigation();
     this.s.targetDepth = Math.min(this.s.targetDepth, this.maxDepth);
     this.syncAtmosphere(0);
     this.fade = 0.9;

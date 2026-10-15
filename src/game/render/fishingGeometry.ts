@@ -10,7 +10,7 @@ export function projectFightFish(h: Hooked, o: FightProjection) {
   const m = h.motion, dir: 1 | -1 = m.facing >= 0 ? 1 : -1;
   const len = fishScreenLen(h.fish, h.weight, o.scale);
   const k = clamp(h.line / h.startLine, 0, 1.65);
-  const anchor = o.boatX + 60 * o.scale;
+  const anchor = o.boatX + (o.castX < o.boatX ? -1 : 1) * 60 * o.scale;
   const sideRoom = Math.min(75 * o.scale, 80 * o.scale * k);
   const x = anchor + (o.castX - anchor) * k + h.sway * sideRoom;
   const turn = Math.abs(m.facing);
