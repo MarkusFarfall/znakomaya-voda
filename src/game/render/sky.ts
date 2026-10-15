@@ -1,3 +1,4 @@
+import { cloudBank } from "./cloudBank";
 import type { WeatherId } from "../types";
 import type { Frame } from "./frame";
 import { drawRainbow as drawRainbowFx } from "./weatherFx";
@@ -110,53 +111,14 @@ export class SkyRenderer {
   }
 
   private rebuild(f: Frame, lit: string, shade: string) {
-    const sunDir = f.sunX < f.W / 2 ? -1 : 1;
     for (const c of this.clouds) {
       const cw = Math.ceil(c.w * 1.3), ch = Math.ceil(c.h * 1.8);
       const cv = c.sprite && c.sprite.width === cw && c.sprite.height === ch ? c.sprite : makeCanvas(cw, ch);
       const g = ctx2d(cv);
       g.clearRect(0, 0, cw, ch);
-      const r = rng(c.seed);
-      const base = ch * 0.8;
-      const n = 8 + Math.floor(r() * 6);
-      const puffs: [number, number, number][] = [];
-      for (let i = 0; i < n; i++) {
-        const k = i / (n - 1);
-        const rad = c.h * (0.28 + r() * 0.28) * (1 - Math.abs(k - 0.5) * 1.1);
-        puffs.push([cw * 0.12 + cw * 0.76 * k + (r() - 0.5) * cw * 0.05, base - rad * 0.55 - r() * c.h * 0.2, rad]);
-      }
-      for (let i = 0; i < 3; i++) {
-        const rad = c.h * (0.35 + r() * 0.25);
-        puffs.push([cw * (0.35 + r() * 0.3), base - c.h * (0.5 + r() * 0.3), rad]);
-      }
-      for (const [px, py, pr] of puffs) {
-        const gr = g.createRadialGradient(px, py, 0, px, py, pr);
-        gr.addColorStop(0, hexA(shade, 1));
-        gr.addColorStop(0.65, hexA(shade, 0.92));
-        gr.addColorStop(1, hexA(shade, 0));
-        g.fillStyle = gr;
-        g.beginPath();
-        g.arc(px, py, pr, 0, Math.PI * 2);
-        g.fill();
-      }
-      for (const [px, py, pr] of puffs) {
-        const lx = px + sunDir * pr * 0.14, ly = py - pr * 0.24, lr = pr * 0.82;
-        const gr = g.createRadialGradient(lx, ly - lr * 0.2, 0, lx, ly, lr);
-        gr.addColorStop(0, hexA(mix(lit, "#ffffff", 0.2), 1));
-        gr.addColorStop(0.55, hexA(lit, 0.85));
-        gr.addColorStop(1, hexA(lit, 0));
-        g.fillStyle = gr;
-        g.beginPath();
-        g.arc(lx, ly, lr, 0, Math.PI * 2);
-        g.fill();
-      }
-      g.globalCompositeOperation = "destination-out";
-      const fl = g.createLinearGradient(0, base - c.h * 0.12, 0, base + c.h * 0.08);
-      fl.addColorStop(0, "rgba(0,0,0,0)");
-      fl.addColorStop(1, "rgba(0,0,0,1)");
-      g.fillStyle = fl;
-      g.fillRect(0, base - c.h * 0.12, cw, ch);
-      g.globalCompositeOperation = "source-over";
+      g.save(); g.translate(cw * .5, ch * .55); g.scale(1, Math.min(1.8, ch / cw * 3));
+      cloudBank(g, 0, 0, cw * .48, lit, shade, .85, c.seed);
+      g.restore();
       c.sprite = cv;
     }
     // сплошная облачность
@@ -285,6 +247,7 @@ export class SkyRenderer {
       const c = this.clouds[i];
       c.x += (c.speed + f.atmo.wind * 1.5 * f.atmo.windDir) * f.dt * (0.5 + c.layer);
       if (c.x > W + 40) c.x = -c.w * 1.4;
+      if (c.x < -c.w * 1.5) c.x = W + 30;
       if (!c.sprite) continue;
       const big = wt === "storm" || wt === "gale" || wt === "rain" || wt === "downpour" || wt === "blizzard" ? 1.35 : 1;
       ctx.globalAlpha = wt === "fog" ? 0.55 : 0.95;

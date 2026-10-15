@@ -11,7 +11,9 @@ import type { GearKind } from "@/game/world";
 import { availableNow, conditionsNow, fishNotes } from "@/game/lore";
 import { FISH, FISH_BY_ID, RARITY_INFO, VARIANT_INFO } from "@/game/fish";
 import type { Building, FishDef, LocId, PortId } from "@/game/types";
-import { BAITS, BAIT_BY_ID, BOATS, BOAT_CLASS_NAMES, LOC_POS, PORTS, PORT_BY_ID, LINES, LOCATIONS, LOC_BY_ID, MILESTONES, REELS, RODS, SONARS, WEATHER_INFO, spotsOf } from "@/game/world";
+import { BAITS, BAIT_BY_ID, BOATS, BOAT_CLASS_NAMES, PORTS, PORT_BY_ID, LINES, LOCATIONS, LOC_BY_ID, MILESTONES, REELS, RODS, SONARS, WEATHER_INFO, spotsOf } from "@/game/world";
+import { HarborGlyph, type HarborSymbol } from "./PortIdentity";
+import { WorldAtlas } from "./WorldAtlas";
 import { FishIcon } from "./FishIcon";
 import { BaitIcon, GearIcon, Icon, MiscIcon } from "./Icons";
 
@@ -133,12 +135,12 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
 
   return (
     <Modal
-      label={mapOnly ? `Точка отправления · ${engine.loc.name}` : `Порт · ${engine.port.place}`}
-      title={mapOnly ? "Карта переходов" : venue?.title ?? engine.port.name}
+      label={mapOnly ? `Точка отправления · ${s.atPort ? engine.port.name : engine.loc.name}` : `Порт · ${engine.port.place}`}
+      title={tab === "map" ? "Морской атлас" : venue?.title ?? engine.port.name}
       onClose={onClose}
       tabs={(mapOnly ? tabs.filter(([id]) => id === "map") : tabs).map(([id, n, b]) => (
         <button key={id} className={`tab ${tab === id ? "on" : ""}`} onClick={() => setTab(id)}>
-          {n}{b && <span className={`num ml-1.5 ${id === "orders" && readyOrders ? "text-[var(--color-ok)]" : "dim"}`}>{b}</span>}
+          <HarborGlyph kind={({market:"market",orders:"orders",gear:"shop",bait:"shop",boats:"shipyard",map:"map",rest:"tavern"} as Record<PortTab,HarborSymbol>)[id]} size={16}/>{n}{b && <span className={`num ml-1.5 ${id === "orders" && readyOrders ? "text-[var(--color-ok)]" : "dim"}`}>{b}</span>}
         </button>
       ))}
       right={
@@ -151,6 +153,7 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
       {flash && <div className="fade-in mx-4 mt-4 sm:mx-7 border-l-2 border-[var(--color-ok)] bg-[rgba(134,180,148,0.08)] px-4 py-2 text-[13px] text-[#cfe3d4]">{flash}</div>}
       <div className="min-w-0 p-4 sm:p-7">
         {!mapOnly && venue && <div className="mb-5 flex min-w-0 items-start gap-3 border-l-2 border-[var(--brass)] bg-[rgba(200,164,106,0.055)] px-4 py-3" data-port-keeper>
+          <span className="harbor-venue-glyph"><HarborGlyph kind={building!} size={30}/></span>
           <div className="min-w-0">
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <span className="text-[13px] text-[#e3c996]">{venue.keeper.name}</span>
@@ -416,7 +419,7 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
           </div>
         )}
 
-        {tab === "map" && <ChartMap engine={engine} onSail={(id) => onTravel({ kind: "port", port: id })} onGo={(l, sp) => {
+        {tab === "map" && <WorldAtlas engine={engine} onSail={(id) => onTravel({ kind: "port", port: id })} onGo={(l, sp) => {
           if (!engine.s.atPort && l === engine.s.location) {
             if (engine.moveSpot(sp)) onClose();
             return;
@@ -470,180 +473,10 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
 const romanize = (n: number) => ["I", "II", "III", "IV", "V", "VI"][n - 1] ?? String(n);
 
 // Морская карта
-const CHART_POS = LOC_POS;
 const GEAR_ROWS: [GearKind, string, string][] = [["rod", "Удилище", "Предел натяжения"], ["reel", "Катушка", "Скорость подмотки"], ["line", "Леска", "Рабочая глубина"], ["hook", "Крючок", "Удержание"]];
 const gearValue = (k: GearKind, v: number, desc: string) => (k === "line" ? `${v} м` : k === "reel" ? `×${v}` : k === "hook" ? ["базовое", "острое", "надёжное", "самозасекающее", "абсолютное"][v] ?? String(v) : k === "sonar" ? desc.toLowerCase() : String(v));
 const TAVERN: Record<PortId, string> = { home: "Таверна «Старый якорь»", nordhavn: "Постоялый двор «Кракен»", mirador: "Отель «Пирс»", coral: "Гостевой дом «Ла Пальма»", southcross: "Жилой модуль станции" };
-const CLIMATE_NAME: Record<string, string> = { temperate: "умеренный", north: "северный", tropic: "тропический", ocean: "океанический", polar: "полярный", misty: "туманный приморский" };
 
-function ChartMap({ engine, onGo, onSail }: { engine: Engine; onGo: (l: LocId, spot: string) => void; onSail: (id: PortId) => void }) {
-  const s = engine.s;
-  const [sel, setSel] = useState<LocId>(s.location);
-  const l = LOC_BY_ID[sel];
-  const fog = !engine.isUnlocked(sel);
-  const locked = fog || l.boatTier > engine.boat.tier;
-  const us = engine.unlockState(sel);
-  const all = FISH.filter((f) => f.loc.includes(sel));
-  const here = all.filter((f) => s.codex[f.id]).length;
-  const [px, py] = engine.here;
-  const originName = s.atPort ? engine.port.name : engine.loc.name;
-  const inCurrentLocation = !s.atPort && sel === s.location;
-  const Y = (p: number) => p * 0.625;
-  return (
-    <div className="grid min-w-0 gap-6 lg:grid-cols-[1.55fr_1fr]">
-      <div className="relative min-w-0 aspect-[16/10] overflow-hidden border border-[var(--line-2)] bg-[#0b1824]">
-        <svg viewBox="0 0 100 62.5" className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
-          <defs>
-            <radialGradient id="deepA" cx="86%" cy="36%" r="22%"><stop offset="0" stopColor="#03080f" /><stop offset="1" stopColor="#0b1824" stopOpacity="0" /></radialGradient>
-            <radialGradient id="shelfG" cx="15%" cy="60%" r="40%"><stop offset="0" stopColor="#153246" /><stop offset="1" stopColor="#0b1824" stopOpacity="0" /></radialGradient>
-            <pattern id="grid" width="6.25" height="6.25" patternUnits="userSpaceOnUse"><path d="M6.25 0H0V6.25" fill="none" stroke="rgba(143,179,200,0.07)" strokeWidth="0.15" /></pattern>
-            <pattern id="ice" width="1.4" height="1.4" patternUnits="userSpaceOnUse"><path d="M0 1.4L1.4 0" stroke="rgba(200,225,240,0.25)" strokeWidth="0.12" /></pattern>
-          </defs>
-          <rect width="100" height="62.5" fill="url(#shelfG)" />
-          <rect width="100" height="62.5" fill="url(#grid)" />
-          <rect width="100" height="62.5" fill="url(#deepA)" />
-          {[0, 1, 2, 3].map((i) => <ellipse key={i} cx="86" cy="15" rx={4 + i * 3.5} ry={2.5 + i * 2.2} fill="none" stroke="rgba(143,179,200,0.1)" strokeWidth="0.18" />)}
-          {[0, 1, 2, 3, 4].map((i) => (
-            <path key={i} d={`M${-2 + i * 3} 64 C ${8 + i * 5} ${48 - i * 2}, ${4 + i * 5} ${26 - i * 2}, ${16 + i * 5} -2`} fill="none" stroke="rgba(143,179,200,0.11)" strokeWidth="0.16" strokeDasharray={i % 2 ? "0.8 0.8" : undefined} />
-          ))}
-          {/* материк */}
-          <path d="M0 62.5 L0 0 L19 0 C18 3 12 4 13 7 C14 9 19 8 20 11 C21 14 17 15 19 18 C22 21 26 19 27 23 C27 26 22 26 21 29 C20 33 24 34 22 38 C20 42 16 40 14 43 C12 46 16 48 13 51 C11 53 7 51 5 54 L4 56 C6 58 9 57 10 60 L10 62.5 Z" fill="#1b2721" stroke="rgba(230,225,214,0.28)" strokeWidth="0.2" />
-          {/* лиман — река */}
-          <path d="M3 62.5 C4 58 2 56 4 54" fill="none" stroke="#2a4a5a" strokeWidth="0.7" />
-          {/* фьорд */}
-          <path d="M13 7 C10 6 7 8 4 7" fill="none" stroke="#0b1824" strokeWidth="0.8" />
-          {/* шхеры */}
-          {[[32, 12], [34, 13.5], [29, 16], [33, 16.5], [36, 15], [31, 18.5], [28, 13]].map(([x, y], i) => <ellipse key={i} cx={x} cy={y} rx={0.8 + (i % 3) * 0.3} ry={0.5} fill="#2a3530" stroke="rgba(230,225,214,0.25)" strokeWidth="0.1" />)}
-          {/* мыс Туманного берега */}
-          <path d="M38 36 C40 38 44 38 46 40 C45 41 42 40.5 40 41 C38 40 37 38 38 36 Z" fill="#1f2a24" stroke="rgba(230,225,214,0.25)" strokeWidth="0.15" />
-          {/* тропические острова */}
-          <path d="M63 58 C65 55.5 69 55 71 57 C72 59 68 60 65 60 C63 60 62 59 63 58 Z" fill="#23302a" stroke="rgba(230,225,214,0.22)" strokeWidth="0.15" />
-          <path d="M44 62.5 C45 59 49 58 53 59 C55 60 54 62 56 62.5 Z" fill="#1f3326" stroke="rgba(230,225,214,0.22)" strokeWidth="0.15" />
-          {/* вулкан */}
-          <path d="M72 38.5 L74 35.5 L76 38.5 Z" fill="#2a2422" stroke="rgba(230,225,214,0.35)" strokeWidth="0.15" />
-          <circle cx="74" cy="35.2" r="0.35" fill="rgba(255,120,50,0.7)" />
-          {/* ледяной шельф */}
-          <path d="M76 62.5 L78 56 C82 54.5 88 55 93 53.5 C96 53 98 54 100 53 L100 62.5 Z" fill="url(#ice)" stroke="rgba(220,236,246,0.45)" strokeWidth="0.2" />
-          <path d="M76 62.5 L78 56 C82 54.5 88 55 93 53.5 C96 53 98 54 100 53 L100 62.5 Z" fill="rgba(200,225,240,0.1)" />
-          {LOCATIONS.filter((x) => s.atPort || x.id !== s.location).map((x) => {
-            const [qx, qy] = CHART_POS[x.id];
-            const lk = !engine.isUnlocked(x.id) || x.boatTier > engine.boat.tier;
-            return <line key={x.id} x1={px} y1={Y(py)} x2={qx} y2={Y(qy)} stroke={lk ? "rgba(230,225,214,0.1)" : "rgba(200,164,106,0.42)"} strokeWidth="0.22" strokeDasharray="0.8 0.8" />;
-          })}
-          <g transform="translate(93 44)" stroke="rgba(230,225,214,0.35)" strokeWidth="0.2" fill="none">
-            <circle r="4" />
-            <circle r="2.9" strokeDasharray="0.3 0.6" />
-            <path d="M0 -5.2 L0.8 0 L0 5.2 L-0.8 0 Z" fill="rgba(200,164,106,0.5)" />
-            <path d="M-5.2 0 L0 -0.6 L5.2 0 L0 0.6 Z" fill="rgba(230,225,214,0.2)" />
-          </g>
-          <text x="93" y="38" fontSize="1.6" textAnchor="middle" fill="rgba(230,225,214,0.5)" fontFamily="serif">N</text>
-        </svg>
-        {LOCATIONS.map((x) => {
-          const [qx, qy] = CHART_POS[x.id];
-          const hidden = !engine.isUnlocked(x.id);
-          const lk = hidden || x.boatTier > engine.boat.tier;
-          const cur = s.location === x.id;
-          const right = qx > 80;
-          return (
-            <button key={x.id} onClick={() => setSel(x.id)} className="group absolute -translate-x-1/2 -translate-y-1/2 p-1.5 text-left" style={{ left: `${qx}%`, top: `${qy}%` }}>
-              <span className={`block h-2.5 w-2.5 rotate-45 border ${sel === x.id ? "border-[var(--brass)] bg-[var(--brass)]" : lk ? "border-white/25 bg-[#0b1824]" : "border-[var(--brass)] bg-[#0b1824]"}`} />
-              <span className={`font-serif absolute top-1/2 -translate-y-1/2 whitespace-nowrap text-[11px] leading-none sm:text-[14px] ${right ? "right-5" : "left-5"} ${sel === x.id ? "text-[#f4eee0]" : lk ? "text-white/35" : "text-[#d8d1c2]"} group-hover:text-white`}>
-                {hidden ? "?" : x.name}{cur && <span className="label-brass ml-1.5 align-middle !text-[8px]">здесь</span>}
-              </span>
-            </button>
-          );
-        })}
-        {PORTS.map((p) => {
-          const known = s.portsKnown.includes(p.id);
-          const here = s.port === p.id;
-          return (
-            <div key={p.id} className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2" style={{ left: `${p.pos[0]}%`, top: `${p.pos[1]}%` }} title={p.name}>
-              <span className={`flex h-5 w-5 items-center justify-center rounded-full border ${here ? "border-[var(--brass)] bg-[var(--brass)] text-[#17110a]" : known ? "border-[var(--brass)] bg-[#0b1824] text-[var(--brass)]" : "border-white/20 bg-[#0b1824] text-white/25"}`}><MiscIcon name="port" size={12} /></span>
-            </div>
-          );
-        })}
-        <div className="absolute bottom-2 left-3 hidden text-[9px] tracking-[0.2em] text-white/30 sm:block">КАРТА АКВАТОРИЙ · МАСШТАБ УСЛОВНЫЙ</div>
-      </div>
-      <div className="flex min-w-0 flex-col">
-        <div className="mb-5">
-            <div className="label mb-2">Порты · переход от {originName}</div>
-          <div className="space-y-1.5">
-            {PORTS.map((p) => {
-              const known = s.portsKnown.includes(p.id);
-              const here = s.port === p.id;
-              const fuel = engine.fuelTo(p.pos);
-              return (
-                <div key={p.id} className={`port-route-card flex items-center gap-3 border px-3 py-2 ${here ? "border-[rgba(200,164,106,0.55)]" : "border-[var(--line)]"} ${known ? "" : "opacity-45"}`}>
-                  <MiscIcon name="port" size={15} className={known ? "text-[var(--brass)]" : "dim"} />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] text-[#ece6d8]">{known ? p.name : "Неизвестный порт"}</div>
-                    <div className="text-[10.5px] leading-snug dim">{known ? p.tagline ?? p.place : `откроется: ${p.serves.map((l) => LOC_BY_ID[l].name).join(" / ")}`}</div>
-                    {known && !!p.landmarks?.length && <div className="mt-1 text-[10px] leading-snug text-[#918d82]">{p.landmarks.slice(0, 2).join(" · ")}</div>}
-                  </div>
-                  {here ? <span className="label-brass">здесь</span> : known && (
-                    <button className="btn btn-sm btn-quiet" disabled={fuel > s.money} onClick={() => onSail(p.id)}>{(engine.travelMinutesTo(p.pos) / 60).toFixed(1)} ч{fuel ? ` · ${fmt(fuel)} ₽` : ""}</button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        <div className="label">{locked ? "Недоступно" : inCurrentLocation ? `Вы здесь · ${originName}` : `Переход от ${originName}: ${(engine.travelMinutes(sel) / 60).toFixed(1)} ч · топливо ${engine.boat.fuel ? `${fmt(engine.fuelCost(sel))} ₽` : "не нужно"}`}</div>
-        <h3 className="font-serif text-[26px] leading-tight text-[#f4eee0] sm:text-[32px]">{fog ? "Неизведанные воды" : l.name}</h3>
-        <p className="mt-1 text-[13px] muted">{fog ? "Карты этих мест у вас пока нет." : l.desc}</p>
-        <dl className="mt-3">
-          <Row k="Глубины" v={`до ${l.maxDepth} м`} />
-          <Row k="Кодекс" v={`${here} / ${all.length}`} />
-          <Row k="Климат" v={CLIMATE_NAME[l.climate] ?? l.climate} />
-          {!locked && !inCurrentLocation && engine.boat.fuel > 0 && <Row k="Топливо туда и обратно" v={<span className={s.money < engine.fuelCost(sel) * 2 ? "text-[var(--color-bad)]" : ""}>{fmt(engine.fuelCost(sel) * 2)} ₽</span>} />}
-          <Row k="Прозрачность" v={l.clarity > 0.8 ? "кристальная" : l.clarity > 0.55 ? "хорошая" : l.clarity > 0.35 ? "умеренная" : "мутная"} />
-          <Row k="Судно" v={`класс ${romanize(l.boatTier + 1)} и выше`} />
-        </dl>
-        {fog ? (
-          <div className="mt-5 border border-[var(--line)] p-4">
-            <div className="flex items-center gap-2 text-[13px] text-[#ece6d8]"><Icon name="lock" size={16} className="text-[var(--brass)]" />Не разведано</div>
-            {us.u && <p className="font-serif mt-2 text-[15px] italic muted">«{us.u.hint}»</p>}
-            <ul className="mt-3 space-y-1.5">
-              {us.reqs.map((r) => (
-                <li key={r.label} className="flex items-center gap-2 text-[12px]">
-                  <span className={`h-1.5 w-1.5 shrink-0 rotate-45 ${r.ok ? "bg-[var(--color-ok)]" : "border border-[var(--brass)]"}`} />
-                  <span className={`flex-1 ${r.ok ? "muted line-through decoration-white/20" : "text-[#ddd7ca]"}`}>{r.label}</span>
-                  <span className="num dim">{r.have}</span>
-                </li>
-              ))}
-              <li className="flex items-center gap-2 text-[12px]">
-                <span className={`h-1.5 w-1.5 shrink-0 rotate-45 ${engine.fleetTier >= l.boatTier ? "bg-[var(--color-ok)]" : "border border-[var(--brass)]"}`} />
-                <span className="flex-1 text-[#ddd7ca]">Судно класса {romanize(l.boatTier + 1)}</span>
-                <span className="num dim">{engine.fleetTier >= l.boatTier ? "✓" : "—"}</span>
-              </li>
-            </ul>
-          </div>
-        ) : locked ? (
-          <div className="mt-5 flex items-center gap-3 border border-[var(--line)] p-4 text-[13px] muted"><Icon name="lock" size={18} />{engine.fleetTier >= l.boatTier ? `Пересядьте на судно класса ${romanize(l.boatTier + 1)} на верфи` : `Требуется судно класса ${romanize(l.boatTier + 1)} — ${BOAT_CLASS_NAMES[l.boatTier].toLowerCase()}`}</div>
-        ) : (
-          <div className="mt-5 space-y-2">
-            <div className="label">Точки ловли</div>
-            {spotsOf(sel).map((sp) => {
-              const cur = inCurrentLocation && s.spot === sp.id;
-              const localMove = inCurrentLocation && !cur;
-              return (
-                <button key={sp.id} disabled={cur} onClick={() => onGo(sel, sp.id)} className={`cell cell-hover block w-full p-3 text-left disabled:cursor-default disabled:opacity-70 ${cur ? "!border-[rgba(200,164,106,0.55)]" : ""}`}>
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-[14px] text-[#ece6d8]">{sp.name}{cur && <span className="label-brass ml-2 !text-[8px]">здесь</span>}</span>
-                    <span className={`num text-[11px] ${sp.maxDepth > engine.line.value ? "text-[var(--color-bad)]" : "dim"}`}>{sp.maxDepth} м</span>
-                  </div>
-                  <div className="mt-0.5 text-[11px] leading-snug dim">{sp.desc}</div>
-                  {localMove && <div className="mt-1 text-[10px] dim">Переход по акватории · 20 мин{engine.boat.fuel ? ` · ${fmt(Math.round(engine.boat.fuel / 3))} ₽ топливо` : ""}</div>}
-                </button>
-              );
-            })}
-            {l.maxDepth > engine.line.value && <p className="text-[11px] text-[var(--color-bad)]">Текущая леска достаёт лишь до {engine.line.value} м.</p>}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function StatBar({ k, v, t }: { k: string; v: number; t: string }) {
   return (

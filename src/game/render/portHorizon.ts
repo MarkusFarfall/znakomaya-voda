@@ -154,18 +154,27 @@ export function cloudShadows(f: PF, clouds: [number, number, number, number][], 
   }
 }
 
-/** Дальний дождь — тёмные вертикальные полосы под тучей на горизонте (идёт, даже если здесь ещё сухо) */
+/** Distant precipitation fades in both axes. Never draws an opaque polygon in dry weather. */
 export function distantRain(f: PF) {
   const { ctx, W, H, hY, A, t } = f;
-  const amt = A.weather === 'rain' || A.weather === 'storm' ? 1 : A.weather === 'cloudy' ? clamp(Math.sin(A.day * 2.3 + 1) , 0, 1) : 0;
-  if (amt < 0.05) return;
-  const cx = W * (0.3 + hash1(A.day) * 0.4) + Math.sin(t * 0.05) * W * 0.05, w = W * 0.22;
-  const col = mix(A.palette.skyMid, '#20262e', 0.5);
-  const g = ctx.createLinearGradient(0, H * 0.22, 0, hY);
-  g.addColorStop(0, hexA(col, 0.55 * amt)); g.addColorStop(1, hexA(col, 0.1 * amt));
-  ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(cx - w, H * 0.22); ctx.lineTo(cx + w, H * 0.22); ctx.lineTo(cx + w * 0.7, hY); ctx.lineTo(cx - w * 0.7, hY); ctx.fill();
-  ctx.strokeStyle = hexA(col, 0.25 * amt); ctx.lineWidth = 1;
-  for (let i = 0; i < 18; i++) { const q = i / 18; const x = cx - w * 0.9 + w * 1.8 * q + Math.sin(t * 0.6 + i) * 3; ctx.beginPath(); ctx.moveTo(x, H * 0.26 + hash1(i) * H * 0.04); ctx.lineTo(x - 6 * A.windDir, hY - 2); ctx.stroke(); }
+  if (A.weather !== 'rain' && A.weather !== 'storm') return;
+  const amt = A.weather === 'storm' ? .26 : .16;
+  const cx = W * (.3 + hash1(A.day) * .4) + Math.sin(t * .05) * W * .025;
+  const cy = hY - H * .045, rx = W * .24, ry = H * .18;
+  const col = mix(A.palette.skyMid, '#354451', .35);
+  ctx.save(); ctx.translate(cx, cy); ctx.scale(rx, ry);
+  const haze = ctx.createRadialGradient(0, 0, .05, 0, 0, 1);
+  haze.addColorStop(0, hexA(col, amt)); haze.addColorStop(.45, hexA(col, amt * .65)); haze.addColorStop(1, hexA(col, 0));
+  ctx.fillStyle = haze; ctx.fillRect(-1, -1, 2, 2); ctx.restore();
+  for (let i = 0; i < 38; i++) {
+    const q = (i + .5) / 38, x = cx + (q * 2 - 1) * rx;
+    const top = cy - ry * (.5 + hash1(i + 13) * .35), bottom = hY + H * .015;
+    const g = ctx.createLinearGradient(x, top, x, bottom);
+    const alpha = Math.sin(q * Math.PI) ** 2 * amt * .45;
+    g.addColorStop(0, hexA(col, 0)); g.addColorStop(.35, hexA(col, alpha)); g.addColorStop(1, hexA(col, 0));
+    ctx.strokeStyle = g; ctx.lineWidth = Math.max(1, W / 500);
+    ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x - A.windDir * W * .012, bottom); ctx.stroke();
+  }
 }
 
 /** Дальняя полоса воды у горизонта: более тёмная и гладкая, с «зубчиками» мелкой зыби и бликами */

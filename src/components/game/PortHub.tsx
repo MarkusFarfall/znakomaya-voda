@@ -1,12 +1,13 @@
 "use client";
 
 import { useGameDialog } from "./Dialog";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import type { Engine, Trip } from "@/game/engine";
 import type { Building, Hotspot } from "@/game/render/port";
 import { BOATS, LOC_BY_ID, SEASONS, spotsOf } from "@/game/world";
 import { AccountBadge, type AccountState } from "./Account";
-import { GearIcon, Icon, MiscIcon } from "./Icons";
+import { Icon } from "./Icons";
+import { HarborGlyph, PORT_ACCENT } from "./PortIdentity";
 import { fmt } from "./Panels";
 
 const LABELS: Record<Building, { name: string; sub: string }> = {
@@ -17,12 +18,7 @@ const LABELS: Record<Building, { name: string; sub: string }> = {
 };
 
 function BuildingIcon({ b, size = 18 }: { b: Building | "sea" | "orders"; size?: number }) {
-  if (b === "shop") return <GearIcon kind="rod" size={size} />;
-  if (b === "market") return <Icon name="coin" size={size} />;
-  if (b === "shipyard") return <Icon name="boat" size={size} />;
-  if (b === "tavern") return <MiscIcon name="bed" size={size} />;
-  if (b === "orders") return <Icon name="order" size={size} />;
-  return <Icon name="wave" size={size} />;
+  return <HarborGlyph kind={b} size={size} />;
 }
 
 const fmtH = (m: number) => (m >= 60 ? `${(m / 60).toFixed(1).replace(".", ",")} ч` : `${Math.round(m)} мин`);
@@ -90,7 +86,7 @@ function DepartSheet({ engine, onClose, onTravel, onMap }: { engine: Engine; onC
   );
 }
 
-export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onCodex, account, onAccount, onHover }: {
+export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onCodex, account, onAccount, onHover, onSettings }: {
   engine: Engine;
   hot: Hotspot[];
   compact: boolean;
@@ -98,6 +94,7 @@ export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onC
   onTravel: (t: Trip) => void;
   onJournal: () => void;
   onCodex: () => void;
+  onSettings: () => void;
   account: AccountState;
   onAccount: () => void;
   onHover?: (b: Building | null) => void;
@@ -123,27 +120,29 @@ export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onC
   ];
 
   return (
-    <div className="zv-ui game-port hud-layer z-20" onPointerDown={(e) => e.stopPropagation()}>
+    <div style={{ "--port-accent": PORT_ACCENT[port.id] } as CSSProperties} className="zv-ui game-port harbor-ui hud-layer z-20" onPointerDown={(e) => e.stopPropagation()}>
       {/* шапка */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="glass fade-in min-w-0 px-3 py-3 sm:px-4">
-          <div className="label-brass truncate">{port.place}</div>
-          <div className="font-serif truncate text-[23px] leading-none text-[#f4eee0] sm:text-[32px]">{port.name}</div>
-          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] sm:text-[12px] text-[#ddd7ca]">
+      <div className="harbor-header">
+        <div className="harbor-identity fade-in">
+          <div className="harbor-crest"><HarborGlyph kind="crest" size={32}/></div><div className="harbor-title">
+          <div className="harbor-kicker">{port.place}</div>
+          <h1>{port.name}</h1>
+          <div className="harbor-weather">
             <span className="num text-[15px] text-[#f1ebdd]">{hh}:{mm}</span>
-            <span className="flex items-center gap-1"><span aria-hidden="true" className="text-sm leading-none">{atmo.icon}</span>{atmo.weatherName} · {atmo.temp > 0 ? "+" : ""}{atmo.temp}°</span>
+            <span className="flex items-center gap-1"><Icon name={s.weather === "clear" ? "sun" : s.weather === "cloudy" ? "cloud" : s.weather} size={14}/>{atmo.weatherName} · {atmo.temp > 0 ? "+" : ""}{atmo.temp}°</span>
             <span className="hidden dim sm:inline">{SEASONS[engine.season]}, день {engine.dayOfSeason}</span>
           </div>
           {engine.fairBonus > 1 && <div className="mt-1.5 text-[11px] text-[var(--brass-2,#e3c996)]">Ярмарка выходного дня · цены на рынке +10%</div>}
-          {port.tagline && !compact && <p className="mt-2 text-[11px] italic text-[#bcb7a9]">{port.tagline}</p>}
+          {port.tagline && !compact && <p className="harbor-tagline">{port.tagline}</p>}
+          </div>
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
+        <div className="harbor-utilities">
           <div className="flex gap-1.5">
             <AccountBadge account={account} compact onClick={onAccount} />
             <button className="iconbtn" onClick={onJournal} aria-label="Журнал"><Icon name="journal" size={16} />{(engine.perkPoints > 0 || engine.hasLetter || engine.daily.tasks.some((t) => t.done && !t.claimed)) && <span className="dot" />}</button>
             <button className="iconbtn" onClick={onCodex} aria-label="Кодекс"><Icon name="book" size={16} /></button>
           </div>
-          <div className="glass num flex items-center gap-3 whitespace-nowrap px-3 py-1.5 text-[13px]">
+          <div className="harbor-resources num">
             <span className="text-[var(--brass-2,#e3c996)]">{fmt(s.money)} ₽</span>
             <span className="text-[#ece6d8]"><Icon name="basket" size={12} className="mr-1 inline -translate-y-px opacity-60" />{s.cooler.length}/{engine.coolerCap}</span>
           </div>
@@ -167,10 +166,10 @@ export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onC
             onPointerLeave={() => onHover?.(null)}
             onFocus={() => onHover?.(b)}
             onBlur={() => onHover?.(null)}
-            className="group absolute -translate-x-1/2 -translate-y-full text-center focus-visible:outline-2 focus-visible:outline-[var(--brass)]"
+            className="harbor-hotspot group absolute -translate-x-1/2 -translate-y-full text-center focus-visible:outline-2 focus-visible:outline-[var(--brass)]"
             style={{ left: compact ? `clamp(26px, ${h.x}px, calc(100% - 26px))` : `clamp(92px, ${h.x}px, calc(100% - 92px))`, top: Math.max(compact ? 180 : 190, h.y - 6) }}
           >
-            <span className={`glass flex items-center justify-center gap-2 transition group-hover:border-[var(--brass)] ${compact ? "h-11 w-11" : "max-w-[180px] px-2.5 py-2"}`}>
+            <span className={`harbor-hotspot-face flex items-center justify-center gap-2 transition group-hover:border-[var(--brass)] ${compact ? "h-11 w-11" : "max-w-[180px] px-2.5 py-2"}`}>
               <span className="shrink-0 text-[var(--brass)]"><BuildingIcon b={b} size={compact ? 20 : 16} /></span>
               {!compact && <span className="min-w-0 text-left">
                 <span className="block text-[12px] leading-tight text-[#f1ebdd]">{title}</span>
@@ -182,31 +181,15 @@ export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onC
         );
       })}
 
-      {/* нижняя панель навигации */}
-      <div className="absolute inset-x-0 bottom-0 flex flex-col items-center gap-2 px-2 pb-[max(10px,env(safe-area-inset-bottom))] sm:flex-row sm:items-end sm:justify-center">
-        <div className="glass no-scrollbar zv-fade-x flex max-w-full gap-0.5 overflow-x-auto p-1">
-          {dock.map((d) => (
-            <button
-              key={d.id}
-              onClick={() => onOpen(d.id as Building | "orders")}
-              className={`flex min-w-11 shrink-0 flex-col items-center gap-1 border border-transparent py-2 uppercase text-[#cfc8b8] transition hover:border-[var(--line-2)] hover:text-white ${compact ? "px-2 text-[8.5px] tracking-[0.06em]" : "px-4 text-[10px] tracking-[0.12em]"}`}
-            >
-              <BuildingIcon b={d.id} size={compact ? 18 : 20} />
-              <span className="whitespace-nowrap">{d.name}</span>
-            </button>
-          ))}
-          <button onClick={() => onOpen("map")} className={`flex min-w-11 shrink-0 flex-col items-center gap-1 border border-transparent py-2 uppercase text-[#cfc8b8] hover:border-[var(--line-2)] hover:text-white ${compact ? "px-2 text-[8.5px] tracking-[0.06em]" : "px-4 text-[10px] tracking-[0.12em]"}`}>
-            <Icon name="map" size={compact ? 18 : 20} />
-            <span>Карта</span>
-          </button>
+      <div className="harbor-console">
+        <div className="harbor-console-meta"><span><HarborGlyph kind="crest" size={14}/> {port.name} · портовые службы</span><small>{engine.boat.name}</small></div>
+        <div className="harbor-console-body">
+          <nav className="harbor-services" aria-label="Портовые службы">
+            {dock.map(d=><button key={d.id} onClick={()=>onOpen(d.id as Building | "orders")}><BuildingIcon b={d.id} size={23}/><span>{d.name}</span>{d.id==="market"&&s.cooler.length>0&&<i>{s.cooler.length}</i>}</button>)}
+            <button className="harbor-map-button" onClick={()=>onOpen("map")}><HarborGlyph kind="map" size={23}/><span>Атлас</span></button>
+          </nav>
+          <div className="harbor-depart-row"><button onClick={()=>setDepart(true)} className="harbor-depart"><HarborGlyph kind="sea" size={25}/><span><b>Выйти в море</b><small>{engine.spot.name}</small></span><span aria-hidden="true">↗</span></button><button className="harbor-settings" onClick={onSettings} aria-label="Настройки"><Icon name="gear" size={20}/></button></div>
         </div>
-        <button onClick={() => setDepart(true)} className="btn btn-solid h-[58px] w-full max-w-[420px] gap-3 !text-[12px] sm:w-auto sm:px-7">
-          <Icon name="wave" size={20} />
-          <span className="flex flex-col items-start leading-tight">
-            <span>Выйти в море</span>
-            <span className="text-[9.5px] font-medium normal-case tracking-normal opacity-70">{engine.spot.name}</span>
-          </span>
-        </button>
       </div>
       {depart && <DepartSheet engine={engine} onClose={() => setDepart(false)} onTravel={(t) => { setDepart(false); onTravel(t); }} onMap={() => { setDepart(false); onOpen("map"); }} />}
     </div>

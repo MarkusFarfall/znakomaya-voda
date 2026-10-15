@@ -25,17 +25,7 @@ export interface GfxSettings {
   precip: boolean;
 }
 
-export interface Settings {
-  quality: number;
-  sound: boolean;
-  music: boolean;
-  volume: number;
-  /** приближение камеры к лодке, 1–2 */
-  zoom: number;
-  gfx: GfxSettings;
-  /** 3D-модели судов вместо рисунков */
-  model3d: boolean;
-}
+export type { Settings } from "@/game/settings";
 
 export function XpBar({ engine }: { engine: Engine }) {
   const lvl = engine.level;

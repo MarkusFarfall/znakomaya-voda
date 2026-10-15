@@ -1,3 +1,4 @@
+import { cloudBank } from './cloudBank';
 import type { BoatDef, Building, HotId, Hotspot, PortId, Season } from '../types';
 import type { KitAtmo, PF, PortKit, TrafficSpec } from './portFrame';
 import { backdropReflection, cloudShadows, depthHaze, distantRain, farShip, farWaterBand, horizonHaze } from './portHorizon';
@@ -229,7 +230,10 @@ export class PortKitScene {
         for (let i = 0; i < 5; i++) {
           const cx = ((hash1(i + 20) * W + t * 2 * A.windDir) % (W + 300)) - 150, cy = H * (0.03 + hash1(i + 21) * 0.1), cw = (120 + hash1(i + 22) * 160) * sc;
           const g = ctx.createLinearGradient(cx - cw, 0, cx + cw, 0); g.addColorStop(0, hexA(cir, 0)); g.addColorStop(0.3, hexA(cir, 0.5)); g.addColorStop(0.7, hexA(cir, 0.5)); g.addColorStop(1, hexA(cir, 0));
-          ctx.fillStyle = g; for (let k = 0; k < 3; k++) ctx.fillRect(cx - cw + k * 10 * sc, cy + k * 3 * sc + Math.sin(i + k) * 2 * sc, cw * 2 - k * 30 * sc, 1.4 * sc);
+          ctx.fillStyle = g;
+          ctx.beginPath(); ctx.moveTo(cx - cw, cy + 3 * sc);
+          ctx.bezierCurveTo(cx - cw * .3, cy - 7 * sc, cx + cw * .35, cy - 3 * sc, cx + cw, cy);
+          ctx.bezierCurveTo(cx + cw * .2, cy + 2 * sc, cx - cw * .45, cy + 6 * sc, cx - cw, cy + 3 * sc); ctx.fill();
         }
         ctx.restore();
       }
@@ -243,7 +247,7 @@ export class PortKitScene {
           const cy = hY - H * (0.03 + depth * 0.09), cw = (16 + depth * 40) * sc * (0.6 + q * 0.6);
           const lc = mix(mix(litC, P.skyHor, 0.55 - depth * 0.3), '#ffb070', golden * 0.25 * depth);
           const scC = mix(shadeC, P.skyHor, 0.5 - depth * 0.3);
-          for (let k = 0; k < 4; k++) { const px = cx + (k - 1.5) * cw * 0.3, py = cy - Math.sin((k / 3) * Math.PI) * cw * 0.12, pr = cw * (0.14 + Math.sin((k / 3) * Math.PI) * 0.1); const cg = ctx.createRadialGradient(px, py - pr * 0.3, 0, px, py, pr); cg.addColorStop(0, hexA(lc, 0.7)); cg.addColorStop(0.7, hexA(scC, 0.5)); cg.addColorStop(1, hexA(scC, 0)); ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.fill(); }
+          cloudBank(ctx, cx, cy, cw, lc, scC, .42, i);
         }
       }
       const n = Math.round(this.clouds.length * A.cover);
@@ -253,12 +257,7 @@ export class PortKitScene {
         if (c[0] - c[2] * 1.5 > W) c[0] = -c[2] * 1.6;
         if (c[0] + c[2] * 1.5 < 0) c[0] = W + c[2] * 1.6;
         const [cx, cy, cw] = c;
-        for (let k = 0; k < 6; k++) {
-          const px = cx + (k - 2.5) * cw * 0.28, py = cy - Math.sin((k / 5) * Math.PI) * cw * 0.16, pr = cw * (0.2 + Math.sin((k / 5) * Math.PI) * 0.16);
-          const cg = ctx.createRadialGradient(px, py - pr * 0.3, 0, px, py, pr);
-          cg.addColorStop(0, hexA(litC, 0.85)); cg.addColorStop(0.6, hexA(shadeC, 0.7)); cg.addColorStop(1, hexA(shadeC, 0));
-          ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(px, py, pr, 0, Math.PI * 2); ctx.fill();
-        }
+        cloudBank(ctx, cx, cy, cw * 1.1, litC, shadeC, .60, i);
       }
     }
     this.drawBirds(frame, kit);

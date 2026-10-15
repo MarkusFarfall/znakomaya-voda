@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { DEFAULT_SETTINGS, normalizeSettings } from "@/game/settings";
 import { GameAudio } from "@/game/audio";
 import { depthToU, Engine, newSave, uToDepth, type TravelMode, type Trip } from "@/game/engine";
 import { FISH } from "@/game/fish";
@@ -28,7 +29,7 @@ import { FriendsModal, useFriends } from "./Friends";
 
 const CAM_NAMES: Record<CamMode, string> = { auto: "авто", surface: "поверхность", hook: "за снастью", bottom: "дно" };
 const SETTINGS_KEY = "zv_settings";
-const DEFAULT_SETTINGS: Settings = { quality: 2, sound: true, music: true, volume: 0.8, zoom: 1, gfx: { refl: true, shafts: true, caustics: true, foam: true, precip: true }, model3d: true };
+
 
 type Boot = { state: "loading" } | { state: "auth" } | { state: "title"; save: SaveData | null };
 
@@ -125,7 +126,7 @@ export default function Game() {
     let st = DEFAULT_SETTINGS;
     try {
       const a = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null") as Partial<Settings> | null;
-      if (a) st = { ...DEFAULT_SETTINGS, ...a, gfx: { ...DEFAULT_SETTINGS.gfx, ...(a.gfx ?? {}) }, zoom: Math.min(2, Math.max(1, Number(a.zoom) || 1)), model3d: a.model3d !== false };
+      if (a) st = normalizeSettings(a);
       else if ((navigator.hardwareConcurrency ?? 8) <= 4 || window.matchMedia("(pointer: coarse)").matches) st = { ...st, quality: 1 };
     } catch { /* ignore */ }
     setSettingsState(st);
@@ -179,13 +180,14 @@ export default function Game() {
 
   const unlockAudio = useCallback(() => audioRef.current.init(), []);
 
-  const setSettings = useCallback((st: Settings) => {
+  const setSettings = useCallback((value: Settings) => {
+    const st = normalizeSettings(value);
     setSettingsState(st);
     audioRef.current.setEnabled(st.sound);
     audioRef.current.setMusic(st.music);
     audioRef.current.setVolume(st.volume);
     audioRef.current.setQuality(st.quality);
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(st));
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(st)); } catch { /* Preferences still apply when browser storage is unavailable. */ }
   }, []);
 
   useEffect(() => {
@@ -685,7 +687,7 @@ export default function Game() {
       {panel === "friends" && <FriendsModal state={friends} me={account.user?.id ?? null} onClose={closePanel} onUi={(k) => audioRef.current.ui(k ?? "click")} />}
 
       {playing && engine.s.atPort && !travelling && (
-        <PortHub engine={engine} onHover={(id) => { portSceneRef.current.hover = id; }} hot={portScene0.hot} compact={view.compact} onOpen={openBuilding} onTravel={requestTrip} onJournal={() => openPanel("journal")} onCodex={() => openPanel("codex")} account={account} onAccount={() => setAuthOpen("profile")} />
+        <PortHub onSettings={() => setSettingsOpen(true)} engine={engine} onHover={(id) => { portSceneRef.current.hover = id; }} hot={portScene0.hot} compact={view.compact} onOpen={openBuilding} onTravel={requestTrip} onJournal={() => openPanel("journal")} onCodex={() => openPanel("codex")} account={account} onAccount={() => setAuthOpen("profile")} />
       )}
       {tripReq && <TravelChoice engine={engine} trip={tripReq} onCancel={() => setTripReq(null)} onGo={startTrip} />}
       {travelling && <TravelOverlay engine={engine} trip={travelling.trip} mode={travelling.mode} onDone={finishTrip} quality={settings.quality} model3d={settings.model3d} />}
@@ -1055,7 +1057,7 @@ export default function Game() {
             </div>
           )}
 
-          {!panel && !tripReq && !travelling && !settingsOpen && letter === null && !authOpen && engine.phase !== "caught" && (
+          {!engine.s.atPort && !panel && !tripReq && !travelling && !settingsOpen && letter === null && !authOpen && engine.phase !== "caught" && (
             <div className="pointer-events-none absolute inset-0 z-[25]">
               <button style={{ position: "absolute", bottom: 12, right: 12 }} className="iconbtn pointer-events-auto !bg-[rgba(6,12,18,0.72)]" onClick={() => setSettingsOpen(true)} title="Настройки" aria-label="Настройки"><Icon name="gear" size={16} /></button>
             </div>

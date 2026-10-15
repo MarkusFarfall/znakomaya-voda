@@ -433,9 +433,28 @@ export function ridgePath(f: PF, baseY: number, hMax: number, seed: number, shar
 }
 
 export function mountainRidge(f: PF, baseY: number, hMax: number, seed: number, col: string, sharp = 1, x0 = 0, x1 = f.W) {
-  f.ctx.fillStyle = col;
-  ridgePath(f, baseY, hMax, seed, sharp, x0, x1);
-  f.ctx.fill();
+  const { ctx, W } = f;
+  const gradient = ctx.createLinearGradient(0, baseY - hMax, 0, baseY);
+  gradient.addColorStop(0, mix(col, '#c3d3da', .08));
+  gradient.addColorStop(1, mix(col, f.A.palette.skyHor, .12));
+  ctx.fillStyle = gradient;
+  ridgePath(f, baseY, hMax, seed, sharp, x0, x1); ctx.fill();
+  if (f.quality === 0) return;
+  // Facets share the ridge's exact clipping path, so no loose rocks or shadows in the sky.
+  ctx.save(); ridgePath(f, baseY, hMax, seed, sharp, x0, x1); ctx.clip();
+  const height = (q: number) => .55 + .45 * (Math.sin(q * 5.1 + seed) * .5 + Math.sin(q * 13.7 + seed * 2.3) * .3 + Math.sin(q * 31 + seed * 4.1) * .2 * sharp);
+  for (let q = .0125; q < 1; q += .0125) {
+    if (height(q) < height(q - .0125) || height(q) < height(q + .0125)) continue;
+    const x = q * W, y = baseY - hMax * height(q), spread = W * .09;
+    const shade = ctx.createLinearGradient(x, y, x + spread, baseY);
+    shade.addColorStop(0, hexA('#142e40', .16)); shade.addColorStop(1, hexA('#142e40', 0));
+    ctx.fillStyle = shade; ctx.beginPath(); ctx.moveTo(x, y);
+    ctx.lineTo(x + spread * .25, y + hMax * .23); ctx.lineTo(x + spread * .15, y + hMax * .39);
+    ctx.lineTo(x + spread * .9, baseY); ctx.lineTo(x + spread * 1.7, baseY); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = hexA('#d4dee0', .10); ctx.lineWidth = Math.max(.5, f.sc);
+    ctx.beginPath(); ctx.moveTo(x, y + 2); ctx.bezierCurveTo(x - spread * .1, y + hMax * .2, x - spread * .6, y + hMax * .28, x - spread, baseY); ctx.stroke();
+  }
+  ctx.restore();
 }
 
 /** Snow is clipped inside the same ridge path, never a polygon floating in the sky. */
