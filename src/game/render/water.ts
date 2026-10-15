@@ -1,3 +1,4 @@
+import { bedFrac } from "../world";
 import type { Frame } from "./frame";
 import { clamp, ctx2d, hexA, makeCanvas, mix, rng, af, rgbHex } from "./util";
 
@@ -152,30 +153,35 @@ export function drawUnderwaterBody(f: Frame) {
   ctx.fillRect(0, top, W, bottom - top);
 }
 
-/** Световые столбы (после затемнения, аддитивно) */
+let shaftTexture: HTMLCanvasElement | null = null;
+function softShaft() {
+  if (shaftTexture) return shaftTexture;
+  const c = makeCanvas(64, 256), ctx = ctx2d(c);
+  const cross = ctx.createLinearGradient(0, 0, 64, 0);
+  cross.addColorStop(0, "rgba(220,255,250,0)"); cross.addColorStop(.45, "rgba(220,255,250,.8)");
+  cross.addColorStop(.6, "rgba(220,255,250,1)"); cross.addColorStop(1, "rgba(220,255,250,0)");
+  ctx.fillStyle = cross; ctx.fillRect(0, 0, 64, 256);
+  ctx.globalCompositeOperation = "destination-in";
+  const fade = ctx.createLinearGradient(0, 0, 0, 256);
+  fade.addColorStop(0, "rgba(0,0,0,.7)"); fade.addColorStop(.18, "rgba(0,0,0,1)"); fade.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = fade; ctx.fillRect(0, 0, 64, 256); ctx.globalCompositeOperation = "source-over";
+  shaftTexture = c; return c;
+}
+
+/** Feathered sunlight, attenuated by real sun visibility, clipped to the water volume. */
 export function drawShafts(f: Frame) {
   const { ctx, W, H, sY, t, cam } = f;
-  const a0 = f.day * (1 - f.cover * 0.55) * (0.6 + f.clarity * 0.4);
-  if (a0 < 0.05 || cam > sY + H) return;
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  const tilt = (f.sunX - W / 2) / W;
-  for (let i = 0; i < 9; i++) {
-    const rx = ((i * 0.123 + 0.03) * W * 1.2 + Math.sin(t * 0.15 + i * 2.1) * 50) % (W * 1.1) - W * 0.05;
-    const w = 20 + (i % 4) * 22;
-    const len = H * (0.45 + (i % 3) * 0.22) * (0.6 + f.clarity * 0.6);
-    const rg = ctx.createLinearGradient(0, sY, 0, sY + len);
-    const a = 0.085 * a0 * (0.5 + 0.5 * Math.sin(t * 0.6 + i * 1.3));
-    rg.addColorStop(0, `rgba(220,255,250,${af(a)})`);
-    rg.addColorStop(1, "rgba(220,255,250,0)");
-    ctx.fillStyle = rg;
-    const sk = -tilt * len * 0.6 + 60;
-    ctx.beginPath();
-    ctx.moveTo(rx, sY);
-    ctx.lineTo(rx + w, sY);
-    ctx.lineTo(rx + w * 2 + sk, sY + len);
-    ctx.lineTo(rx + sk, sY + len);
-    ctx.fill();
+  const strength = f.sunVis * (1 - f.cover * .65) * (.4 + f.clarity * .6);
+  if (strength < .045 || cam > sY + H) return;
+  ctx.save(); clipWaterToBed(f); ctx.globalCompositeOperation = "lighter";
+  const texture = softShaft(), tilt = (f.sunX - W / 2) / W;
+  for (let i = 0; i < (f.quality > 1 ? 8 : 5); i++) {
+    const x = ((i * .143 + .03) * W * 1.2 + Math.sin(t * .15 + i * 2.1) * 30) % (W * 1.1) - W * .05;
+    const width = (35 + i % 4 * 24) * f.sc;
+    const length = H * (.45 + i % 3 * .22) * (.6 + f.clarity * .6);
+    ctx.save(); ctx.globalAlpha = .16 * strength * (.6 + .4 * Math.sin(t * .4 + i * 1.3));
+    ctx.transform(1, 0, -tilt * .6 + .06, 1, x, sY);
+    ctx.drawImage(texture, -width / 2, 0, width, length); ctx.restore();
   }
   ctx.restore();
 }
@@ -184,7 +190,7 @@ let bandCanvas: HTMLCanvasElement | null = null;
 /** Каустика у поверхности */
 export function drawSurfaceCaustics(f: Frame) {
   const { ctx, W, sY, t, cam, H } = f;
-  const a = f.day * (1 - f.cover * 0.85) * f.clarity;
+  const a = f.sunVis * (1 - f.cover * 0.65) * f.clarity;
   if (a < 0.05 || cam > sY + 120) return;
   const bh = Math.round(110 * f.sc);
   if (!bandCanvas || bandCanvas.width !== Math.ceil(W) || bandCanvas.height !== bh) bandCanvas = makeCanvas(Math.ceil(W), bh);
@@ -199,11 +205,20 @@ export function drawSurfaceCaustics(f: Frame) {
   b.fillStyle = g;
   b.fillRect(0, 0, W, bh);
   ctx.save();
+  clipWaterToBed(f);
   ctx.globalCompositeOperation = "lighter";
   ctx.globalAlpha = 0.28 * a;
   ctx.drawImage(bandCanvas, 0, sY + 2);
   ctx.restore();
   void H;
+}
+
+/** Water lighting stops at the actual seabed: no light shafts through solid ground. */
+export function clipWaterToBed(f: Frame) {
+  const { ctx, W, sY } = f;
+  ctx.beginPath(); ctx.moveTo(0, sY); ctx.lineTo(W, sY);
+  for (let x = W; x >= 0; x -= 8) ctx.lineTo(x, sY + f.depthPx(f.spot.maxDepth * bedFrac(f.spot, x / W)));
+  ctx.lineTo(0, sY + f.depthPx(f.spot.maxDepth * bedFrac(f.spot, 0))); ctx.closePath(); ctx.clip();
 }
 
 /** Затемнение по глубине (поверх всех подводных объектов) */
@@ -215,6 +230,8 @@ export function drawDepthOverlay(f: Frame) {
   const L = 22 + f.clarity * 45;
   const storm = clamp(f.atmo.dark * 0.14 + f.atmo.precip * 0.06 + f.fogK * 0.06, 0, 0.24);
   const dark = mix(f.loc.water.deep, "#000308", 0.65);
+  // Bottom inspection exposes nearby relief, not the entire deep ocean. Surface/auto retain darkness.
+  const attenuation = f.bottomFocus ? .60 : .955;
   const maxD = Math.max(f.spot.maxDepth * 1.3, 40);
   const span = f.depthPx(maxD);
   const g = ctx.createLinearGradient(0, sY, 0, sY + span);
@@ -223,9 +240,9 @@ export function drawDepthOverlay(f: Frame) {
     if (d > maxD) break;
     const base = 1 - Math.exp(-d / L);
     const a = 1 - (1 - base * 0.97) * (1 - night * 0.62) * (1 - storm);
-    g.addColorStop(clamp(f.depthPx(d) / span, 0, 1), hexA(dark, clamp(a, 0, 0.955)));
+    g.addColorStop(clamp(f.depthPx(d) / span, 0, 1), hexA(dark, clamp(a, 0, attenuation)));
   }
-  g.addColorStop(1, hexA(dark, 0.955));
+  g.addColorStop(1, hexA(dark, attenuation));
   ctx.fillStyle = g;
   ctx.fillRect(0, top, W, bottom - top);
 }

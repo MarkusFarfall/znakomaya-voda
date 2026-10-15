@@ -190,7 +190,7 @@ export function SettingsModal({
             <Sect name="Камера на рыбалке">
               <OptRow
                 k="Режим камеры"
-                hint="авто следит за снастью; переключается клавишей V"
+                hint="Авто следует за снастью. Дно — обзор рельефа с адаптацией экспозиции. Клавиша V меняет режим."
               >
                 <div className="seg flex w-full sm:w-56">
                   {CAMS.map(([id, n]) => (

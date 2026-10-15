@@ -157,8 +157,8 @@ export function cloudShadows(f: PF, clouds: [number, number, number, number][], 
 /** Distant precipitation fades in both axes. Never draws an opaque polygon in dry weather. */
 export function distantRain(f: PF) {
   const { ctx, W, H, hY, A, t } = f;
-  if (A.weather !== 'rain' && A.weather !== 'storm') return;
-  const amt = A.weather === 'storm' ? .26 : .16;
+  if (!(A.rain > 0.01)) return;
+  const amt = .26 * Math.min(1, A.rain);
   const cx = W * (.3 + hash1(A.day) * .4) + Math.sin(t * .05) * W * .025;
   const cy = hY - H * .045, rx = W * .24, ry = H * .18;
   const col = mix(A.palette.skyMid, '#354451', .35);

@@ -145,8 +145,8 @@ export class PortScene {
     const windPx = a.wind * a.windDir * 26 * f.sc;
     const view = { x0: 0, x1: f.W, top: -60, bottom: f.H, floor: () => f.H - 4,
       horizon: f.waterY + 20 * f.sc, wind: windPx, s: f.sc, q: f.quality, color: a.palette.cloud };
-    const rain = { ...view, intensity: this.precipEnabled ? a.rain : 0 };
-    const snow = { ...view, intensity: this.precipEnabled ? a.snow : 0 };
+    const rain = { ...view, active: this.precipEnabled && a.rain > 0.001, intensity: this.precipEnabled ? a.rain : 0 };
+    const snow = { ...view, active: this.precipEnabled && a.snow > 0.001, intensity: this.precipEnabled ? a.snow : 0 };
     this.rain.step(rain, f.dt); this.snowfall.step(snow, f.dt);
     if (this.precipEnabled) { this.rain.draw(f.ctx, rain); this.snowfall.draw(f.ctx, snow); }
     // Home kit already draws its local petals/leaves: don't duplicate that layer.

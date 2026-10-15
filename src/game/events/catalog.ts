@@ -495,7 +495,7 @@ export const EVENTS: EventDef[] = [
     icon: '🌪️',
     tier: 'uncommon',
     cat: 'hazard',
-    desc: 'Налетел шквал: ветер рвёт гребни, хлещет дождь. Рыба бешеная, но держите снасти крепче.',
+    desc: 'Налетел шквал: ветер рвёт гребни и гонит стену осадков. Рыба бешеная, но держите снасти крепче.',
     duration: [10, 25],
     when: (c) => (1 - stormy(c)) * (0.4 + c.cover) * (c.season === 3 ? 0.4 : 1) * (cl(c, { ocean: 1.4, tropic: 1.2 }) || 1),
     effects: { bite: 1.5, gearRisk: 0.12 },

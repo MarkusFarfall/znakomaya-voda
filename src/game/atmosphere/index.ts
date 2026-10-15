@@ -318,6 +318,10 @@ export class Atmosphere {
     s.cover = clamp(this.cur.cover + Math.sin(r * 0.05) * 0.03, 0, 1);
     s.dark = this.cur.dark;
     s.fog = clamp(this.cur.fog, 0, 1);
+    // A dry label is a dry atmosphere. Clouds/wind keep blending, but old rain
+    // and lightning cannot survive underneath a new clear/cloudy/fog state.
+    if (tg.precip === 0) this.cur.precip = 0;
+    if (tg.lightning === 0) this.cur.lightning = 0;
     s.precip = clamp(this.cur.precip, 0, 1);
     s.lightning = this.cur.lightning;
     s.waves = this.cur.waves * (this.climate === 'ocean' ? 1.2 : 1);
@@ -417,6 +421,12 @@ export class Atmosphere {
     const isRain = s.kind === 'drizzle' || s.kind === 'rain' || s.kind === 'downpour';
     if (isRain && s.snow > s.rain * 1.5) name = 'Снегопад';
     else if (isRain && s.snow > s.rain * 0.4) name = 'Мокрый снег';
+    // Events may legitimately bring rain into an otherwise dry forecast.
+    // Describe that weather without changing the gameplay WeatherId or save.
+    const squall = (this.mods.precip ?? 0) > 0.001;
+    if (squall) name = s.snow > s.rain ? 'Снежный шквал' : 'Шквал · дождь';
+    const displayId: WeatherId = squall ? (s.snow > s.rain ? 'snow' : 'storm') : isRain && s.snow > s.rain ? 'snow' : this.weatherId;
+    const icon = squall ? (s.snow > s.rain ? '❄️' : '🌧️') : displayId === 'snow' ? '🌨️' : s.daylight < 0.3 && info.nightIcon ? info.nightIcon : info.icon;
     const dl = s.dayLength;
     return {
       time: `${pad(h)}:${pad(m)}`,
@@ -425,9 +435,9 @@ export class Atmosphere {
       seasonName: SEASON_NAMES[s.season],
       phaseName: this.phaseName(),
       kind: s.kind,
-      weatherId: this.weatherId,
+      weatherId: displayId,
       weatherName: name,
-      icon: s.daylight < 0.3 && info.nightIcon ? info.nightIcon : info.icon,
+      icon,
       temp: Math.round(s.temp),
       wind: Math.round(s.wind),
       cover: Math.round(s.cover * 100),

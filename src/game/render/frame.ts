@@ -52,6 +52,8 @@ export interface Frame {
   wind: number;
   clarity: number;
   quality: number;
+  /** Visual exposure in the dedicated seabed camera, never a gameplay light source. */
+  bottomFocus?: boolean;
   compact: boolean;
   land: boolean;
   /** зарезервировано сверху/снизу под DOM-интерфейс */

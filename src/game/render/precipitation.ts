@@ -6,6 +6,8 @@ export interface PrecipitationView {
   floor: (x: number) => number;
   /** Distant sea plane. Omit for the foreground port view. */
   horizon?: number;
+  /** Hard gate for dry weather / disabled graphics, including dt=0. */
+  active?: boolean;
   intensity: number; wind: number; s: number; q: 0 | 1 | 2; color: RGB;
 }
 interface Drop {
@@ -54,7 +56,8 @@ export class PrecipitationField {
   }
   /** Separate stepping makes the effect testable without DOM or a GPU. */
   step(o: PrecipitationView, dt: number) {
-    dt = clamp(dt, 0, 0.1);
+    dt = Number.isFinite(dt) ? clamp(dt, 0, 0.1) : 0;
+    if (o.active === false) { this.drops.length = 0; this.impacts.length = 0; this.amount = 0; return; }
     const key = `${o.x0}:${o.x1}:${o.top}:${o.bottom}:${o.s}`;
     if (key !== this.key) { this.key = key; this.drops.length = 0; this.impacts.length = 0; }
     this.elapsed += dt;
@@ -90,7 +93,7 @@ export class PrecipitationField {
     }
   }
   draw(c: CanvasRenderingContext2D, o: PrecipitationView) {
-    if (!this.drops.length && !this.impacts.length) return;
+    if (o.active === false || (!this.drops.length && !this.impacts.length)) return;
     c.save();
     // Clip to the real wavy cutaway, not a horizontal screen-space rectangle.
     c.beginPath();

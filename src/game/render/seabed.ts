@@ -1,3 +1,4 @@
+import { SeabedLandscape } from "./seabedLandscape";
 import { bedFrac } from "../world";
 import type { Frame } from "./frame";
 import { tileCaustics } from "./water";
@@ -19,10 +20,11 @@ const HABITAT: Record<string, string[]> = {
   basalt: ["basalt", "basalt", "lavarock", "urchin", "coralB", "anemone", "basalt"],
   polar: ["icesponge", "star", "brittle", "seaspider", "urchin", "glassSponge", "icesponge"],
 };
-const CORAL_COLS = ["#ff6f91", "#ff9a3c", "#b06cff", "#3fd0c0", "#ffd05a", "#ff5060", "#6aa0ff"];
+const CORAL_COLS = ["#d98a98", "#dca26a", "#a78bb6", "#70b6ab", "#d4c080", "#cf7c78", "#779fbe"];
 
 export class SeabedRenderer {
   private key = "";
+  private landscape = new SeabedLandscape();
   private ys: number[] = [];
   private back: number[] = [];
   private pts: number[] = [];
@@ -44,6 +46,7 @@ export class SeabedRenderer {
     if (key === this.key) return;
     this.key = key;
     this.W = W;
+    this.step = clamp(Math.round(W / 200), 2, 6);
     this.ys = [];
     this.back = [];
     this.pts = [];
@@ -90,11 +93,13 @@ export class SeabedRenderer {
     }
   }
 
-  draw(f: Frame) {
+  draw(f: Frame, causticsEnabled = true) {
     this.build(f);
     const { ctx, W, sY, cam, H, t } = f;
-    if (this.minY - 200 > cam + H) return;
-    const bedC = f.loc.bed;
+    // Surface-reaching kelp, roots and pier piles must not disappear because their roots are offscreen.
+    if (this.minY - 400 * f.sc > cam + H) { this.drawFeatures(f); return; }
+    const bedC = mix(f.loc.bed, "#708980", f.spot.maxDepth > 100 ? .28 : .08);
+    this.landscape.backdrop(f, x => this.bedY(x));
     // дальние силуэты
     const farC = mix(mix(bedC, f.loc.water.mid, 0.72), "#000000", 0.1);
     ctx.fillStyle = farC;
@@ -177,12 +182,14 @@ export class SeabedRenderer {
         ctx.stroke();
       }
     }
+    this.landscape.texture(f, x => this.bedY(x));
     ctx.restore();
+    this.landscape.structures(f, x => this.bedY(x));
     // каустика — тонкой полосой по поверхности мелкого дна
     const shallow = sY + f.depthPx(6 + f.clarity * 22);
-    const ca = f.day * (1 - f.cover * 0.85) * f.clarity;
-    if (ca > 0.05 && this.minY < shallow && f.quality > 0) {
-      const band = 26 * f.sc;
+    const ca = f.sunVis * (1 - f.cover * 0.65) * f.clarity;
+    if (causticsEnabled && ca > 0.05 && this.minY < shallow && f.quality > 1) {
+      const band = 16 * f.sc;
       ctx.save();
       ctx.beginPath();
       for (let i = 0; i < this.pts.length; i += 2) {
@@ -194,7 +201,7 @@ export class SeabedRenderer {
       ctx.closePath();
       ctx.clip();
       ctx.globalCompositeOperation = "lighter";
-      tileCaustics(ctx, 0, this.minY - 10, W, shallow - this.minY + band + 10, t * 0.8, 0.9 * f.sc, 0.32 * ca);
+      tileCaustics(ctx, 0, this.minY - 10, W, shallow - this.minY + band + 10, t * 0.8, 0.9 * f.sc, 0.18 * ca);
       ctx.restore();
     }
 
@@ -559,10 +566,15 @@ export class SeabedRenderer {
 
   private drawDecor(f: Frame, d: Decor) {
     const { ctx, t } = f;
+    if (d.y - 290 * f.sc > f.cam + f.H || d.y + 20 < f.cam) return;
     const s = d.s * f.sc;
     const sway = Math.sin(t * 0.8 + d.seed) * 6 * s;
     ctx.save();
     ctx.translate(d.x, d.y + 2);
+    if (["boulder", "rock", "brain", "table", "tube", "sponge", "anemone", "coralB"].includes(d.kind)) {
+      ctx.fillStyle = "rgba(4,20,26,0.23)";
+      ctx.beginPath(); ctx.ellipse(0, 1, (d.kind === "boulder" ? 26 : 12) * s, 3 * s, 0, 0, Math.PI * 2); ctx.fill();
+    }
     switch (d.kind) {
       case "grass":
         ctx.strokeStyle = "#5a9a4a";

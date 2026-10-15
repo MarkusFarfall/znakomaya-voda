@@ -129,7 +129,8 @@ export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onC
           <h1>{port.name}</h1>
           <div className="harbor-weather">
             <span className="num text-[15px] text-[#f1ebdd]">{hh}:{mm}</span>
-            <span className="flex items-center gap-1"><Icon name={s.weather === "clear" ? "sun" : s.weather === "cloudy" ? "cloud" : s.weather} size={14}/>{atmo.weatherName} · {atmo.temp > 0 ? "+" : ""}{atmo.temp}°</span>
+            <span className="flex items-center gap-1"><Icon name={atmo.weatherId === "clear" ? "sun" : atmo.weatherId === "cloudy" ? "cloud" : atmo.weatherId} size={14}/>{atmo.weatherName} · {atmo.temp > 0 ? "+" : ""}{atmo.temp}°</span>
+            <span className="flex items-center gap-1" title="Ветер с учётом текущих порывов"><Icon name="wind" size={13}/>{atmo.wind} м/с</span>
             <span className="hidden dim sm:inline">{SEASONS[engine.season]}, день {engine.dayOfSeason}</span>
           </div>
           {engine.fairBonus > 1 && <div className="mt-1.5 text-[11px] text-[var(--brass-2,#e3c996)]">Ярмарка выходного дня · цены на рынке +10%</div>}

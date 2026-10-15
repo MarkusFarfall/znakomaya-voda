@@ -203,7 +203,7 @@ test("distant rain renders nothing in cloudy or dry weather; wet curtain has tra
       H: 844,
       hY: 430,
       t: 12,
-      A: { weather, day: 4, windDir: -1, palette: { skyMid: "#778899" } },
+      A: { weather, rain: weather === "rain" || weather === "storm" ? .8 : 0, day: 4, windDir: -1, palette: { skyMid: "#778899" } },
     } as PF;
     distantRain(f);
     if (weather === "rain" || weather === "storm") {

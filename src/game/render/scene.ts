@@ -169,7 +169,7 @@ export class Scene {
     const hookY = sY + depthPx(e.hookDepth);
     const bedMaxPx = sY + depthPx(spot.maxDepth * 1.05);
     const topRes = W < 820 || H < 560 ? (W >= H ? 64 : 118) : 210;
-    const maxCam = Math.max(0, bedMaxPx - H * 0.78);
+    const maxCam = Math.max(0, bedMaxPx - H * 0.73);
     let target = 0;
     let speed = 2.2;
     switch (this.voyage ? "surface" : this.camMode) {
@@ -198,7 +198,7 @@ export class Scene {
       ctx, e, loc, spot, weather, atmo, W, H, t, dt, sY, hY, cam, K, sc, night, day, golden, cover, fogK, top, mid, hor,
       sunX, sunY, sunElev, sunVis, moonX, moonY, moonUp, moonVis, amp,
       wind: this.voyage ? Math.min(3, atmo.wind / 18 + this.voyage / 90) : Math.min(1.5, atmo.wind / 18),
-      clarity: loc.clarity ?? 0.6, quality: this.quality, compact, land,
+      clarity: loc.clarity ?? 0.6, quality: this.quality, compact, land, bottomFocus: this.camMode === "bottom",
       topRes: compact ? (land ? 64 : 118) : 210, botRes: compact ? (land ? 70 : 146) : 150, depthPx, waveY,
       light: { dx: clamp((sunX / W) * 2 - 1, -1, 1), k: sunVis * (1 - night * 0.7) },
     };
@@ -235,7 +235,7 @@ export class Scene {
     // ───── ПОД ВОДОЙ ─────
     drawUnderwaterBody(f);
     if (fxCalls.length) drawEventFx(this.fxScene(f, fxBoatX), "under", fxCalls);
-    this.bed.draw(f);
+    this.bed.draw(f, this.gfx.caustics);
     this.drawWhale(f);
     this.updateSchools(f);
     this.updateCreatures(f);
@@ -644,7 +644,7 @@ export class Scene {
     const { ctx, sY, cam, H, e, t, W } = f;
     for (const a of this.ambient) {
       if (!a.f.glow || !a.known) continue;
-      const y = sY + f.depthPx(a.depth) + Math.sin(a.phase * 0.3) * 6;
+      const y = Math.min(sY + f.depthPx(a.depth) + Math.sin(a.phase * 0.3) * 6, this.bed.bedY(a.x) - a.len * 0.3);
       if (y < cam - 50 || y > cam + H + 50) continue;
       drawFishGlow(ctx, a.f, a.x, y, a.len, a.dir, a.phase, 1);
     }
@@ -910,8 +910,10 @@ export class Scene {
       let yy = (((p[1] % (H * 1.2)) + H * 1.2) % (H * 1.2)) + cam - H * 0.1;
       if (yy < sY + 4) continue;
       if (yy > cam + H) yy -= H;
+      const xx = ((p[0] % W) + W) % W;
+      if (yy > this.bed.bedY(xx) - 2) continue;
       ctx.globalAlpha = clamp((yy - sY) / (H * 0.5), 0.15, 1) * 0.6;
-      ctx.fillRect(((p[0] % W) + W) % W, yy, p[2], p[2]);
+      ctx.fillRect(xx, yy, p[2], p[2]);
     }
     ctx.globalAlpha = 1;
   }
@@ -941,8 +943,8 @@ export class Scene {
       q: clamp(Math.round(f.quality), 0, 2) as 0 | 1 | 2,
       color: f.atmo.palette.cloud,
     };
-    const rain = { ...o, intensity: this.gfx.precip ? f.atmo.rain : 0 };
-    const snow = { ...o, intensity: this.gfx.precip ? f.atmo.snow : 0 };
+    const rain = { ...o, active: this.gfx.precip && f.atmo.rain > 0.001, intensity: this.gfx.precip ? f.atmo.rain : 0 };
+    const snow = { ...o, active: this.gfx.precip && f.atmo.snow > 0.001, intensity: this.gfx.precip ? f.atmo.snow : 0 };
     this.rain.step(rain, f.dt); this.snowfall.step(snow, f.dt);
     if (this.gfx.precip) {
       this.rain.draw(f.ctx, rain); this.snowfall.draw(f.ctx, snow);
@@ -968,10 +970,10 @@ export class Scene {
       ctx.fillRect(0, 0, W, H);
       for (let i = 0; i < 6; i++) {
         const x = ((t * (8 + i * 3) + i * 300) % (W + 700)) - 350;
-        ctx.fillStyle = hexA(fc, 0.08 + f.fogK * 0.11);
-        ctx.beginPath();
-        ctx.ellipse(x, fy - 30 - i * 26, 320, 30, 0, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.save(); ctx.translate(x, fy - 30 - i * 26); ctx.scale(320, 35);
+        const veil = ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+        veil.addColorStop(0, hexA(fc, 0.05 + f.fogK * 0.12)); veil.addColorStop(1, hexA(fc, 0));
+        ctx.fillStyle = veil; ctx.fillRect(-1, -1, 2, 2); ctx.restore();
       }
     }
   }
