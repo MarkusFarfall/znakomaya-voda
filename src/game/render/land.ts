@@ -1,4 +1,4 @@
-import { shoreEnvelope, type Frame } from "./frame";
+import { horizontalRange, overlapsHorizontal, shoreEnvelope, type Frame } from "./frame";
 import { ExtraLand } from "./lands2";
 import { clamp, fbm, glow, hash1, hexA, mix, rng, sstep, tracePoly, af, rgbHex } from "./util";
 
@@ -258,13 +258,16 @@ export class LandRenderer {
   drawAbove(f: Frame) {
     this.build(f);
     const { ctx, W, H, hY, t, night } = f;
+    const view = horizontalRange(f, 16);
     // северное сияние — сила и вероятность приходят из атмосферы/сезона.
     if (f.atmo.aurora > 0.01) {
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
       const a = f.atmo.aurora;
       for (let k = 0; k < 4; k++) {
-        for (let x = 0; x <= W; x += 6) {
+        const firstX = Math.max(0, Math.floor(view.left / 6) * 6);
+        const lastX = Math.min(W, view.right);
+        for (let x = firstX; x <= lastX; x += 6) {
           const y = H * (0.08 + k * 0.025) + Math.sin(x * 0.005 + t * 0.25 + k) * 30 + Math.sin(x * 0.012 - t * 0.17 + k * 2) * 14;
           const hgt = 50 + Math.sin(x * 0.02 + t + k) * 20;
           const g = ctx.createLinearGradient(0, y, 0, y + hgt);
@@ -297,13 +300,19 @@ export class LandRenderer {
         ctx.stroke();
       }
       if (L.snowY !== undefined) {
+        const snowLeft = Math.max(L.x0, view.left), snowRight = Math.min(L.x1, view.right);
+        if (snowRight > snowLeft) {
         ctx.save();
         tracePoly(ctx, L.pts);
         ctx.clip();
         ctx.beginPath();
-        ctx.moveTo(L.x0, -1000);
-        for (let x = L.x0; x <= L.x1; x += 10) ctx.lineTo(x, L.snowY + Math.sin(x * 0.09) * 6 + (fbm(x * 0.02, 3) - 0.5) * 30);
-        ctx.lineTo(L.x1, -1000);
+        ctx.rect(snowLeft, -H * 4, snowRight - snowLeft, H * 8);
+        ctx.clip();
+        const firstSnowX = L.x0 + Math.max(0, Math.floor((snowLeft - L.x0) / 10)) * 10;
+        ctx.beginPath();
+        ctx.moveTo(snowLeft, -H * 4);
+        for (let x = firstSnowX; x <= snowRight; x += 10) ctx.lineTo(x, L.snowY + Math.sin(x * 0.09) * 6 + (fbm(x * 0.02, 3) - 0.5) * 30);
+        ctx.lineTo(snowRight, -H * 4);
         ctx.closePath();
         const sc = mix(this.colorOf(f, "#f4f8fc", L.haze * 0.7), "#ffd8b8", f.golden * 0.4);
         const sg = ctx.createLinearGradient(0, L.snowY - H * 0.15, 0, L.snowY + 20);
@@ -312,6 +321,7 @@ export class LandRenderer {
         ctx.fillStyle = sg;
         ctx.fill();
         ctx.restore();
+        }
       }
       this.drawDetailsFor(f, L.haze);
     }
@@ -329,18 +339,19 @@ export class LandRenderer {
         ctx.stroke();
       }
     }
-    if (this.lighthouse) this.drawLighthouse(f);
-    if (this.waterfall) this.drawWaterfall(f);
-    for (const p of this.palms) this.drawPalm(f, p.x, p.y, p.h, p.lean);
+    if (this.lighthouse && overlapsHorizontal(f, this.lighthouse.x - W * 0.55, this.lighthouse.x + W * 0.55)) this.drawLighthouse(f);
+    if (this.waterfall && overlapsHorizontal(f, this.waterfall.x, this.waterfall.x + this.waterfall.w)) this.drawWaterfall(f);
+    for (const p of this.palms) if (overlapsHorizontal(f, p.x - p.h, p.x + p.h)) this.drawPalm(f, p.x, p.y, p.h, p.lean);
     if (f.loc.land === "abyss") this.drawPlatform(f);
     this.extra.drawAbove(this, f);
   }
 
   private drawDetailsFor(f: Frame, haze: number) {
     const { ctx, night, t } = f;
+    const view = horizontalRange(f, 36);
     const winter = f.e.season === 3 && (f.loc.climate === "temperate" || f.loc.land === "fjord");
     for (const tr of this.trees) {
-      if (tr.haze !== haze) continue;
+      if (tr.haze !== haze || tr.x + tr.h < view.left || tr.x - tr.h > view.right) continue;
       ctx.fillStyle = this.colorOf(f, this.foliage(f, tr.c, tr.x, tr.kind), haze);
       if (tr.kind === "pine") {
         const sway = Math.sin(t * 0.8 + tr.x) * 0.6;
@@ -380,7 +391,7 @@ export class LandRenderer {
       }
     }
     for (const h of this.houses) {
-      if (h.haze !== haze) continue;
+      if (h.haze !== haze || h.x + h.w + 24 < view.left || h.x - 24 > view.right) continue;
       const wall = this.colorOf(f, h.c, haze);
       const roof = this.colorOf(f, f.loc.land === "reef" ? "#8a6a3a" : "#9a4a38", haze);
       if (f.loc.land === "reef") {
@@ -579,6 +590,7 @@ export class LandRenderer {
   /** Отражения в полосе моря (между горизонтом и линией воды) */
   drawReflection(f: Frame, water: string) {
     const { ctx, hY, sY, W, t, night } = f;
+    const view = horizontalRange(f, 20);
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, hY, W, sY - hY);
@@ -589,7 +601,7 @@ export class LandRenderer {
     ctx.translate(0, -hY);
     ctx.globalAlpha = 0.45 * (1 - f.amp / 14);
     for (const L of this.layers) {
-      if (!L.reflect) continue;
+      if (!L.reflect || L.x1 < view.left || L.x0 > view.right) continue;
       tracePoly(ctx, L.pts);
       ctx.fillStyle = mix(this.colorOf(f, L.base, L.haze), water, 0.45);
       ctx.fill();
@@ -598,7 +610,7 @@ export class LandRenderer {
     if (night > 0.3) {
       ctx.globalCompositeOperation = "lighter";
       for (const l of this.lights) {
-        if (l.night && night < 0.3) continue;
+        if (l.x < view.left - 140 || l.x > view.right + 140 || (l.night && night < 0.3)) continue;
         const len = (sY - hY) * 0.9;
         const g = ctx.createLinearGradient(0, hY, 0, hY + len);
         g.addColorStop(0, hexA(l.c, 0.35 * night));
@@ -616,6 +628,8 @@ export class LandRenderer {
   /** Объекты на воде в полосе моря */
   drawSea(f: Frame) {
     const { ctx, hY, sY, W, t, night } = f;
+    const view = horizontalRange(f, 60);
+    const inView = (x: number, padding = 0) => x + padding >= view.left && x - padding <= view.right;
     // объекты на воде (бунгало и т.п.), у которых нет своего слоя суши
     const hz = new Set(this.layers.map((l) => l.haze));
     const orphan = new Set([...this.houses, ...this.trees].map((o) => o.haze).filter((h) => !hz.has(h)));
@@ -624,6 +638,7 @@ export class LandRenderer {
     const band = sY - hY;
     const foam = hexA(mix("#ffffff", "#40506a", night * 0.7), 0.75);
     for (const rk of this.seaRocks) {
+      if (!inView(rk.x, rk.w)) continue;
       ctx.fillStyle = this.colorOf(f, "#3e3a36", 0.3);
       ctx.beginPath();
       ctx.moveTo(rk.x - rk.w / 2, rk.y);
@@ -637,7 +652,8 @@ export class LandRenderer {
       ctx.fill();
     }
     if (this.cliffBase) {
-      for (let x = this.cliffBase.x0; x < W; x += 14) {
+      const first = this.cliffBase.x0 + Math.max(0, Math.ceil((view.left - this.cliffBase.x0) / 14)) * 14;
+      for (let x = first; x < Math.min(W, view.right); x += 14) {
         const p = (Math.sin(t * 1.4 + x * 0.05) + 1) / 2;
         ctx.fillStyle = hexA(mix("#ffffff", "#40506a", night * 0.7), 0.35 + p * 0.4);
         ctx.fillRect(x, hY + 1 + p * 2, 10 + p * 6, 1.5);
@@ -668,6 +684,7 @@ export class LandRenderer {
       for (let i = 0; i < 16; i++) {
         const y = hY + band * ((i * 0.618) % 1);
         const x = ((t * (30 + i * 3) + i * 170) % (W + 200)) - 100;
+        if (!inView(x + 20, 20)) continue;
         ctx.beginPath();
         ctx.moveTo(x, y);
         ctx.quadraticCurveTo(x + 20, y - 2, x + 40 + (y - hY), y);
@@ -675,7 +692,8 @@ export class LandRenderer {
       }
     }
     if (f.spot.feature === "reefwall") {
-      for (let x = W * 0.34; x < W; x += 5) {
+      const first = W * 0.34 + Math.max(0, Math.ceil((view.left - W * 0.34) / 5)) * 5;
+      for (let x = first; x < Math.min(W, view.right); x += 5) {
         const y = hY + band * 0.45 + Math.sin(x * 0.02) * 2;
         const p = (Math.sin(t * 1.6 - x * 0.02) + 1) / 2;
         ctx.fillStyle = hexA(mix("#ffffff", "#40506a", night * 0.7), 0.25 + p * 0.55);
@@ -704,6 +722,7 @@ export class LandRenderer {
     for (const fl of this.floes) {
       fl.x += fl.v * f.dt * (0.4 + f.wind);
       if (fl.x - fl.w > W) fl.x = -fl.w;
+      if (!inView(fl.x, fl.w)) continue;
       const y = fl.y + Math.sin(t + fl.x * 0.01) * 0.6;
       ctx.fillStyle = this.colorOf(f, "#eef6fa", 0.3);
       ctx.beginPath();
@@ -718,6 +737,7 @@ export class LandRenderer {
     for (const m of this.mats) {
       m.x += f.dt * 3;
       if (m.x - m.w > W) m.x = -m.w;
+      if (!inView(m.x, m.w)) continue;
       const k = (m.y - hY) / band;
       ctx.fillStyle = this.colorOf(f, "#8a6a28", 0.3);
       ctx.beginPath();
@@ -728,6 +748,7 @@ export class LandRenderer {
     }
     if (f.loc.land === "open") {
       const sx = ((t * 4 + f.spot.seed * 300) % (W + 300)) - 150;
+      if (!inView(sx + 35, 40)) return;
       const c = this.colorOf(f, "#34383e", 0.7);
       ctx.fillStyle = c;
       ctx.beginPath();
@@ -806,17 +827,24 @@ export class LandRenderer {
     this.extra.drawFront(this, f);
     if (f.spot.feature !== "pier") return;
     const { ctx, sY, W, night, t } = f;
+    const view = horizontalRange(f, 20);
     const x1 = W * 0.2;
     const deckY = sY - 16 * f.sc;
     const wood = mix("#6a4a30", "#0a0c10", night * 0.75);
     const dark = mix("#3a2818", "#05070a", night * 0.75);
+    const deckLeft = Math.max(-4, view.left), deckRight = Math.min(x1 + 4, view.right);
+    if (deckRight <= deckLeft) return;
     ctx.fillStyle = dark;
-    for (let x = 6; x < x1; x += 34 * f.sc) ctx.fillRect(x, deckY, 6 * f.sc, sY - deckY + 20);
+    const postStep = 34 * f.sc;
+    const firstPost = 6 + Math.max(0, Math.ceil((view.left - 6) / postStep)) * postStep;
+    for (let x = firstPost; x < Math.min(x1, view.right); x += postStep) ctx.fillRect(x, deckY, 6 * f.sc, sY - deckY + 20);
     ctx.fillStyle = wood;
-    ctx.fillRect(-4, deckY - 5 * f.sc, x1 + 8, 6 * f.sc);
+    ctx.fillRect(deckLeft, deckY - 5 * f.sc, deckRight - deckLeft, 6 * f.sc);
     ctx.fillStyle = dark;
-    ctx.fillRect(-4, deckY + 1, x1 + 8, 2 * f.sc);
-    for (let x = 4; x < x1; x += 11 * f.sc) {
+    ctx.fillRect(deckLeft, deckY + 1, deckRight - deckLeft, 2 * f.sc);
+    const boardStep = 11 * f.sc;
+    const firstBoard = 4 + Math.max(0, Math.ceil((view.left - 4) / boardStep)) * boardStep;
+    for (let x = firstBoard; x < Math.min(x1, view.right); x += boardStep) {
       ctx.fillStyle = hexA("#000000", 0.25);
       ctx.fillRect(x, deckY - 5 * f.sc, 1, 5 * f.sc);
     }

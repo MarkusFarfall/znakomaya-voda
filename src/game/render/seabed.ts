@@ -1,6 +1,6 @@
 import { SeabedLandscape } from "./seabedLandscape";
 import { bedFrac } from "../world";
-import { shoreEnvelope, type Frame } from "./frame";
+import { horizontalRange, shoreEnvelope, type Frame } from "./frame";
 import { tileCaustics } from "./water";
 import { clamp, glow, hash1, hexA, mix, rng, tracePoly } from "./util";
 
@@ -38,6 +38,26 @@ export class SeabedRenderer {
     const i = clamp(x / this.step, 0, this.ys.length - 1);
     const a = Math.floor(i), b = Math.min(this.ys.length - 1, a + 1);
     return this.ys[a] + (this.ys[b] - this.ys[a]) * (i - a);
+  }
+
+  private profileY(profile: number[], x: number) {
+    const i = clamp(x / this.step, 0, profile.length / 2 - 1);
+    const a = Math.floor(i), b = Math.min(profile.length / 2 - 1, a + 1);
+    return profile[a * 2 + 1] + (profile[b * 2 + 1] - profile[a * 2 + 1]) * (i - a);
+  }
+
+  private profileSlice(profile: number[], left: number, right: number) {
+    const x0 = Math.max(-2, Math.min(this.W + 2, left));
+    const x1 = Math.max(x0, Math.min(this.W + 2, right));
+    const points = [x0, this.profileY(profile, x0)];
+    const first = Math.max(1, Math.floor(x0 / this.step) + 1);
+    const last = Math.min(profile.length / 2 - 1, Math.ceil(x1 / this.step) - 1);
+    for (let i = first; i <= last; i++) {
+      const x = i * this.step;
+      if (x > x0 && x < x1) points.push(x, profile[i * 2 + 1]);
+    }
+    points.push(x1, this.profileY(profile, x1));
+    return points;
   }
 
   build(f: Frame) {
@@ -97,8 +117,16 @@ export class SeabedRenderer {
   draw(f: Frame, causticsEnabled = true) {
     this.build(f);
     const { ctx, W, sY, cam, H, t } = f;
+    const view = horizontalRange(f, 30 * f.sc);
+    const left = Math.max(-2, Math.min(W, view.left));
+    const right = Math.max(left, Math.min(W + 2, view.right));
+    const bottom = Math.max(this.minY + 4000, cam + H + 100);
     // Surface-reaching kelp, roots and pier piles must not disappear because their roots are offscreen.
     if (this.minY - 400 * f.sc > cam + H) { this.drawFeatures(f); return; }
+    const backLine = this.profileSlice(this.back, left, right);
+    const bedLine = this.profileSlice(this.pts, left, right);
+    const backPoly = [...backLine, right, bottom, left, bottom];
+    const bedPoly = [...bedLine, right, bottom, left, bottom];
     const bedC = mix(f.loc.bed, "#708980", f.loc.maxDepth > 100 ? .28 : .08);
     this.landscape.backdrop(f, x => this.bedY(x));
     // дальние силуэты
@@ -106,6 +134,7 @@ export class SeabedRenderer {
     ctx.fillStyle = farC;
     ctx.strokeStyle = farC;
     for (const o of this.far) {
+      if (o.x + o.w < view.left || o.x - o.w > view.right) continue;
       if (o.y - o.h > cam + H || o.y < cam - 50) continue;
       ctx.save();
       ctx.translate(o.x, o.y);
@@ -143,13 +172,11 @@ export class SeabedRenderer {
       ctx.restore();
     }
     // дальний слой
-    const bp = [...this.back, W + 10, this.minY + 4000, -10, this.minY + 4000];
-    tracePoly(ctx, bp);
+    tracePoly(ctx, backPoly);
     ctx.fillStyle = mix(mix(bedC, f.loc.water.mid, 0.55), "#000000", 0.15);
     ctx.fill();
     // основной
-    const pts = [...this.pts, W + 10, this.minY + 4000, -10, this.minY + 4000];
-    tracePoly(ctx, pts);
+    tracePoly(ctx, bedPoly);
     const top=f.bedDepth?sY+f.depthPx(f.loc.maxDepth*.4):this.minY;
     const g = ctx.createLinearGradient(0, top, 0, top + 300);
     g.addColorStop(0, mix(bedC, "#ffffff", 0.1));
@@ -158,26 +185,28 @@ export class SeabedRenderer {
     ctx.fill();
     // кромка и осадочные слои
     ctx.save();
-    tracePoly(ctx, pts);
+    tracePoly(ctx, bedPoly);
     ctx.clip();
     ctx.lineWidth = 2.2;
     ctx.strokeStyle = hexA(mix(bedC, "#ffffff", 0.35), 0.7);
-    tracePoly(ctx, this.pts, false);
+    tracePoly(ctx, bedLine, false);
     ctx.stroke();
     ctx.lineWidth = 1;
     for (let k = 1; k <= 4; k++) {
       ctx.strokeStyle = hexA(mix(bedC, "#000000", 0.4), 0.25);
       ctx.beginPath();
-      for (let i = 0; i < this.pts.length; i += 2) {
-        const y = this.pts[i + 1] + k * 14 * f.sc + Math.sin((this.pts[i]+(f.chunkOffset??0)) * 0.03 + k) * 3;
-        if (i === 0) ctx.moveTo(this.pts[i], y);
-        else ctx.lineTo(this.pts[i], y);
+      for (let i = 0; i < bedLine.length; i += 2) {
+        const x = bedLine[i];
+        const y = bedLine[i + 1] + k * 14 * f.sc + Math.sin((x + (f.chunkOffset ?? 0)) * 0.03 + k) * 3;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
       }
       ctx.stroke();
     }
     if (f.spot.feature === "sandbar" || f.loc.seabed === "sand") {
       ctx.strokeStyle = hexA(mix(bedC, "#000000", 0.2), 0.35);
-      for (let x = 4; x < W; x += 9) {
+      const firstSand = 4 + Math.max(0, Math.ceil((left - 4) / 9)) * 9;
+      for (let x = firstSand; x < right; x += 9) {
         const y = this.bedY(x) + 5;
         ctx.beginPath();
         ctx.arc(x, y, 4, Math.PI * 1.1, Math.PI * 1.9);
@@ -194,16 +223,16 @@ export class SeabedRenderer {
       const band = 16 * f.sc;
       ctx.save();
       ctx.beginPath();
-      for (let i = 0; i < this.pts.length; i += 2) {
-        const y = this.pts[i + 1] - 3;
-        if (i === 0) ctx.moveTo(this.pts[i], y);
-        else ctx.lineTo(this.pts[i], y);
+      for (let i = 0; i < bedLine.length; i += 2) {
+        const x = bedLine[i], y = bedLine[i + 1] - 3;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
       }
-      for (let i = this.pts.length - 2; i >= 0; i -= 2) ctx.lineTo(this.pts[i], this.pts[i + 1] + band);
+      for (let i = bedLine.length - 2; i >= 0; i -= 2) ctx.lineTo(bedLine[i], bedLine[i + 1] + band);
       ctx.closePath();
       ctx.clip();
       ctx.globalCompositeOperation = "lighter";
-      tileCaustics(ctx, 0, this.minY - 10, W, shallow - this.minY + band + 10, t * 0.8, 0.9 * f.sc, 0.18 * ca);
+      tileCaustics(ctx, left, this.minY - 10, right - left, shallow - this.minY + band + 10, t * 0.8, 0.9 * f.sc, 0.18 * ca);
       ctx.restore();
     }
 
@@ -213,9 +242,13 @@ export class SeabedRenderer {
 
   private drawFeatures(f: Frame) {
     const { ctx, W, sY, sc, t } = f;
+    const view = horizontalRange(f, 40 * sc);
+    const inView = (x: number, padding = 0) => x + padding >= view.left && x - padding <= view.right;
     const feat = f.spot.feature;
     if (feat === "pier") {
-      for (let x = 6; x < W * 0.2; x += 34 * sc) {
+      const step = 34 * sc;
+      const first = 6 + Math.max(0, Math.ceil((view.left - 6) / step)) * step;
+      for (let x = first; x < Math.min(W * 0.2, view.right); x += step) {
         const yb = this.bedY(x);
         ctx.fillStyle = "#3a2818";
         ctx.fillRect(x, sY - 2, 6 * sc, yb - sY + 6);
@@ -234,13 +267,14 @@ export class SeabedRenderer {
       }
     }
     this.drawNewFeatures(f);
-    if (feat === "wreck") this.drawWreck(f, W * 0.66);
-    if (feat === "trench") this.drawSkeleton(f, W * 0.2);
+    if (feat === "wreck" && inView(W * 0.66, 150 * sc)) this.drawWreck(f, W * 0.66);
+    if (feat === "trench" && inView(W * 0.2, 150 * sc)) this.drawSkeleton(f, W * 0.2);
     if (feat === "sargassum") {
       const r = rng(5);
       for (let i = 0; i < 9; i++) {
-        const x = f.chunkOffset!==undefined?100*f.sc+r()*(W-200*f.sc):r()*W;
+        const x = f.chunkOffset !== undefined ? 100 * f.sc + r() * (W - 200 * f.sc) : r() * W;
         const len = (30 + r() * 50) * sc;
+        if (!inView(x, 50 * sc)) continue;
         ctx.strokeStyle = "#8a6a24";
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -255,7 +289,7 @@ export class SeabedRenderer {
         }
       }
     }
-    if (feat === "waterfall") {
+    if (feat === "waterfall" && inView(W * 0.93, 40 * sc)) {
       ctx.fillStyle = "rgba(230,245,255,0.5)";
       for (let i = 0; i < 30; i++) {
         const p = (t * 0.35 + i / 30) % 1;
@@ -268,6 +302,7 @@ export class SeabedRenderer {
       ctx.fillStyle = "rgba(210,235,250,0.55)";
       for (let i = 0; i < 4; i++) {
         const x = ((i * 0.27 + t * 0.004) % 1.2) * W - W * 0.1;
+        if (!inView(x + 25 * sc, 25 * sc)) continue;
         ctx.beginPath();
         ctx.moveTo(x, sY);
         ctx.lineTo(x + 50 * sc, sY);
@@ -281,6 +316,8 @@ export class SeabedRenderer {
 
   private drawNewFeatures(f: Frame) {
     const { ctx, W, sY, sc, t, spot } = f;
+    const view = horizontalRange(f, 40 * sc);
+    const inView = (x: number, padding = 0) => x + padding >= view.left && x - padding <= view.right;
     const feat = spot.feature;
     const r = rng(spot.seed * 13);
     // камыш и сваи лимана
@@ -290,8 +327,10 @@ export class SeabedRenderer {
       const n = feat === "reeds" ? 26 : 10;
       for (let i = 0; i < n; i++) {
         const x = r() * W * (feat === "reeds" ? 0.2 : 0.14);
+        const width = (1.2 + r() * 1.4) * sc;
+        if (!inView(x, 8 * sc)) continue;
         const yb = this.bedY(x);
-        ctx.lineWidth = (1.2 + r() * 1.4) * sc;
+        ctx.lineWidth = width;
         ctx.beginPath();
         ctx.moveTo(x, sY);
         ctx.quadraticCurveTo(x + Math.sin(t * 0.6 + i) * 3, (sY + yb) / 2, x + Math.sin(t * 0.5 + i) * 2, yb + 2);
@@ -302,6 +341,7 @@ export class SeabedRenderer {
       for (const hx of [0.58, 0.7, 0.86]) {
         for (const dx of [-16, -5, 6, 16]) {
           const x = W * hx + dx * sc * 1.3;
+          if (!inView(x, 12 * sc)) continue;
           const yb = this.bedY(x);
           ctx.fillStyle = "#3a2c1e";
           ctx.fillRect(x - 2 * sc, sY - 2, 4 * sc, yb - sY + 6);
@@ -313,6 +353,7 @@ export class SeabedRenderer {
     if (feat === "channel") {
       for (const bx of [0.35, 0.57, 0.79]) {
         const x = W * bx;
+        if (!inView(x, 20 * sc)) continue;
         const yb = this.bedY(x);
         ctx.strokeStyle = "rgba(90,80,70,0.8)";
         ctx.lineWidth = 1.2;
@@ -331,11 +372,12 @@ export class SeabedRenderer {
       const n = feat === "kelpforest" ? 16 : feat === "otters" ? 9 : 6;
       for (let i = 0; i < n; i++) {
         const x = feat === "canyon" ? r() * W * 0.45 : r() * W;
+        const phase = r() * 10;
+        if (!inView(x, 50 * sc)) continue;
         const yb = this.bedY(x);
         const top = sY + 3;
         if (yb - top < 20) continue;
         const segs = 16;
-        const phase = r() * 10;
         const pts: [number, number][] = [];
         for (let k = 0; k <= segs; k++) {
           const q = k / segs;
@@ -379,11 +421,13 @@ export class SeabedRenderer {
         const n = feat === "flats" ? 5 : 14;
         for (let i = 0; i < n; i++) {
           const x0 = side ? W * (0.84 + r() * 0.16) : r() * W * (feat === "flats" ? 0.1 : 0.2);
-          if(f.chunkOffset!==undefined && shoreEnvelope(f,x0)<.85)continue;
-          const x1 = x0 + (side ? -1 : 1) * (10 + r() * 50) * sc;
+          const span = (10 + r() * 50) * sc;
+          const x1 = x0 + (side ? -1 : 1) * span;
+          const lineWidth = (2 + r() * 2.5) * sc;
+          if ((f.chunkOffset !== undefined && shoreEnvelope(f, x0) < 0.85) || !inView(x0, span)) continue;
           const yb = this.bedY(x1);
           ctx.strokeStyle = "#3e3024";
-          ctx.lineWidth = (2 + r() * 2.5) * sc;
+          ctx.lineWidth = lineWidth;
           ctx.lineCap = "round";
           ctx.beginPath();
           ctx.moveTo(x0, sY - 4);
@@ -403,6 +447,7 @@ export class SeabedRenderer {
     if (feat === "caldera" || feat === "lava") {
       for (let i = 0; i < 4; i++) {
         const x = W * (0.45 + i * 0.1);
+        if (!inView(x, 10 * sc)) continue;
         const yb = this.bedY(x);
         for (let k = 0; k < 10; k++) {
           const p = (t * 0.25 + k / 10 + i * 0.3) % 1;
@@ -414,20 +459,23 @@ export class SeabedRenderer {
         }
       }
       if (feat === "lava") {
-        const x = W * 0.38, yb = this.bedY(x);
-        ctx.fillStyle = "#1a1210";
-        for (let k = 0; k < 6; k++) {
-          ctx.beginPath();
-          ctx.ellipse(x + (k - 3) * 14 * sc, yb - (k % 2) * 8 * sc, 12 * sc, 8 * sc, 0, 0, Math.PI * 2);
-          ctx.fill();
+        const x = W * 0.38, yb = this.bedY(W * 0.38);
+        if (inView(x, 60 * sc)) {
+          ctx.fillStyle = "#1a1210";
+          for (let k = 0; k < 6; k++) {
+            ctx.beginPath();
+            ctx.ellipse(x + (k - 3) * 14 * sc, yb - (k % 2) * 8 * sc, 12 * sc, 8 * sc, 0, 0, Math.PI * 2);
+            ctx.fill();
+          }
         }
       }
     }
     // подводные части льда
     if (feat === "icebergs" || feat === "iceedge") {
       const x = feat === "icebergs" ? W * 0.87 : W * 0.72;
-      const rawW=(feat === "icebergs" ? 170 : W * 0.6)*sc;
-      const w=f.chunkOffset!==undefined?Math.min(rawW,(W-x-50)/.7,(x-50)/.8):rawW;
+      const rawW = (feat === "icebergs" ? 170 : W * 0.6) * sc;
+      const w = f.chunkOffset !== undefined ? Math.min(rawW, (W - x - 50) / 0.7, (x - 50) / 0.8) : rawW;
+      if (!inView(x, w)) return;
       const depth = (feat === "icebergs" ? 300 : 520) * sc;
       const g = ctx.createLinearGradient(0, sY, 0, sY + depth);
       g.addColorStop(0, "rgba(200,232,244,0.75)");
@@ -451,15 +499,22 @@ export class SeabedRenderer {
     if (feat === "polynya") {
       for (const [a, b] of [[0, 0.28], [0.8, 1.02]]) {
         const x0 = W * a, x1 = W * b;
+        const first = Math.max(x0, x0 + Math.floor((view.left - x0) / 8) * 8);
+        const last = Math.min(x1, x0 + Math.ceil((view.right - x0) / 8) * 8);
+        if (last <= first) continue;
         ctx.fillStyle = "rgba(214,236,246,0.92)";
         ctx.beginPath();
-        ctx.moveTo(x0,sY-3*shoreEnvelope(f,x0));
-        ctx.lineTo(x1,sY-3*shoreEnvelope(f,x1));
-        for (let x = x1; x >= x0; x -= 8) ctx.lineTo(x, sY + (10 + Math.sin(x * 0.07) * 4 + hash1(x) * 6) * sc * shoreEnvelope(f,x));
+        ctx.moveTo(first, sY - 3 * shoreEnvelope(f, first));
+        ctx.lineTo(last, sY - 3 * shoreEnvelope(f, last));
+        for (let x = last; x >= first; x -= 8) ctx.lineTo(x, sY + (10 + Math.sin(x * 0.07) * 4 + hash1(x) * 6) * sc * shoreEnvelope(f, x));
         ctx.closePath();
         ctx.fill();
         ctx.fillStyle = "rgba(160,200,220,0.5)";
-        for(let x=x0;x<x1;x+=13){const k=shoreEnvelope(f,x);if(k>.25)ctx.fillRect(x,sY+(12+hash1(x*2)*8)*sc*k,3,(4+hash1(x)*10)*sc*k);}
+        const markStart = x0 + Math.max(0, Math.ceil((first - x0) / 13)) * 13;
+        for (let x = markStart; x < last; x += 13) {
+          const k = shoreEnvelope(f, x);
+          if (k > 0.25) ctx.fillRect(x, sY + (12 + hash1(x * 2) * 8) * sc * k, 3, (4 + hash1(x) * 10) * sc * k);
+        }
       }
     }
   }
@@ -570,6 +625,8 @@ export class SeabedRenderer {
 
   private drawDecor(f: Frame, d: Decor) {
     const { ctx, t } = f;
+    const view = horizontalRange(f, 50 * f.sc);
+    if (d.x < view.left || d.x > view.right) return;
     if (d.y - 290 * f.sc > f.cam + f.H || d.y + 20 < f.cam) return;
     const s = d.s * f.sc;
     const sway = Math.sin(t * 0.8 + d.seed) * 6 * s;
@@ -1021,8 +1078,10 @@ export class SeabedRenderer {
   /** Самосвечение дна (после затемнения глубиной) */
   drawGlow(f: Frame) {
     const { ctx, t, W, cam, H } = f;
+    const view = horizontalRange(f, 30 * f.sc);
     if (this.minY - 200 > cam + H) return;
     for (const d of this.decor) {
+      if (d.x < view.left || d.x > view.right) continue;
       if (d.y < cam - 100 || d.y > cam + H + 100) continue;
       const s = d.s * f.sc;
       if (d.kind === "vent") glow(ctx, d.x, d.y - 24 * s, 6 * s, "#ff6a20", 0.8 + Math.sin(t * 3 + d.seed) * 0.2);
@@ -1032,9 +1091,12 @@ export class SeabedRenderer {
     if (f.spot.feature === "trench" || f.spot.feature === "vents" || f.spot.feature === "twilight") {
       const r = rng(3);
       for (let i = 0; i < 40; i++) {
-        const x = f.chunkOffset!==undefined?100*f.sc+r()*(W-200*f.sc):r()*W;
-        const y = this.bedY(x) - r() * 300 * f.sc;
-        const a = Math.max(0, Math.sin(t * (0.5 + r()) + i * 1.7));
+        const x = f.chunkOffset !== undefined ? 100 * f.sc + r() * (W - 200 * f.sc) : r() * W;
+        const yOffset = r() * 300 * f.sc;
+        const speed = 0.5 + r();
+        if (x < view.left || x > view.right) continue;
+        const y = this.bedY(x) - yOffset;
+        const a = Math.max(0, Math.sin(t * speed + i * 1.7));
         if (a > 0.1) glow(ctx, x, y, 1.2, i % 3 ? "#50e0ff" : "#80ffb0", a * 0.7);
       }
     }

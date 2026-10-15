@@ -16,6 +16,7 @@ export interface EngineView {
 
 export interface Frame {
   buttonControls?: boolean;
+  /** Camera bounds in the coordinate system used by the current renderer/chunk. */
   viewLeft?: number;
   viewWidth?: number;
   chunkOffset?: number;
@@ -72,6 +73,27 @@ export interface Frame {
   waveY: (x: number) => number;
   /** откуда светит солнце/луна: dx −1 (слева) … 1 (справа), k — сила 0..1 */
   light?: { dx: number; k: number };
+}
+
+/** Horizontal draw window; chunks keep world coordinates, so culling must use the local frame bounds. */
+export function horizontalRange(f: Pick<Frame, "W" | "viewLeft" | "viewWidth">, padding = 0) {
+  const pad = Math.max(0, Number.isFinite(padding) ? padding : 0);
+  const left = f.viewLeft ?? 0;
+  const right = left + (f.viewWidth ?? f.W);
+  return {
+    left: Math.min(f.W + pad, Math.max(-pad, left - pad)),
+    right: Math.max(-pad, Math.min(f.W + pad, right + pad)),
+  };
+}
+
+export function overlapsHorizontal(
+  f: Pick<Frame, "W" | "viewLeft" | "viewWidth">,
+  x0: number,
+  x1 = x0,
+  padding = 0,
+) {
+  const range = horizontalRange(f, padding);
+  return x1 >= range.left && x0 <= range.right;
 }
 
 /** Internal coasts converge to one horizon; physical outer shores remain intact. */

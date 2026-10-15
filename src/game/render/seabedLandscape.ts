@@ -1,4 +1,4 @@
-import type { Frame } from "./frame";
+import { horizontalRange, type Frame } from "./frame";
 import { clamp, hash1, hexA, mix, rng } from "./util";
 
 export interface BedFormation {
@@ -65,9 +65,13 @@ export class SeabedLandscape {
   backdrop(f: Frame, bed: BedSurface) {
     this.prepare(f);
     const { ctx, W, H, sc } = f;
+    const view = horizontalRange(f, 10);
+    const gridStart = -10;
+    const x0 = Math.max(gridStart, gridStart + Math.floor((view.left - gridStart) / 10) * 10);
+    const x1 = Math.min(W + 10, view.right + 10);
     ctx.save();
     ctx.beginPath();
-    ctx.rect(-2, f.sY + 1, W+4, Math.max(1, f.cam + H - f.sY));
+    ctx.rect(view.left, f.sY + 1, Math.max(0, view.right - view.left), Math.max(1, f.cam + H - f.sY));
     ctx.clip();
     // Two distant ridgelines fade into the habitat's water; they never replace the real floor.
     for (const layer of [0, 1]) {
@@ -78,8 +82,8 @@ export class SeabedLandscape {
       g.addColorStop(1, hexA(col, 0.15));
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.moveTo(-10, f.cam + H + 10);
-      for (let x = -10; x <= W + 10; x += 10) {
+      ctx.moveTo(x0, f.cam + H + 10);
+      for (let x = x0; x <= x1; x += 10) {
         const q = clamp(x / W, 0, 1),
           remap = q * 0.72 + 0.1 + layer * 0.06;
         const ridge =
@@ -88,7 +92,7 @@ export class SeabedLandscape {
             sc;
         ctx.lineTo(x, Math.max(f.sY + 20 * sc, ridge));
       }
-      ctx.lineTo(W + 10, f.cam + H + 10);
+      ctx.lineTo(x1, f.cam + H + 10);
       ctx.closePath();
       ctx.fill();
     }
@@ -100,24 +104,28 @@ export class SeabedLandscape {
     this.prepare(f);
     const { ctx, W, H, sc } = f,
       soft = sedimentBed(f.loc.seabed) || f.loc.seabed === "coral";
+    const view = horizontalRange(f, 30 * sc);
     const material = mix(
       f.loc.bed,
       "#82938b",
       f.loc.maxDepth > 100 ? 0.28 : 0.08,
     );
-    const bands = f.quality === 0 ? 3 : 7, start=f.chunkOffset!==undefined?-8:0;
+    const bands = f.quality === 0 ? 3 : 7, start = f.chunkOffset !== undefined ? -8 : 0;
+    const xStart = start + Math.max(0, Math.floor((view.left - start) / 8)) * 8;
+    const xEnd = Math.min(W + 8, start + Math.ceil((view.right + 8 - start) / 8) * 8);
     for (let k = 0; k < bands; k++) {
       ctx.beginPath();
       const offset = (10 + k * k * 7) * sc;
-      for (let x = start; x <= W + 8; x += 8) {
+      let first = true;
+      for (let x = xStart; x <= xEnd; x += 8) {
         const y =
           bed(x) +
           offset +
-          Math.sin((x+(f.chunkOffset??0)) * 0.012 + k * 2 + (f.chunkOffset!==undefined?1:f.spot.seed)) * (4 + k * 2) * sc;
-        if (x === start) ctx.moveTo(x, y);
+          Math.sin((x + (f.chunkOffset ?? 0)) * 0.012 + k * 2 + (f.chunkOffset !== undefined ? 1 : f.spot.seed)) * (4 + k * 2) * sc;
+        if (first) { ctx.moveTo(x, y); first = false; }
         else ctx.lineTo(x, y);
       }
-      for (let x = W + 8; x >= start; x -= 8)
+      for (let x = xEnd; x >= xStart; x -= 8)
         ctx.lineTo(
           x,
           bed(x) +
@@ -134,6 +142,7 @@ export class SeabedLandscape {
     }
     // Pockets, compacted sediment and fractured mineral seams in the cutaway.
     for (const o of this.formations) {
+      if (o.x + o.width * 0.6 < view.left || o.x - o.width * 0.6 > view.right) continue;
       const y = bed(o.x) + 30 * sc;
       if (y > f.cam + H + 20 || y + 200 * sc < f.cam) continue;
       if (!soft) {
@@ -163,8 +172,9 @@ export class SeabedLandscape {
     if (f.quality > 0) {
       const stride = f.quality === 1 ? 3 : 1;
       for (let i = 0; i < this.grains.length; i += stride) {
-        const p = this.grains[i],
-          y = bed(p.x) + p.offset;
+        const p = this.grains[i];
+        if (p.x < view.left || p.x > view.right) continue;
+        const y = bed(p.x) + p.offset;
         if (y < f.cam - 5 || y > f.cam + H + 5) continue;
         ctx.fillStyle = hexA(
           p.shade > 0.5 ? "#d8cead" : "#12272c",
@@ -186,8 +196,9 @@ export class SeabedLandscape {
     if (soft) {
       ctx.lineWidth = 0.8 * sc;
       for (let i = 0; i < (f.quality === 0 ? 12 : 34); i++) {
-        const x = hash1(i + f.spot.seed) * W,
-          y = bed(x) + (4 + hash1(i + 35) * 50) * sc;
+        const x = hash1(i + f.spot.seed) * W;
+        if (x + 26 * sc < view.left || x - 20 * sc > view.right) continue;
+        const y = bed(x) + (4 + hash1(i + 35) * 50) * sc;
         ctx.strokeStyle = hexA("#ded4ac", 0.12);
         ctx.beginPath();
         ctx.moveTo(x - 20 * sc, y + 2 * sc);
@@ -209,8 +220,10 @@ export class SeabedLandscape {
     this.prepare(f);
     const { ctx, sc, W, H } = f,
       kind = f.loc.seabed;
+    const view = horizontalRange(f, 30 * sc);
     for (const [i, o] of this.formations.entries()) {
       if (f.quality === 0 && i % 2) continue;
+      if (o.x + o.width * 0.6 < view.left || o.x - o.width * 0.6 > view.right) continue;
       const soft = sedimentBed(kind),
         half = o.width * (soft ? 0.25 : 0.45);
       const contact = bedContact(bed, o.x, half),
@@ -360,8 +373,9 @@ export class SeabedLandscape {
     if (["sand", "silt", "roots", "kelp", "kelpforest"].includes(kind)) {
       const n = f.quality === 0 ? 3 : 6;
       for (let i = 0; i < n; i++) {
-        const x = W * ((i + 0.4) / n),
-          y = bed(x);
+        const x = W * ((i + 0.4) / n);
+        if (x < view.left - 40 * sc || x > view.right + 40 * sc) continue;
+        const y = bed(x);
         if (y - 150 * sc > f.cam + H || y < f.cam - 20) continue;
         const tall = kind === "kelp" || kind === "kelpforest";
         const height = Math.min(

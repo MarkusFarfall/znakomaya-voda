@@ -1,10 +1,31 @@
 import type { LocId } from "../types";
 import type { Frame } from "./frame";
-import { clamp, glow, hexA, mix } from "./util";
+import { clamp, glow, hexA, mix, rng } from "./util";
 
 type Kind = "cargo" | "sailboat" | "trawler" | "whale" | "orca" | "dolphins" | "seals" | "birds" | "plane" | "fishjump" | "turtle" | "flyingfish" | "manta" | "calving" | "balloon" | "fireworks" | "meteor" | "heron" | "canoe" | "lavaburst" | "penguins" | "storm";
 
-interface Happening { kind: Kind; t: number; dur: number; x0: number; dir: 1 | -1; p: number; seed: number }
+interface Happening { kind: Kind; t: number; dur: number; x0: number; vx: number; dir: 1 | -1; p: number; seed: number }
+
+export interface AmbientPath { x0: number; vx: number; duration: number }
+
+/** A passer crosses the actual camera window, not the full multi-region world. */
+export function ambientPath(
+  viewLeft: number,
+  viewWidth: number,
+  direction: 1 | -1,
+  margin: number,
+  speed: number,
+  cameraSpeed = 0,
+): AmbientPath {
+  const width = Math.max(1, viewWidth);
+  const edge = Math.max(0, margin);
+  const velocity = Math.max(1, Math.abs(speed));
+  return {
+    x0: direction > 0 ? viewLeft - edge : viewLeft + width + edge,
+    vx: cameraSpeed + direction * velocity,
+    duration: (width + edge * 2) / velocity,
+  };
+}
 
 /** Какие фоновые события возможны в акватории */
 const POOL: Record<LocId, Kind[]> = {
@@ -27,10 +48,22 @@ const DUR: Record<Kind, number> = {
   flyingfish: 3, manta: 3, calving: 9, balloon: 50, fireworks: 14, meteor: 1.4, heron: 12, canoe: 40, lavaburst: 10, penguins: 18, storm: 12,
 };
 
+const CROSSING_SPEED: Partial<Record<Kind, number>> = {
+  cargo: 120, sailboat: 140, trawler: 130, canoe: 150,
+  birds: 100, plane: 260, heron: 70, balloon: 55,
+  orca: 130, dolphins: 150,
+};
+const CROSSING_MARGIN: Partial<Record<Kind, number>> = {
+  cargo: 140, sailboat: 60, trawler: 80, canoe: 30,
+  birds: 80, plane: 40, heron: 30, balloon: 30,
+  orca: 40, dolphins: 45,
+};
+
 export class AmbientLife {
   private list: Happening[] = [];
   private timer = 6;
   private loc = "";
+  private random = rng(1);
 
   update(f: Frame) {
     const { e, dt, W } = f;
@@ -38,16 +71,45 @@ export class AmbientLife {
       this.loc = e.s.location;
       this.list = [];
       this.timer = 3;
+      let seed = 2166136261;
+      for (let i = 0; i < this.loc.length; i++) seed = Math.imul(seed ^ this.loc.charCodeAt(i), 16777619);
+      this.random = rng(((seed ^ e.day) >>> 0) / 1000);
     }
     this.timer -= dt;
     if (this.timer <= 0 && this.list.length < 3) {
-      this.timer = 9 + Math.random() * 16;
+      this.timer = 9 + this.random() * 16;
       const pool = POOL[e.s.location].filter((k) => this.allowed(f, k));
       if (pool.length) {
-        const kind = pool[Math.floor(Math.random() * pool.length)];
+        const kind = pool[Math.floor(this.random() * pool.length)];
         if (!this.list.some((h) => h.kind === kind)) {
-          const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
-          this.list.push({ kind, t: 0, dur: DUR[kind] * (0.8 + Math.random() * 0.4), x0: W * (0.35 + Math.random() * 0.55), dir, p: 0.1 + Math.random() * 0.7, seed: Math.random() * 100 });
+          const dir: 1 | -1 = this.random() < 0.5 ? 1 : -1;
+          const p = 0.1 + this.random() * 0.7;
+          const seed = this.random() * 100;
+          const width = Math.max(1, Math.min(W, f.viewWidth ?? Math.min(W, 1200)));
+          const left = clamp(f.viewLeft ?? (f.boatX ?? W * 0.5) - width * 0.5, 0, Math.max(0, W - width));
+          const cameraSpeed = e.navigationMode && Number.isFinite(e.navigation.velocity) ? e.navigation.velocity : 0;
+          const pathSpeed = CROSSING_SPEED[kind];
+          let x0: number;
+          let vx = 0;
+          let dur = DUR[kind] * (0.8 + this.random() * 0.4);
+          if (pathSpeed !== undefined) {
+            const speed = pathSpeed * (0.9 + this.random() * 0.2);
+            const path = ambientPath(left, width, dir, (CROSSING_MARGIN[kind] ?? 40) * f.sc, speed, cameraSpeed);
+            x0 = path.x0;
+            vx = path.vx;
+            dur = path.duration;
+          } else if (kind === "fireworks") {
+            x0 = left + width * 0.5;
+          } else if (kind === "storm") {
+            x0 = left + width * 0.62;
+          } else if (kind === "lavaburst") {
+            x0 = left + width * 0.72;
+          } else if (kind === "calving") {
+            x0 = left + width * (0.45 + this.random() * 0.1);
+          } else {
+            x0 = left + width * (0.2 + this.random() * 0.6);
+          }
+          this.list.push({ kind, t: 0, dur, x0, vx, dir, p, seed });
         }
       }
     }
@@ -55,11 +117,15 @@ export class AmbientLife {
     this.list = this.list.filter((h) => h.t < h.dur);
   }
 
+  private x(h: Happening) {
+    return h.x0 + h.vx * h.t;
+  }
+
   private allowed(f: Frame, k: Kind) {
     const night = f.night > 0.55;
     const bad = f.weather === "storm" || f.weather === "rain";
     switch (k) {
-      case "fireworks": return night && !bad && new Date().getDay() % 6 === 0;
+      case "fireworks": return night && !bad && f.e.day % 7 === 6;
       case "meteor": return night && f.cover < 0.6;
       case "balloon": case "plane": case "birds": case "heron": case "canoe": case "sailboat": return !night && f.weather !== "storm";
       case "storm": return f.weather === "cloudy" || f.weather === "rain";
@@ -131,11 +197,12 @@ export class AmbientLife {
 
   // ─── суда ───
   private cargo(f: Frame, h: Happening, k: number) {
-    const { ctx, W } = f;
-    const p = h.p * 0.35;
+    const { ctx } = f;
+    const p = 0.22 + h.p * 0.28;
     const y = this.y(f, p) + 1, s = this.sz(f, p) * 1.6;
-    const x = h.dir > 0 ? -140 + (W + 280) * k : W + 140 - (W + 280) * k;
+    const x = this.x(h);
     ctx.save();
+    ctx.globalAlpha *= this.fade(k, 0.12);
     ctx.translate(x, y);
     ctx.scale(h.dir * s, s);
     ctx.fillStyle = this.col(f, "#3a3e44", p);
@@ -161,12 +228,13 @@ export class AmbientLife {
   }
 
   private sailboat(f: Frame, h: Happening, k: number) {
-    const { ctx, W, t } = f;
+    const { ctx, t } = f;
     const p = 0.15 + h.p * 0.35;
     const y = this.y(f, p) + 1, s = this.sz(f, p);
-    const x = h.dir > 0 ? -60 + (W + 120) * k : W + 60 - (W + 120) * k;
+    const x = this.x(h);
     const heel = Math.sin(t * 0.8 + h.seed) * 0.05 - h.dir * 0.08;
     ctx.save();
+    ctx.globalAlpha *= this.fade(k, 0.12);
     ctx.translate(x, y + Math.sin(t * 1.3 + h.seed) * s);
     ctx.rotate(heel);
     ctx.scale(h.dir * s, s);
@@ -183,11 +251,12 @@ export class AmbientLife {
   }
 
   private trawler(f: Frame, h: Happening, k: number) {
-    const { ctx, W, t } = f;
+    const { ctx, t } = f;
     const p = 0.2 + h.p * 0.3;
     const y = this.y(f, p) + 1, s = this.sz(f, p) * 1.2;
-    const x = h.dir > 0 ? -80 + (W + 160) * k : W + 80 - (W + 160) * k;
+    const x = this.x(h);
     ctx.save();
+    ctx.globalAlpha *= this.fade(k, 0.12);
     ctx.translate(x, y + Math.sin(t * 1.1 + h.seed) * 0.8 * s);
     ctx.scale(h.dir * s, s);
     ctx.fillStyle = this.col(f, "#2a4a6a", p);
@@ -209,12 +278,13 @@ export class AmbientLife {
   }
 
   private canoe(f: Frame, h: Happening, k: number) {
-    const { ctx, W, t } = f;
+    const { ctx, t } = f;
     const p = 0.35 + h.p * 0.35;
     const y = this.y(f, p) + 1, s = this.sz(f, p);
-    const x = h.dir > 0 ? -30 + (W * 0.7) * k : W + 30 - (W * 0.7) * k;
+    const x = this.x(h);
     const stroke = Math.sin(t * 2.4 + h.seed);
     ctx.save();
+    ctx.globalAlpha *= this.fade(k, 0.12);
     ctx.translate(x, y);
     ctx.scale(h.dir * s, s);
     ctx.fillStyle = this.col(f, f.loc.climate === "tropic" ? "#8a5a30" : "#c8742e", p);
@@ -269,10 +339,10 @@ export class AmbientLife {
   }
 
   private orca(f: Frame, h: Happening, k: number) {
-    const { ctx, W, t } = f;
+    const { ctx, t } = f;
     const p = 0.35 + h.p * 0.35;
     const y = this.y(f, p), s = this.sz(f, p) * 1.3;
-    const base = h.dir > 0 ? W * 0.1 + W * 0.6 * k : W * 0.9 - W * 0.6 * k;
+    const base = this.x(h);
     for (let i = 0; i < 3; i++) {
       const ph = (t * 1.1 + i * 1.3 + h.seed) % (Math.PI * 2);
       const up = Math.max(0, Math.sin(ph));
@@ -292,12 +362,13 @@ export class AmbientLife {
   }
 
   private dolphins(f: Frame, h: Happening, k: number) {
-    const { ctx, W } = f;
+    const { ctx } = f;
     const p = 0.4 + h.p * 0.4;
     const y0 = this.y(f, p), s = this.sz(f, p);
+    const base = this.x(h);
     for (let i = 0; i < 4; i++) {
       const q = (k * 3 + i * 0.22) % 1;
-      const cx = (h.dir > 0 ? W * 0.15 : W * 0.85) + h.dir * (k * W * 0.6 + i * 26 * s);
+      const cx = base - h.dir * i * 26 * s;
       const x = cx + h.dir * (q - 0.5) * 40 * s;
       const y = y0 - Math.sin(q * Math.PI) * 22 * s;
       ctx.save();
@@ -396,8 +467,8 @@ export class AmbientLife {
   }
 
   private heron(f: Frame, h: Happening, k: number) {
-    const { ctx, W, t } = f;
-    const x = h.dir > 0 ? -30 + (W + 60) * k : W + 30 - (W + 60) * k;
+    const { ctx, t } = f;
+    const x = this.x(h);
     const y = f.hY - 30 - h.p * 40 + Math.sin(t * 0.7) * 4;
     const s = f.sc * 1.2;
     const fl = Math.sin(t * 3.5) * 5 * s;
@@ -411,8 +482,8 @@ export class AmbientLife {
   }
 
   private lavaBurst(f: Frame, h: Happening, k: number) {
-    const { ctx, W } = f;
-    const x = W * 0.72, y = f.hY - f.H * 0.26;
+    const { ctx } = f;
+    const x = h.x0, y = f.hY - f.H * 0.26;
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     for (let i = 0; i < 26; i++) {
@@ -435,8 +506,8 @@ export class AmbientLife {
   }
 
   private calving(f: Frame, h: Happening, k: number) {
-    const { ctx, W } = f;
-    const x = W * (0.45 + (h.seed % 1) * 0.4), y = f.hY;
+    const { ctx } = f;
+    const x = h.x0, y = f.hY;
     const hgt = f.H * 0.09;
     const q = clamp(k / 0.5, 0, 1);
     ctx.fillStyle = this.col(f, "#e4eef4", 0.3);
@@ -472,10 +543,10 @@ export class AmbientLife {
 
   // ─── небо ───
   private plane(f: Frame, h: Happening, k: number) {
-    const { ctx, W, H } = f;
+    const { ctx, H } = f;
     const y = H * (0.06 + h.p * 0.12);
-    const x = h.dir > 0 ? -40 + (W + 80) * k : W + 40 - (W + 80) * k;
-    const tail = W * 0.35;
+    const x = this.x(h);
+    const tail = clamp((f.viewWidth ?? f.W) * 0.18, 80, 320);
     const g = ctx.createLinearGradient(x, y, x - h.dir * tail, y);
     g.addColorStop(0, hexA(mix("#ffffff", "#1a2030", f.night * 0.8), 0.55));
     g.addColorStop(1, "rgba(255,255,255,0)");
@@ -487,10 +558,10 @@ export class AmbientLife {
     if (f.night > 0.3 && Math.sin(f.t * 6) > 0.5) glow(ctx, x, y, 1, "#ff4040", 1);
   }
 
-  private birds(f: Frame, h: Happening, k: number) {
-    const { ctx, W, H, t } = f;
+  private birds(f: Frame, h: Happening, _k: number) {
+    const { ctx, H, t } = f;
     const y = H * (0.1 + h.p * 0.15);
-    const cx = h.dir > 0 ? -80 + (W + 160) * k : W + 80 - (W + 160) * k;
+    const cx = this.x(h);
     ctx.strokeStyle = mix("#2a3038", f.hor, 0.35 + f.fogK * 0.3);
     ctx.lineWidth = 1.3;
     for (let i = 0; i < 9; i++) {
@@ -501,9 +572,9 @@ export class AmbientLife {
     }
   }
 
-  private balloon(f: Frame, h: Happening, k: number) {
-    const { ctx, W, H, t } = f;
-    const x = h.dir > 0 ? W * 0.05 + W * 0.9 * k : W * 0.95 - W * 0.9 * k;
+  private balloon(f: Frame, h: Happening, _k: number) {
+    const { ctx, H, t } = f;
+    const x = this.x(h);
     const y = H * (0.12 + h.p * 0.1) + Math.sin(t * 0.3) * 6;
     const r = 11 * f.sc;
     const cols = ["#d8402a", "#f0c040", "#2a70b0"];
@@ -523,14 +594,15 @@ export class AmbientLife {
   }
 
   private fireworks(f: Frame, h: Happening) {
-    const { ctx, W, H } = f;
+    const { ctx, H } = f;
+    const width = f.viewWidth ?? f.W;
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
     for (let b = 0; b < 6; b++) {
       const t0 = b * 2.1;
       const tt = h.t - t0;
       if (tt < 0 || tt > 2.4) continue;
-      const bx = W * (0.55 + ((b * 0.37 + h.seed) % 0.4)), by = H * (0.12 + ((b * 0.29) % 0.14));
+      const bx = h.x0 + (((b * 0.37 + h.seed) % 0.4) - 0.2) * width, by = H * (0.12 + ((b * 0.29) % 0.14));
       const col = ["255,120,90", "255,220,120", "140,200,255", "200,140,255"][b % 4];
       if (tt < 0.5) {
         ctx.fillStyle = `rgba(${col},0.9)`;
@@ -549,9 +621,8 @@ export class AmbientLife {
   }
 
   private meteor(f: Frame, h: Happening, k: number) {
-    const { ctx, W, H } = f;
-    const x0 = W * (0.2 + (h.seed % 1) * 0.6), y0 = H * 0.05;
-    const x = x0 + h.dir * k * 220, y = y0 + k * 100;
+    const { ctx, H } = f;
+    const x = this.x(h) + h.dir * k * 220, y = H * 0.05 + k * 100;
     const g = ctx.createLinearGradient(x, y, x - h.dir * 90, y - 40);
     g.addColorStop(0, `rgba(255,255,240,${(1 - k).toFixed(3)})`);
     g.addColorStop(1, "rgba(255,255,255,0)");
@@ -561,8 +632,8 @@ export class AmbientLife {
   }
 
   private farStorm(f: Frame, h: Happening, k: number) {
-    const { ctx, W } = f;
-    const x = W * (0.6 + (h.seed % 1) * 0.3), y = f.hY;
+    const { ctx } = f;
+    const x = h.x0, y = f.hY;
     const col = mix("#3a4050", f.hor, 0.3);
     ctx.fillStyle = hexA(col, 0.5 * this.fade(k, 0.2));
     ctx.beginPath(); ctx.ellipse(x, y - 30, 70, 22, 0, 0, Math.PI * 2); ctx.fill();
@@ -573,7 +644,7 @@ export class AmbientLife {
       ctx.strokeStyle = "rgba(240,240,255,0.8)";
       ctx.beginPath(); ctx.moveTo(x, y - 28); ctx.lineTo(x - 5, y - 16); ctx.lineTo(x + 2, y - 12); ctx.lineTo(x - 3, y); ctx.stroke();
       ctx.fillStyle = "rgba(220,230,255,0.08)";
-      ctx.fillRect(0, 0, W, y);
+      ctx.fillRect(f.viewLeft ?? 0, 0, f.viewWidth ?? f.W, y);
     }
   }
 }

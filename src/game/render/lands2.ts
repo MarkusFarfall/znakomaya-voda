@@ -1,4 +1,4 @@
-import { shoreEnvelope, type Frame } from "./frame";
+import { horizontalRange, overlapsHorizontal, shoreEnvelope, type Frame } from "./frame";
 import type { LandRenderer } from "./land";
 import { clamp, fbm, glow, hash1, hexA, mix, rng, af } from "./util";
 
@@ -215,6 +215,7 @@ export class ExtraLand {
   // ───────────── за основными слоями ─────────────
   drawBack(L: LandRenderer, f: Frame) {
     const { ctx, W, hY } = f;
+    const view = horizontalRange(f, 24);
     if (!this.far.length) return;
     const land = f.loc.land;
     if (land === "estuary") {
@@ -223,6 +224,7 @@ export class ExtraLand {
       const pc = L.colorOf(f, f.e.season === 2 ? "#8a7a3a" : f.e.season === 3 ? "#6a6456" : "#3e5232", 0.66);
       ctx.fillStyle = pc;
       for (const x of this.poplars) {
+        if (x < view.left - 10 || x > view.right + 10) continue;
         const h = 10 + hash1(x) * 10;
         ctx.beginPath();
         ctx.ellipse(x, hY - h * 0.55, 2.2 + hash1(x * 3) * 1.5, h * 0.55, 0, 0, TAU);
@@ -246,6 +248,7 @@ export class ExtraLand {
       ctx.fillStyle = L.colorOf(f, "#2a3a32", 0.72);
       for (let i = 2; i < this.far.length - 2; i += 6) {
         const x = this.far[i], y = this.far[i + 1];
+        if (x < view.left - 4 || x > view.right + 4) continue;
         if (hY - y > 3) {
           ctx.beginPath();
           ctx.moveTo(x, y - 5);
@@ -261,6 +264,7 @@ export class ExtraLand {
       ctx.fillStyle = c;
       for (let i = 2; i < this.far.length - 2; i += 2) {
         const x = this.far[i], y = this.far[i + 1];
+        if (x < view.left - 12 || x > view.right + 12) continue;
         ctx.beginPath();
         ctx.arc(x, y + 4, 7 + hash1(x) * 8, Math.PI, 0);
         ctx.fill();
@@ -280,6 +284,7 @@ export class ExtraLand {
       ctx.fillStyle = L.colorOf(f, "#4a4e56", 0.78);
       for (let i = 4; i < this.far.length - 4; i += 10) {
         const x = this.far[i], y = this.far[i + 1];
+        if (x < view.left - 8 || x > view.right + 8) continue;
         if (hash1(x) < 0.35) {
           ctx.beginPath();
           ctx.moveTo(x, y + 2);
@@ -303,25 +308,26 @@ export class ExtraLand {
   // ───────────── предметы в полосе моря ─────────────
   drawSea(L: LandRenderer, f: Frame) {
     const land = f.loc.land;
+    const visible = (x: number, half = 80) => overlapsHorizontal(f, x - half, x + half);
     if (land === "estuary") {
-      for (const r of this.reeds) this.drawReedClump(L, f, r);
-      for (const h of this.huts) this.drawHut(L, f, h);
-      for (const b of this.buoys) this.drawBuoy(L, f, b);
-      for (const e of this.egrets) if (e.y > 0) this.drawHeron(L, f, e);
+      for (const r of this.reeds) if (visible(r.x, r.w * 0.6)) this.drawReedClump(L, f, r);
+      for (const h of this.huts) if (visible(h.x, 70 * h.w * f.sc)) this.drawHut(L, f, h);
+      for (const b of this.buoys) if (visible(b.x, 30 * f.sc)) this.drawBuoy(L, f, b);
+      for (const e of this.egrets) if (e.y > 0 && visible(e.x, 24 * e.s)) this.drawHeron(L, f, e);
     } else if (land === "skerries") {
-      for (const i of this.islands) this.drawIsland(L, f, i);
+      for (const i of this.islands) if (visible(i.x, 80 * i.w * f.sc)) this.drawIsland(L, f, i);
     } else if (land === "kelpcoast") {
-      for (const m of this.mats) this.drawKelpMat(L, f, m);
-      for (const s of this.stacks) this.drawStack(L, f, s);
-      for (const o of this.otters) this.drawOtter(L, f, o);
+      for (const m of this.mats) if (visible(m.x, m.w * 0.7)) this.drawKelpMat(L, f, m);
+      for (const s of this.stacks) if (visible(s.x, 80 * s.w * f.sc)) this.drawStack(L, f, s);
+      for (const o of this.otters) if (visible(o.x, 36 * o.w * f.sc)) this.drawOtter(L, f, o);
     } else if (land === "mangrove") {
-      for (const b of this.sandbars) this.drawSandbar(L, f, b);
-      for (const m of this.mangroves) this.drawMangrove(L, f, m);
+      for (const b of this.sandbars) if (visible(b.x, b.w * 0.7)) this.drawSandbar(L, f, b);
+      for (const m of this.mangroves) if (visible(m.x, 55 * m.h * f.sc)) this.drawMangrove(L, f, m);
     } else if (land === "volcano") {
       if (f.spot.feature === "caldera") this.drawCalderaRing(L, f);
       this.drawSteam(f);
     } else if (land === "ice") {
-      for (const b of this.bergs) this.drawBerg(L, f, b);
+      for (const b of this.bergs) if (visible(b.x, b.w * 0.8)) this.drawBerg(L, f, b);
     }
   }
 
@@ -329,12 +335,12 @@ export class ExtraLand {
   drawFront(L: LandRenderer, f: Frame) {
     const { W, sY, sc, e } = f;
     const land = f.loc.land;
-    if (land === "estuary" && f.spot.feature === "reeds") {
+    if (land === "estuary" && f.spot.feature === "reeds" && overlapsHorizontal(f, 0, W * 0.16)) {
       const [c, pc] = reedColors(e.season);
       this.reedStalks(f, 0, W * 0.16, sY + 4, 150 * sc, 34, 7.1, L.colorOf(f, c, 0), L.colorOf(f, pc, 0), 2.2);
     }
-    if (land === "mangrove" && f.spot.feature === "roots") this.drawMangrove(L, f, { x: W * 0.06, p: 1, w: 1, h: 1.9, seed: 3.3 }, true);
-    if (land === "ice" && (f.spot.feature === "icebergs" || f.spot.feature === "iceedge")) {
+    if (land === "mangrove" && f.spot.feature === "roots" && overlapsHorizontal(f, W * 0.06 - 100 * sc, W * 0.06 + 100 * sc)) this.drawMangrove(L, f, { x: W * 0.06, p: 1, w: 1, h: 1.9, seed: 3.3 }, true);
+    if (land === "ice" && (f.spot.feature === "icebergs" || f.spot.feature === "iceedge") && overlapsHorizontal(f, W * 0.87 - 200 * sc, W * 0.87 + 200 * sc)) {
       this.drawBerg(L, f, { x: W * 0.87, p: 1, w: 150 * sc, h: 60 * sc, seed: 9.9, tab: true, peng: 4, v: 0 }, true);
     }
   }
@@ -374,11 +380,13 @@ export class ExtraLand {
 
   private reedStalks(f: Frame, x0: number, x1: number, yBase: number, h: number, n: number, seed: number, c: string, pc: string, lw: number) {
     const { ctx, t } = f;
+    const view = horizontalRange(f, h * 0.2);
     const wind = f.wind;
     ctx.lineCap = "round";
     for (let i = 0; i < n; i++) {
       const k = hash1(seed + i * 1.37);
       const x = x0 + (x1 - x0) * ((i + k * 0.8) / n);
+      if (x < view.left - 4 * lw || x > view.right + 4 * lw) continue;
       const hh = h * (0.55 + 0.45 * hash1(seed * 3 + i));
       const sway = Math.sin(t * 1.2 + seed + i * 0.6) * hh * 0.05 * (0.4 + wind) + wind * hh * 0.06;
       ctx.strokeStyle = c;
