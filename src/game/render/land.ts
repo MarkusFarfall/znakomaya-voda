@@ -1,4 +1,4 @@
-import { horizontalRange, overlapsHorizontal, shoreEnvelope, type Frame } from "./frame";
+import { hasActiveEvent, horizontalRange, overlapsHorizontal, shoreEnvelope, type Frame } from "./frame";
 import { ExtraLand } from "./lands2";
 import { clamp, fbm, glow, hash1, hexA, mix, rng, sstep, tracePoly, af, rgbHex } from "./util";
 
@@ -771,7 +771,7 @@ export class LandRenderer {
   /** Олуши, пикирующие в воду во время «чаек» и над косяком */
   drawDivers(f: Frame) {
     const { ctx, e, W, H, hY, sY, night } = f;
-    const active = e.activeEvents.some((a) => a.id === "gulls" || a.id === "shoal") && !e.isNight && f.loc.land !== "abyss";
+    const active = (hasActiveEvent(f, "gulls") || hasActiveEvent(f, "shoal")) && !e.isNight && f.loc.land !== "abyss";
     if (active && this.gannets.length < 4 && Math.random() < f.dt * 0.8)
       this.gannets.push({ x: W * (0.4 + Math.random() * 0.5), y: H * (0.08 + Math.random() * 0.1), t: 0, vx: (Math.random() - 0.5) * 30, phase: 0 });
     const col = mix("#f4f4f0", "#1a2030", night * 0.8);

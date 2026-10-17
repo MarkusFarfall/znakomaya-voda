@@ -9,7 +9,7 @@ import { fishingRodPose } from "../fishingRod";
  *
  * Если WebGL недоступен или модель упала — молча остаёмся на 2D.
  */
-import type { Frame } from "../frame";
+import { hasActiveEvent, type Frame } from "../frame";
 import type { BoatStyle } from "../../types";
 import { BOATS } from "../../world";
 import type { F } from "./frame3";
@@ -107,8 +107,7 @@ export class Boat3D {
     b.vy = clamp((b.y - oldHeave) / Math.max(dt, 1 / 240), -2.4, 2.4);
     b.heaveAcc = clamp((b.vy - oldHeaveVelocity) / Math.max(dt, 1 / 240), -4, 4);
     const slope = (bowWave - sternWave) / Math.max(1, 2 * g.L * 0.42 * PXM);
-    let calmSea = false;
-    for (const event of f.e.activeEvents) if (event.id === "calm") { calmSea = true; break; }
+    const calmSea = hasActiveEvent(f, "calm");
     const seaLoad = clamp(f.atmo.waves * f.loc.waveMult * (f.spot.swell ?? 1) * (calmSea ? 0.34 : 1), 0, 4);
     const speedTrim = pose === "helm" ? -Math.min(0.08, speed01 * speed01 * 0.08) : 0;
     const targetPitch = clamp(-Math.atan(slope) * (0.8 + 0.55 * (1 - spec.stability)) + speedTrim, -0.26, 0.26);

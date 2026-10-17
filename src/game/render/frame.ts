@@ -1,6 +1,6 @@
 import type { Engine } from "../engine";
 import type { AtmosphereState } from "../atmosphere/types";
-import type { LocationDef, SpotDef, WeatherId } from "../types";
+import type { ActiveEvent, LocationDef, SpotDef, WeatherId } from "../types";
 
 /** Что drawBoat читает из Engine (все эти поля есть в настоящем engine.ts) */
 export interface EngineView {
@@ -73,6 +73,11 @@ export interface Frame {
   waveY: (x: number) => number;
   /** откуда светит солнце/луна: dx −1 (слева) … 1 (справа), k — сила 0..1 */
   light?: { dx: number; k: number };
+  /** One render-scoped active-event snapshot shared by all scene passes. */
+  activeEvents?: readonly ActiveEvent[];
+  activeEventIds?: ReadonlySet<string>;
+  /** Lazily built once and shared by water-light clipping passes in this frame. */
+  waterClipPath?: Path2D;
 }
 
 /** Horizontal draw window; chunks keep world coordinates, so culling must use the local frame bounds. */
@@ -84,6 +89,36 @@ export function horizontalRange(f: Pick<Frame, "W" | "viewLeft" | "viewWidth">, 
     left: Math.min(f.W + pad, Math.max(-pad, left - pad)),
     right: Math.max(-pad, Math.min(f.W + pad, right + pad)),
   };
+}
+
+/** Sample a world-anchored grid around the visible window without shifting its phase. */
+export function horizontalGridRange(
+  f: Pick<Frame, "W" | "viewLeft" | "viewWidth">,
+  step: number,
+  padding = 0,
+) {
+  const interval = Number.isFinite(step) && step > 0 ? step : 1;
+  const range = horizontalRange(f, padding);
+  const left = Math.max(0, Math.min(f.W, range.left));
+  const right = Math.max(left, Math.max(0, Math.min(f.W, range.right)));
+  const lastWorldSample = Math.floor(f.W / interval) * interval;
+  const first = Math.min(lastWorldSample, Math.max(0, Math.floor(left / interval) * interval));
+  const last = Math.max(first, Math.min(lastWorldSample, Math.ceil(right / interval) * interval));
+  return { first, last };
+}
+
+function frameEvents(f: Pick<Frame, "e" | "activeEvents">): readonly ActiveEvent[] {
+  return f.activeEvents ?? f.e.activeEvents;
+}
+
+/** Read a render-scoped snapshot when available; retain compatibility for partial frames/tests. */
+export function hasActiveEvent(f: Pick<Frame, "e" | "activeEvents" | "activeEventIds">, id: string) {
+  if (f.activeEventIds) return f.activeEventIds.has(id);
+  return frameEvents(f).some((event) => event.id === id);
+}
+
+export function findActiveEvent(f: Pick<Frame, "e" | "activeEvents">, id: string) {
+  return frameEvents(f).find((event) => event.id === id);
 }
 
 export function overlapsHorizontal(

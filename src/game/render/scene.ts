@@ -7,13 +7,13 @@ import { depthToU, JUMP_TIME, TIME_SCALE, type Engine, type SonarBand } from "..
 import { FISH } from "../fish";
 import { FRIEND_PRESENCE_TTL_MS, type LiveFriendPresence } from "../friends";
 import { drawFish, drawFishGlow, fishScreenLen } from "../fishDraw";
-import type { FishDef } from "../types";
+import type { ActiveEvent, FishDef } from "../types";
 import { PrecipitationField } from "./precipitation";
 import { projectFightFish } from "./fishingGeometry";
 import { BAIT_BY_ID, BOATS } from "../world";
 import { BOAT_SPECS, drawBoat, drawFleetBoat } from "./boat";
 import { Boat3D } from "./boats3d/boat3d";
-import type { Frame } from "./frame";
+import { hasActiveEvent, type Frame } from "./frame";
 import { drawBobberPointer, drawFightPanel, drawPower, drawRuler, drawSonar } from "./hud";
 import { LandRenderer } from "./land";
 import { AmbientLife } from "./ambient";
@@ -39,7 +39,7 @@ interface Bubble { x: number; y: number; r: number; v: number }
 interface Spray { x: number; y: number; vx: number; vy: number; t: number }
 
 
-interface School { x: number; depth: number; dir: 1 | -1; n: number; speed: number; phase: number; seed: number; col: string; size: number }
+interface School { x: number; depth: number; dir: 1 | -1; n: number; speed: number; phase: number; offsets: [number, number][]; col: string; size: number }
 
 export type CamMode = "auto" | "surface" | "hook" | "bottom";
 export const CAM_MODES: CamMode[] = ["auto", "surface", "hook", "bottom"];
@@ -48,6 +48,8 @@ export class Scene {
   mobileButtons = false;
   private stream = new AquatoryStream();
   private fxBuffer = new EventFxBuffer();
+  private readonly activeEventScratch: ActiveEvent[] = [];
+  private readonly activeEventIds = new Set<string>();
   get streamedRegions(){return this.stream.residentIds;}
   private bottomAt(f:Frame,x:number){return f.bedDepth?f.sY+f.depthPx(f.bedDepth(x)):this.bed.bedY(x);}
   camY = 0;
@@ -171,13 +173,16 @@ export class Scene {
     const day = atmo.daylight;
     const night = atmo.night;
     const golden = atmo.golden;
+    const activeEvents = e.activeEventsInto(this.activeEventScratch);
+    this.activeEventIds.clear();
+    for (const event of activeEvents) this.activeEventIds.add(event.id);
 
     const sY = H * 0.46;
     const hY = sY - H * 0.095;
     const K = H * 0.42;
     const sc = clamp(Math.min(H / 900, W / 1150), 0.5, 1.25);
     const compact = screenW < 820 || H < 560, land = screenW >= H;
-    const calm = e.activeEvents.some((a) => a.id === "calm");
+    const calm = this.activeEventIds.has("calm");
     const localSwell = this.voyage === null ? waterSwell(loc.id, e.navigation.x) : (spot.swell ?? 1);
     const amp = waveAmplitudePx(atmo.waves, loc.waveMult, localSwell, atmo.wind, sc, calm);
 
@@ -239,6 +244,8 @@ export class Scene {
       clarity: loc.clarity ?? 0.6, quality: this.quality, compact, land, bottomFocus: !e.navigationMode && this.camMode === "bottom",
       topRes: compact ? (land ? 64 : 118) : 210, buttonControls:this.mobileButtons, botRes: compact ? (this.mobileButtons?(land?140:195):(land ? 70 : 146)) : this.mobileButtons?195:150, depthPx, waveY,
       light: { dx: clamp((sunX / W) * 2 - 1, -1, 1), k: sunVis * (1 - night * 0.7) },
+      activeEvents,
+      activeEventIds: this.activeEventIds,
     };
     const fxCalls = this.fxBuffer.build(e.eventDirector, e.s.minutes, TIME_SCALE);
     const fxBoatX = this.voyage !== null ? W * .3 : e.navigation.x;
@@ -494,7 +501,7 @@ export class Scene {
 
   private drawSurfaceEvents(f: Frame) {
     const { ctx, e, W, hY, t, night } = f;
-    if (e.activeEvents.some((a) => a.id === "ghost_ship")) {
+    if (hasActiveEvent(f, "ghost_ship")) {
       const gx = W * 0.72 + Math.sin(t * 0.05) * 60;
       ctx.save();
       ctx.globalAlpha = 0.28 + Math.sin(t) * 0.08;
@@ -515,7 +522,7 @@ export class Scene {
       glow(ctx, gx - 40, hY - 4, 2, "#80ffd0", 0.7);
       ctx.restore();
     }
-    if (e.activeEvents.some((a) => a.id === "whale")) {
+    if (hasActiveEvent(f, "whale")) {
       const wx = W * 0.82;
       const p = (t % 7) / 7;
       if (p < 0.3) {
@@ -531,7 +538,7 @@ export class Scene {
       ctx.ellipse(wx, hY + 7, 32, 5, 0, Math.PI, 0);
       ctx.fill();
     }
-    if (e.activeEvents.some((a) => a.id === "dolphins")) {
+    if (hasActiveEvent(f, "dolphins")) {
       for (let i = 0; i < 3; i++) {
         const p = ((t * 0.35 + i * 0.3) % 1.6);
         if (p > 1) continue;
@@ -557,7 +564,7 @@ export class Scene {
   /** Кильватер и бурун при переходе */
   private drawWhale(f: Frame) {
     const { ctx, e, W, sY, t, sc } = f;
-    if (!e.activeEvents.some((a) => a.id === "whale")) return;
+    if (!hasActiveEvent(f, "whale")) return;
     this.whaleX += f.dt * 40;
     if (this.whaleX > W + 500) this.whaleX = -500;
     const wy = sY + f.depthPx(Math.min(f.spot.maxDepth * 0.5, 40));
@@ -589,22 +596,31 @@ export class Scene {
     const { ctx, e, W, sY, t, sc, loc } = f;
     this.schoolT -= f.dt;
     const maxD = Math.min(f.spot.maxDepth * 0.8, loc.id === "abyss" ? 300 : 60);
-    const shoal = e.activeEvents.some((a) => a.id === "shoal");
+    const shoal = hasActiveEvent(f, "shoal");
     if (this.schoolT <= 0 && this.schools.length < (shoal ? 3 : 1) && maxD > 2) {
       this.schoolT = shoal ? 4 : 18 + Math.random() * 22;
       const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
       const cols: Record<string, string> = { reef: Math.random() < 0.5 ? "#f0c040" : "#60a0ff", fjord: "#a8b8c8", abyss: "#8090a0" };
-      this.schools.push({ x: dir > 0 ? left-260 : right+260, depth: 1.5 + Math.random() * (maxD - 1.5), dir, n: 22 + Math.floor(Math.random() * 26), speed: (35 + Math.random() * 30) * sc, phase: Math.random() * 10, seed: Math.random() * 100, col: cols[loc.id] ?? "#c8d4dc", size: (0.7 + Math.random() * 0.5) * sc });
+      const depth = 1.5 + Math.random() * (maxD - 1.5);
+      const n = 22 + Math.floor(Math.random() * 26);
+      const speed = (35 + Math.random() * 30) * sc;
+      const phase = Math.random() * 10;
+      const seed = Math.random() * 100;
+      const col = cols[loc.id] ?? "#c8d4dc";
+      const size = (0.7 + Math.random() * 0.5) * sc;
+      const offsets = Array.from({ length: n }, (_, i) => {
+        const hx = Math.sin(i * 12.9898 + seed) * 43758.5453;
+        const hy = Math.sin(i * 78.233 + seed) * 12345.6789;
+        return [((hx - Math.floor(hx)) - 0.5) * 180 * size, ((hy - Math.floor(hy)) - 0.5) * 50 * size] as [number, number];
+      });
+      this.schools.push({ x: dir > 0 ? left - 260 : right + 260, depth, dir, n, speed, phase, offsets, col, size });
     }
     for (const sch of this.schools) {
       sch.x += sch.dir * sch.speed * f.dt;
       sch.phase += f.dt;
       const cy = sY + f.depthPx(sch.depth);
       for (let i = 0; i < sch.n; i++) {
-        const hx = Math.sin(i * 12.9898 + sch.seed) * 43758.5453;
-        const hy = Math.sin(i * 78.233 + sch.seed) * 12345.6789;
-        const ox = ((hx - Math.floor(hx)) - 0.5) * 180 * sch.size;
-        const oy = ((hy - Math.floor(hy)) - 0.5) * 50 * sch.size;
+        const [ox, oy] = sch.offsets[i];
         const wave = Math.sin(sch.phase * 1.4 + ox * 0.02) * 12 * sch.size;
         const x = sch.x + ox + Math.sin(sch.phase * 0.7 + i) * 6;
         const y = cy + oy + wave;
@@ -769,7 +785,7 @@ export class Scene {
     const left=f.viewLeft??0,right=left+(f.viewWidth??f.W);
     const { ctx, e, W, sY, cam, H, loc } = f;
     this.spawnT -= f.dt;
-    const shoal = e.activeEvents.some((a) => a.id === "shoal");
+    const shoal = hasActiveEvent(f, "shoal");
     const maxN = shoal ? 24 : 10;
     if (this.spawnT <= 0 && this.ambient.length < maxN) {
       this.spawnT = shoal ? 0.15 : this.ambient.length < 4 ? 0.25 : 0.7 + Math.random() * 1.2;
@@ -826,7 +842,7 @@ export class Scene {
     for (const c of this.creatures) {
       if (c.kind === "jelly" && (f.loc.id === "abyss" || e.isNight)) glow(ctx, c.x, c.y - 3, 5 * c.s, c.hue, 0.5 + Math.sin(c.phase * 2) * 0.3);
     }
-    if (e.activeEvents.some((a) => a.id === "plankton")) {
+    if (hasActiveEvent(f, "plankton")) {
       for (let i = 0; i < 70; i++) {
         const x = (i * 97.3 + Math.sin(t * 0.3 + i) * 30) % W;
         const y = sY + 6 + ((i * 53.7) % 1) * 0 + ((i * 37) % 160) * f.sc + Math.sin(t + i) * 8;
@@ -1082,7 +1098,7 @@ export class Scene {
 
   private drawMarineSnow(f: Frame) {
     const { ctx, sY, cam, H, W, t, e } = f;
-    const plankton = e.activeEvents.some((a) => a.id === "plankton");
+    const plankton = hasActiveEvent(f, "plankton");
     ctx.fillStyle = plankton ? "rgba(120,255,230,0.8)" : "rgba(220,235,255,0.4)";
     for (const p of this.snow) {
       p[1] -= f.dt * 6 * p[2];

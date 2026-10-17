@@ -5,7 +5,7 @@ import { FISH, FISH_BY_ID, RARITY_INFO, VARIANT_INFO } from "./fish";
 import { BITE_WINDOWS, SURGE_WARNING_TIME, biteApproachSeconds } from "./fishing";
 import { FIGHT_STEP, newFightMotion, stepFightMotion, type FightMotion } from "./fishingPhysics";
 import { Atmosphere, type AtmoMods, type LightningStrike } from "./atmosphere";
-import { ctxFromAtmosphere, EventDirector, type CtxInput } from "./events";
+import { ctxFromAtmosphere, EventDirector, type ActiveInfo, type CtxInput } from "./events";
 import type { DirectorMessage, DirectorSave, Outcome } from "./events/types";
 import { GAME_EVENT_BY_ID, GAME_EVENTS } from "./events/gameCatalog";
 import { ACHIEVEMENTS, FINDS, FIND_BY_ID, levelFromXp, levelReward, levelTitle, PERKS, perkPoints, QUESTS, RANK_LEVEL, rankCost, spentPoints, type FindDef } from "./progress";
@@ -307,6 +307,7 @@ export class Engine {
   }
   private atmosphereInstance: Atmosphere | null = null;
   private eventDirectorInstance: EventDirector | null = null;
+  private readonly eventInfoScratch: ActiveInfo[] = [];
   private readonly eventCtxExtra = { loc: null as string | null, deep: false };
   private readonly eventCtxInput = {} as CtxInput;
   private readonly eventMods: AtmoMods = {};
@@ -513,11 +514,49 @@ export class Engine {
   get isNight() { return this.timeOfDay === "night"; }
   get temperature() { return Math.round(this.atmosphere.state.temp); }
   get activeEvents(): ActiveEvent[] {
+    return this.activeEventsInto([]);
+  }
+  /** Fill a caller-owned buffer for render frames; the public getter remains an isolated snapshot. */
+  activeEventsInto(out: ActiveEvent[]): ActiveEvent[] {
     const director = this.eventDirectorInstance;
-    if (!director) return this.s.events.filter((e) => e.endsAt > this.s.minutes);
-    return director.activeList()
-      .filter((entry) => entry.live.phase === "active")
-      .map((entry) => ({ id: entry.live.id, endsAt: Math.round(entry.live.end) }));
+    let count = 0;
+    if (!director) {
+      for (const event of this.s.events) {
+        if (event.endsAt <= this.s.minutes) continue;
+        let item = out[count];
+        if (!item) {
+          item = { id: event.id, endsAt: event.endsAt };
+          out.push(item);
+        }
+        item.id = event.id;
+        item.endsAt = event.endsAt;
+        count++;
+      }
+      out.length = count;
+      return out;
+    }
+    for (const entry of director.activeList(this.eventInfoScratch)) {
+      if (entry.live.phase !== "active") continue;
+      let item = out[count];
+      if (!item) {
+        item = { id: entry.live.id, endsAt: Math.round(entry.live.end) };
+        out.push(item);
+      }
+      item.id = entry.live.id;
+      item.endsAt = Math.round(entry.live.end);
+      count++;
+    }
+    out.length = count;
+    return out;
+  }
+  /** Allocation-free event lookup for hot update/render consumers. */
+  hasActiveEvent(id: string) {
+    const director = this.eventDirectorInstance;
+    if (!director) return this.s.events.some((event) => event.id === id && event.endsAt > this.s.minutes);
+    for (const entry of director.activeList(this.eventInfoScratch)) {
+      if (entry.live.phase === "active" && entry.live.id === id) return true;
+    }
+    return false;
   }
   get eventEffects() { return this.eventDirector.multipliers(); }
   eventMult(key: "bite" | "rare" | "legendary") {
@@ -615,7 +654,7 @@ export class Engine {
     // Physics uses real seconds, not the accelerated fishing/world clock.
     if (!this.navigationBlock) {
       const atmo = this.atmosphere.state;
-      const calm = this.activeEvents.some((event) => event.id === "calm");
+      const calm = this.hasActiveEvent("calm");
       const waves = atmo.waves * this.loc.waveMult * waterSwell(this.s.location, this.navigation.x) * (calm ? 0.25 : 1);
       this.navigation.step(dt, this.boat, waves, (x) => {
         const habitat = regionAt(this.s.location, x).spot;
@@ -846,7 +885,7 @@ export class Engine {
   candidates(depth = this.hookDepth): { fish: FishDef; w: number }[] {
     const s = this.s;
     const tod = this.timeOfDay;
-    const currentEv = this.activeEvents.some((e) => e.id === "current");
+    const currentEv = this.hasActiveEvent("current");
     const bait = s.currentBait;
     const spot = regionAt(s.location,this.castNX()*this.navigation.worldWidth).spot;
     const eventEffects = this.eventEffects;

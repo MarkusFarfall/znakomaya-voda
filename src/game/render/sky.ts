@@ -1,6 +1,6 @@
 import { cloudBank } from "./cloudBank";
 import type { WeatherId } from "../types";
-import type { Frame } from "./frame";
+import { findActiveEvent, hasActiveEvent, type Frame } from "./frame";
 import { drawRainbow as drawRainbowFx } from "./weatherFx";
 import { clamp, ctx2d, glow, hexA, makeCanvas, mix, rng, smooth, af, rgbHex } from "./util";
 
@@ -187,7 +187,7 @@ export class SkyRenderer {
     }
 
     // метеоры
-    if (e.activeEvents.some((a) => a.id === "meteor")) {
+    if (hasActiveEvent(f, "meteor")) {
       if (Math.random() < f.dt * 1.6) this.meteors.push([Math.random() * W, Math.random() * H * 0.2, 0]);
       for (const m of this.meteors) {
         m[2] += f.dt;
@@ -282,7 +282,7 @@ export class SkyRenderer {
 
   private drawRainbow(f: Frame) {
     const { ctx, e, W, H, hY } = f;
-    const ev = e.activeEvents.find((a) => a.id === "rainbow");
+    const ev = findActiveEvent(f, "rainbow");
     let alpha = f.atmo.rainbow * 0.72;
     if (ev && f.sunElev > 0.05) {
       const left = (ev.endsAt - e.s.minutes) / 90;
@@ -371,7 +371,7 @@ export class SkyRenderer {
 
   private drawGulls(f: Frame) {
     const { ctx, e, W, t } = f;
-    const gullsEv = e.activeEvents.some((a) => a.id === "gulls");
+    const gullsEv = hasActiveEvent(f, "gulls");
     if (e.isNight || f.loc.land === "abyss" || f.atmo.wind > 18 || f.atmo.precip > 0.82) return;
     if (!gullsEv && f.loc.land === "open" && f.spot.feature !== "seamount") return;
     const n = gullsEv || f.spot.feature === "seamount" ? 7 : f.atmo.precip < 0.15 && f.atmo.cover < 0.78 ? 3 : 1;

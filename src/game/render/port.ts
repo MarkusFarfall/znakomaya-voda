@@ -1,6 +1,6 @@
 import { TIME_SCALE, type Engine } from "../engine";
 import { FISH_BY_ID } from "../fish";
-import type { HotId } from "../types";
+import type { ActiveEvent, HotId } from "../types";
 import { ART } from "./boats/art";
 import { berthScale } from "./portTerrain";
 import { drawBoat } from "./boat";
@@ -47,6 +47,8 @@ export class PortScene {
   private snowfall = new PrecipitationField("snow");
   private boat3d: Boat3D | null = null;
   private current: Engine | null = null;
+  private readonly activeEventScratch: ActiveEvent[] = [];
+  private readonly activeEventIds = new Set<string>();
   private fxBuffer = new EventFxBuffer();
   private fxCalls: FxCall[] = [];
   private rodTip: readonly [number, number] = [0, 0];
@@ -68,6 +70,9 @@ export class PortScene {
   render(ctx: CanvasRenderingContext2D, e: Engine, W: number, H: number, dt: number) {
     if (W <= 0 || H <= 0) return;
     this.current = e;
+    const activeEvents = e.activeEventsInto(this.activeEventScratch);
+    this.activeEventIds.clear();
+    for (const event of activeEvents) this.activeEventIds.add(event.id);
     this.fxCalls = this.fxBuffer.build(e.eventDirector, e.s.minutes, TIME_SCALE);
     ctx.save();
     try {
@@ -102,6 +107,7 @@ export class PortScene {
       amp: (1.4 + a.waves * 0.45) * p.sc, clarity: e.loc.clarity, quality: this.quality,
       cam: 0, K: 1, compact: p.W < 820 || p.H < 560, land: p.W >= p.H,
       topRes: 0, botRes: 0, depthPx: () => 0, waveY: p.waveY,
+      activeEvents: this.activeEventScratch, activeEventIds: this.activeEventIds,
     };
     if (!this.boat3d && typeof window !== "undefined") this.boat3d = new Boat3D();
     this.boat3d?.setEnabled(this.boat3dOn);

@@ -29,6 +29,8 @@ export class SeabedRenderer {
   private back: number[] = [];
   private pts: number[] = [];
   private decor: Decor[] = [];
+  private glowingDecor: Decor[] = [];
+  private glowMotes: { x: number; yOffset: number; speed: number }[] = [];
   private far: { x: number; y: number; h: number; w: number; kind: string; seed: number }[] = [];
   private backSlice: number[] = [];
   private bedSlice: number[] = [];
@@ -109,6 +111,15 @@ export class SeabedRenderer {
     if (feat === "wreck" || feat === "ridge") { const x = W * 0.3; this.decor.push({ x, y: this.bedY(x), kind: "anchor", s: 1, c: "#5a4a3a", seed: 1 }); }
     if (feat === "wreck") for (let i = 0; i < 4; i++) { const x = W * (0.2 + r() * 0.3); this.decor.push({ x, y: this.bedY(x), kind: "amphora", s: 0.8 + r() * 0.4, c: "#b06a40", seed: r() * 100 }); }
     this.decor.sort((a, b) => a.s - b.s);
+    this.glowingDecor = this.decor.filter((d) => d.kind === "vent" || d.kind === "worms" || d.kind === "pen");
+    this.glowMotes = [];
+    if (feat === "trench" || feat === "vents" || feat === "twilight") {
+      const glowRandom = rng(3);
+      for (let i = 0; i < 40; i++) {
+        const x = f.chunkOffset !== undefined ? 100 * f.sc + glowRandom() * (W - 200 * f.sc) : glowRandom() * W;
+        this.glowMotes.push({ x, yOffset: glowRandom() * 300 * f.sc, speed: 0.5 + glowRandom() });
+      }
+    }
     // дальний план
     this.far = [];
     const fk: Record<string, string[]> = { sand: ["grass", "dune"], rock: ["pillar", "kelp"], kelp: ["kelp", "kelp", "pillar"], coral: ["bommie", "bommie", "fan"], mud: ["spire", "dune"], vents: ["spire", "chimney"], silt: ["grass", "dune", "dune"], granite: ["dune", "pillar"], kelpforest: ["kelp", "kelp", "kelp", "pillar"], roots: ["grass", "dune"], basalt: ["pillar", "spire", "chimney"], polar: ["dune", "spire"] };
@@ -1087,10 +1098,11 @@ export class SeabedRenderer {
 
   /** Самосвечение дна (после затемнения глубиной) */
   drawGlow(f: Frame) {
-    const { ctx, t, W, cam, H } = f;
+    this.build(f);
+    const { ctx, t, cam, H } = f;
     const view = horizontalRange(f, 30 * f.sc);
     if (this.minY - 200 > cam + H) return;
-    for (const d of this.decor) {
+    for (const d of this.glowingDecor) {
       if (d.x < view.left || d.x > view.right) continue;
       if (d.y < cam - 100 || d.y > cam + H + 100) continue;
       const s = d.s * f.sc;
@@ -1098,17 +1110,12 @@ export class SeabedRenderer {
       if (d.kind === "worms" && f.spot.maxDepth > 500) glow(ctx, d.x, d.y - 10 * s, 3 * s, "#ff4050", 0.35);
       if (d.kind === "pen" && f.spot.maxDepth > 300) glow(ctx, d.x, d.y - 20 * s, 3 * s, "#80a0ff", 0.4 + Math.sin(t * 2 + d.seed) * 0.3);
     }
-    if (f.spot.feature === "trench" || f.spot.feature === "vents" || f.spot.feature === "twilight") {
-      const r = rng(3);
-      for (let i = 0; i < 40; i++) {
-        const x = f.chunkOffset !== undefined ? 100 * f.sc + r() * (W - 200 * f.sc) : r() * W;
-        const yOffset = r() * 300 * f.sc;
-        const speed = 0.5 + r();
-        if (x < view.left || x > view.right) continue;
-        const y = this.bedY(x) - yOffset;
-        const a = Math.max(0, Math.sin(t * speed + i * 1.7));
-        if (a > 0.1) glow(ctx, x, y, 1.2, i % 3 ? "#50e0ff" : "#80ffb0", a * 0.7);
-      }
+    for (let i = 0; i < this.glowMotes.length; i++) {
+      const mote = this.glowMotes[i];
+      if (mote.x < view.left || mote.x > view.right) continue;
+      const y = this.bedY(mote.x) - mote.yOffset;
+      const a = Math.max(0, Math.sin(t * mote.speed + i * 1.7));
+      if (a > 0.1) glow(ctx, mote.x, y, 1.2, i % 3 ? "#50e0ff" : "#80ffb0", a * 0.7);
     }
   }
 }

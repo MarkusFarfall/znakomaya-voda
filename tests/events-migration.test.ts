@@ -106,4 +106,14 @@ test("event atmosphere inputs and render lists can reuse scratch objects safely"
   assert.strictEqual(director.activeList(activeScratch), activeScratch);
   assert.deepEqual(visibleScratch.map((event) => event.id), director.visible().map((event) => event.id));
   assert.deepEqual(activeScratch.map((event) => event.def.id), director.activeList().map((event) => event.def.id));
+
+  const engine = new Engine(newSave());
+  assert.equal(engine.eventDirector.trigger("calm", { force: true, skipOmen: true }), true);
+  const renderScratch: { id: string; endsAt: number }[] = [];
+  assert.strictEqual(engine.activeEventsInto(renderScratch), renderScratch);
+  assert.deepEqual(renderScratch.map((event) => event.id), ["calm"]);
+  assert.equal(engine.hasActiveEvent("calm"), true);
+  assert.equal(engine.hasActiveEvent("whale"), false);
+  assert.deepEqual(engine.activeEvents, renderScratch);
+  assert.notStrictEqual(engine.activeEvents, renderScratch);
 });

@@ -331,6 +331,22 @@ test("light volume clips to canonical ground, not a flat screen boundary", () =>
       ) < 1e-6,
     );
 });
+test("water clipping samples only a padded viewport while retaining the canonical bed profile", () => {
+  const e = new Engine(),
+    c = context(),
+    f = frame(e, c.ctx, 7200, 844);
+  f.viewLeft = 2390;
+  f.viewWidth = 390;
+  clipWaterToBed(f);
+  const xs = c.vertices.map(([x]) => x);
+  assert.ok(xs.length < 80, "clipped profile should scale with the viewport, not world width");
+  assert.ok(Math.min(...xs) >= 2376);
+  assert.ok(Math.max(...xs) <= 2792);
+  for (const [x, y] of c.vertices.slice(2, -1)) {
+    const expected = f.sY + f.depthPx(e.spot.maxDepth * bedFrac(e.spot, x / f.W));
+    assert.ok(Math.abs(y - expected) < 1e-6, "viewport culling keeps the canonical seabed depth");
+  }
+});
 test("overcast skies do not produce strong underwater sunbeams", () => {
   const e = new Engine(),
     c = context(),

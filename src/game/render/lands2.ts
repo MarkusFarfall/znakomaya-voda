@@ -1,4 +1,4 @@
-import { horizontalRange, overlapsHorizontal, shoreEnvelope, type Frame } from "./frame";
+import { hasActiveEvent, horizontalRange, overlapsHorizontal, shoreEnvelope, type Frame } from "./frame";
 import type { LandRenderer } from "./land";
 import { clamp, fbm, glow, hash1, hexA, mix, rng, af } from "./util";
 
@@ -1019,7 +1019,7 @@ export class ExtraLand {
     ctx.beginPath();
     ctx.ellipse(c.xp, c.top + 3, c.cw * 1.1, 3, 0, 0, TAU);
     ctx.fill();
-    if (night > 0.2 || feat === "lava" || e.activeEvents.some((a) => a.id === "eruption")) {
+    if (night > 0.2 || feat === "lava" || hasActiveEvent(f, "eruption")) {
       const ga = Math.max(night, 0.35);
       const cg = ctx.createRadialGradient(c.xp, c.top, 0, c.xp, c.top, H * 0.12);
       cg.addColorStop(0, `rgba(255,120,40,${af(0.45 * ga)})`);
@@ -1029,7 +1029,7 @@ export class ExtraLand {
     }
     // шлейф
     this.plumeT -= f.dt;
-    const erupt = e.activeEvents.some((a) => a.id === "eruption");
+    const erupt = hasActiveEvent(f, "eruption");
     if (this.plumeT <= 0) {
       this.plumeT = erupt ? 0.08 : 0.28;
       this.plumes.push({ x: c.xp + (Math.random() - 0.5) * c.cw, y: c.top, r: 4 + Math.random() * 4, t: 0, vx: 4 + f.wind * 22, vy: -(10 + Math.random() * 8) * (erupt ? 1.8 : 1), kind: erupt && Math.random() < 0.5 ? "ash" : "steam" });
@@ -1148,7 +1148,7 @@ export class ExtraLand {
     }
     ctx.restore();
     // откол ледника
-    if (f.e.activeEvents.some((a) => a.id === "calving")) {
+    if (hasActiveEvent(f, "calving")) {
       const cx = sx0 + (W - sx0) * 0.4;
       const ph = (t * 0.2) % 1;
       ctx.fillStyle = face;

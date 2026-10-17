@@ -68,6 +68,7 @@ export class PortKitScene {
   private t = 0;
   private windTravel = 0;
   private key = '';
+  private stars: [number, number, number][] = [];
   private walkers: Walker[] = [];
   private birds: [number, number, number][] = [];
   private clouds: [number, number, number, number][] = [];
@@ -136,6 +137,8 @@ export class PortKitScene {
     const key = `${st.pid}|${W}|${H}`;
     if (key !== this.key) {
       this.key = key;
+      const starRng = rng(9);
+      this.stars = Array.from({ length: 200 }, () => [starRng() * W, Math.pow(starRng(), 1.3) * hY * 0.92, starRng() * 1.3 + 0.3]);
       const r = rng(st.pid.length * 13 + 3);
       const carries: Walker['carry'][] = ['crate', 'rod', 'bucket', 'net', null, null, 'box'];
       const umbs = ['#c84030', '#2a5a8a', '#1a1a1c', '#f0c040', '#3a9a5a'];
@@ -164,9 +167,8 @@ export class PortKitScene {
     const moonX = W * clamp((A.moonAz - 45) / 270, 0.02, 0.98);
     const moonY = hY - Math.sin(A.moonElev * Math.PI / 180) * H * 0.32;
     if (A.starVis > 0.01) {
-      const r = rng(9);
-      for (let i = 0; i < 200; i++) {
-        const x = r() * W, y = Math.pow(r(), 1.3) * hY * 0.92, s = r() * 1.3 + 0.3;
+      for (let i = 0; i < this.stars.length; i++) {
+        const [x, y, s] = this.stars[i];
         ctx.globalAlpha = A.starVis * (0.4 + 0.6 * Math.sin(t * 2 + i));
         ctx.fillStyle = i % 9 === 0 ? '#ffe0c0' : '#ffffff';
         ctx.fillRect(x, y, s, s);

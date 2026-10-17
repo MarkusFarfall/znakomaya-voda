@@ -1,5 +1,5 @@
 import { bedFrac } from "../world";
-import type { Frame } from "./frame";
+import { hasActiveEvent, horizontalGridRange, horizontalRange, type Frame } from "./frame";
 import { clamp, ctx2d, hash1, hexA, makeCanvas, mix, rng, af, rgbHex } from "./util";
 
 let causticTile: HTMLCanvasElement | null = null;
@@ -216,10 +216,28 @@ export function drawSurfaceCaustics(f: Frame) {
 
 /** Water lighting stops at the actual seabed: no light shafts through solid ground. */
 export function clipWaterToBed(f: Frame) {
-  const { ctx, W, sY } = f;
-  ctx.beginPath(); ctx.moveTo(0, sY); ctx.lineTo(W, sY);
-  for (let x = W; x >= 0; x -= 8) ctx.lineTo(x, sY + f.depthPx((f.bedDepth?f.bedDepth(x):f.spot.maxDepth * bedFrac(f.spot, x / W))));
-  ctx.lineTo(0, sY + f.depthPx((f.bedDepth?f.bedDepth(0):f.spot.maxDepth * bedFrac(f.spot, 0)))); ctx.closePath(); ctx.clip();
+  if (!f.waterClipPath) {
+    const { W, sY, ctx } = f;
+    const view = horizontalRange(f, 8);
+    const left = clamp(view.left, 0, W);
+    const right = clamp(view.right, left, W);
+    // Preserve the original W-anchored 8-unit profile grid (including non-multiple widths).
+    const first = W - Math.floor((W - right) / 8) * 8;
+    const firstWorldSample = W - Math.floor(W / 8) * 8;
+    const last = Math.max(firstWorldSample, W - Math.ceil((W - left) / 8) * 8);
+    const bedY = (x: number) => sY + f.depthPx(f.bedDepth ? f.bedDepth(x) : f.spot.maxDepth * bedFrac(f.spot, x / W));
+    const path = typeof Path2D !== "undefined" ? new Path2D() : null;
+    const builder = path ?? ctx;
+    if (!path) ctx.beginPath();
+    builder.moveTo(left, sY);
+    builder.lineTo(first, sY);
+    for (let x = first; x >= last; x -= 8) builder.lineTo(x, bedY(x));
+    builder.lineTo(left, bedY(left));
+    builder.closePath();
+    if (path) f.waterClipPath = path;
+  }
+  if (f.waterClipPath) f.ctx.clip(f.waterClipPath);
+  else f.ctx.clip();
 }
 
 /** Затемнение по глубине (поверх всех подводных объектов) */
@@ -259,10 +277,12 @@ export function drawSurfaceFront(f: Frame, rings: Ring[]) {
   const sl = ctx.createLinearGradient(0, sY - f.amp, 0, sY + depth);
   sl.addColorStop(0, hexA(slc, 0.75 - night * 0.35));
   sl.addColorStop(1, hexA(slc, 0));
+  const fillRange = horizontalGridRange(f, 8, 8);
+  const lastWorldFillSample = Math.floor(W / 8) * 8;
   ctx.beginPath();
-  ctx.moveTo(0, sY + depth);
-  for (let x = 0; x <= W; x += 8) ctx.lineTo(x, f.waveY(x));
-  ctx.lineTo(W, sY + depth);
+  ctx.moveTo(fillRange.first, sY + depth);
+  for (let x = fillRange.first; x <= fillRange.last; x += 8) ctx.lineTo(x, f.waveY(x));
+  ctx.lineTo(fillRange.last >= lastWorldFillSample ? W : fillRange.last, sY + depth);
   ctx.closePath();
   ctx.fillStyle = sl;
   ctx.fill();
@@ -270,6 +290,7 @@ export function drawSurfaceFront(f: Frame, rings: Ring[]) {
   // World-anchored specular streaks make wind direction and swell legible without a GPU shader.
   const streaks = Math.min(120, Math.max(22, Math.round(W / 110)));
   const drift = t * (4 + f.atmo.wind * 1.5) * (f.atmo.windDir < 0 ? -1 : 1);
+  const streakRange = horizontalRange(f, 50 * f.sc);
   ctx.save();
   ctx.lineCap = "round";
   ctx.lineWidth = 0.8 * f.sc;
@@ -278,6 +299,7 @@ export function drawSurfaceFront(f: Frame, rings: Ring[]) {
     const x0 = (((i * 137 + drift) % W) + W) % W;
     const offset = (3 + hash1(seed) * 34) * f.sc;
     const len = (12 + hash1(seed + 87) * 38 + f.atmo.wind * 0.8) * f.sc;
+    if (x0 + len < streakRange.left || x0 > streakRange.right) continue;
     const alpha = (0.035 + hash1(seed + 171) * 0.09) * (0.4 + f.sunVis * (1 - f.cover * 0.6)) * (1 - night * 0.55);
     ctx.strokeStyle = `rgba(235,248,244,${alpha})`;
     ctx.beginPath();
@@ -290,11 +312,12 @@ export function drawSurfaceFront(f: Frame, rings: Ring[]) {
   }
   ctx.restore();
 
-  const plankton = f.e.activeEvents.some((a) => a.id === "plankton");
+  const plankton = hasActiveEvent(f, "plankton");
+  const outlineRange = horizontalGridRange(f, 5, 5);
   ctx.beginPath();
-  for (let x = 0; x <= W; x += 5) {
+  for (let x = outlineRange.first; x <= outlineRange.last; x += 5) {
     const y = f.waveY(x);
-    if (x === 0) ctx.moveTo(x, y);
+    if (x === outlineRange.first) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
   ctx.strokeStyle = plankton ? "rgba(110,255,225,0.85)" : `rgba(${night > 0.5 ? "170,190,210" : "255,255,255"},${af(0.12 + 0.43 * (1 - night))})`;
@@ -303,7 +326,10 @@ export function drawSurfaceFront(f: Frame, rings: Ring[]) {
   // гребни
   if (f.amp > 5) {
     ctx.fillStyle = `rgba(255,255,255,${0.35 + 0.2 * (1 - night)})`;
-    for (let x = (t * 30) % 40; x < W; x += 40) {
+    const crestRange = horizontalRange(f, Math.max(40, 8 + f.amp * 0.6));
+    let x = (t * 30) % 40;
+    if (x < crestRange.left) x += Math.ceil((crestRange.left - x) / 40) * 40;
+    for (; x < W && x <= crestRange.right; x += 40) {
       const y = f.waveY(x);
       if (f.waveY(x - 6) > y + 0.5 && f.waveY(x + 6) > y + 0.5) {
         ctx.beginPath();
