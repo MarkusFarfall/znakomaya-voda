@@ -440,6 +440,29 @@ class Painter {
     this.membrane(path, [x, y], [x - L * 0.05 * s, y + L * 0.05 * s], [[[x, y], [x - L * 0.06 * s, y + L * 0.055 * s]]], 0.85, 0.55);
   }
 
+  /** Сросшиеся брюшные плавники образуют характерный диск бычка. */
+  pelvicDisc(x: number, y: number, size = 1) {
+    if (this.sil) {
+      this.pelvic(x, y, size * 1.15);
+      return;
+    }
+    const L = this.L;
+    const s = size;
+    const c = this.c;
+    c.beginPath();
+    c.ellipse(x - L * 0.022 * s, y + L * 0.028 * s, L * 0.072 * s, L * 0.025 * s, -0.14, 0, TAU);
+    c.fillStyle = this.col(mixR(this.P.fin, this.P.body, 0.38), 0.9);
+    c.fill();
+    c.strokeStyle = this.col(mixR(this.P.fin, BLACK, 0.38), 0.72);
+    c.lineWidth = Math.max(0.5, L * 0.0045);
+    c.stroke();
+    c.beginPath();
+    c.ellipse(x - L * 0.022 * s, y + L * 0.028 * s, L * 0.045 * s, L * 0.011 * s, -0.14, 0, TAU);
+    c.strokeStyle = 'rgba(255,255,255,0.22)';
+    c.lineWidth = Math.max(0.4, L * 0.003);
+    c.stroke();
+  }
+
   eye(x: number, y: number, r: number, opts: { tube?: boolean } = {}) {
     if (this.sil || r < 0.7) return;
     const c = this.c;
@@ -992,6 +1015,25 @@ class Painter {
     const xo = L * (0.24 + sn * 0.03);
     this.skin(body, h, { topY, botY, head: xo - L * 0.02, kind: inG(f, 'Thunnus', 'Katsuwonus', 'Auxis', 'Scomber', 'Sarda', 'Gymnosarda') ? 'fine' : 'cycloid', silver });
 
+    // Узкое тёмное кольцо на хвостовом стебле ласкиря.
+    if (M.caudalBand && !this.sil) {
+      const c = this.c;
+      const x0 = -L * 0.405;
+      const x1 = -L * 0.315;
+      c.save();
+      body();
+      c.clip();
+      c.beginPath();
+      this.m(x0, topY(x0));
+      this.q((x0 + x1) * 0.5, topY((x0 + x1) * 0.5) - h * 0.012, x1, topY(x1));
+      this.l(x1, botY(x1));
+      this.q((x0 + x1) * 0.5, botY((x0 + x1) * 0.5) + h * 0.012, x0, botY(x0));
+      c.closePath();
+      c.fillStyle = this.col(mixR(this.P.back, BLACK, 0.58), 0.9);
+      c.fill();
+      c.restore();
+    }
+
     if (!this.sil) {
       const c = this.c;
       // голова: скула и жаберная крышка
@@ -1030,6 +1072,11 @@ class Painter {
       c.strokeStyle = 'rgba(0,0,0,0.5)';
       c.lineWidth = Math.max(0.6, L * 0.008);
       c.stroke();
+      if (M.visibleTeeth) {
+        const toothSize = L * 0.012;
+        this.teeth(L * 0.49, L * 0.445, (x) => noseY - h * 0.008, toothSize, true);
+        this.teeth(L * 0.49, L * 0.445, (x) => noseY + h * 0.025, toothSize * 0.85, false);
+      }
       if (M.lips) {
         c.strokeStyle = this.col(mixR(this.P.body, WHITE, 0.25), 0.7);
         c.lineWidth = Math.max(0.8, L * 0.012);
@@ -1067,9 +1114,35 @@ class Painter {
         c.stroke();
       }
     }
+    if (M.headCirri) {
+      const c = this.c;
+      const x = L * 0.355;
+      const y = topY(x) + h * 0.025 + this.by(x);
+      c.strokeStyle = this.sil ?? this.col(mixR(this.P.fin, this.P.body, 0.4), 0.92);
+      c.lineCap = 'round';
+      c.lineWidth = Math.max(0.7, L * 0.006);
+      for (let i = 0; i < 3; i++) {
+        const bx = x + (i - 1) * L * 0.01;
+        c.beginPath();
+        this.m(bx, y);
+        this.q(bx + L * 0.012, y - h * 0.08, bx + (i - 1) * L * 0.022, y - h * (0.13 + i * 0.008));
+        c.stroke();
+      }
+    }
     if (M.lateral || M.lateralScutes) this.lateralLine(topY, L * 0.26, -L * 0.4, M.lateralScutes);
     this.barbels(L * 0.48, noseY, M.barbels, h);
     this.scars(topY, botY, L * 0.2, -L * 0.3);
+    if (M.opercularSpot && !this.sil) {
+      const x = L * 0.28;
+      const y = (topY(x) + botY(x)) * 0.46 + this.by(x);
+      this.c.beginPath();
+      this.c.ellipse(x, y, L * 0.018, h * 0.065, -0.2, 0, TAU);
+      this.c.fillStyle = this.col([222, 170, 66], 0.88);
+      this.c.fill();
+      this.c.strokeStyle = 'rgba(255,232,170,0.6)';
+      this.c.lineWidth = Math.max(0.5, L * 0.004);
+      this.c.stroke();
+    }
     if (barreleye && !this.sil) {
       // прозрачный купол головы
       const c = this.c;
@@ -1082,8 +1155,13 @@ class Painter {
       c.stroke();
     }
     // передний план: брюшной и грудной плавники, глаз
-    if (!coel) this.pelvic(L * 0.12, botY(L * 0.12) - h * 0.04, 0.8 + M.pectoral * 0.2);
-    else this.lobe(L * 0.06, botY(L * 0.06) * 0.6, L * 0.1, PI * 0.8, L * 0.02);
+    if (!coel) {
+      const pelvicX = L * 0.12;
+      const pelvicY = botY(pelvicX) - h * 0.04;
+      const pelvicSize = 0.8 + M.pectoral * 0.2;
+      if (M.pelvicDisc) this.pelvicDisc(pelvicX, pelvicY, pelvicSize);
+      else this.pelvic(pelvicX, pelvicY, pelvicSize);
+    } else this.lobe(L * 0.06, botY(L * 0.06) * 0.6, L * 0.1, PI * 0.8, L * 0.02);
     if (coel) this.lobe(L * 0.18, h * 0.12, L * 0.13, PI * 0.88, L * 0.024);
     else this.pectoral(xo - L * 0.03, h * 0.1, M.pectoral * (deep ? 0.9 : 1), { wing: M.pectoralWing || flyer, lionfish: lion });
     const ex = L * (0.37 + sn * 0.04);
@@ -1204,7 +1282,8 @@ class Painter {
       if (inG(f, 'Scophthalmus')) {
         c.fillStyle = this.col(mixR(this.P.body, BLACK, 0.3), 0.8);
         const r = seeded(f.id + ':tub');
-        for (let i = 0; i < 26; i++) {
+        const tubercleCount = Math.round(26 * M.patDensity);
+        for (let i = 0; i < tubercleCount; i++) {
           const x = -rx * 0.8 + r() * (rx * 0.8 + L * 0.3);
           const y = (r() - 0.5) * h * 0.7;
           c.beginPath();
@@ -1462,15 +1541,18 @@ class Painter {
   }
 
   seahorse() {
-    const { L, c } = this;
+    const { L, M, c } = this;
     const s = L / 100;
     const sw = Math.sin(this.wag) * 2 * s;
     const P = this.P;
-    // спинной плавник
+    const snoutTip = 28 + M.snoutLen * 50;
+    // грудной плавник находится сразу за жаберной областью; он рисуется под корпусом.
+    this.pectoral(-7 * s, -20 * s, 0.32 * M.pectoral);
+    // спинной плавник с мягкой волной лучей.
     const fin = () => {
       c.beginPath();
       c.moveTo(-14 * s, -2 * s);
-      for (let i = 0; i <= 8; i++) c.lineTo(-14 * s - 9 * s - Math.sin(this.wag * 3 + i) * 1.5 * s, -2 * s + i * 2.4 * s);
+      for (let i = 0; i <= 8; i++) c.lineTo(-14 * s - 9 * s - Math.sin(this.wag * 3 + i) * 1.5 * s, -2 * s + i * 2.4 * s * M.dorsalH);
       c.lineTo(-13 * s, 18 * s);
       c.closePath();
     };
@@ -1513,7 +1595,8 @@ class Painter {
         c.stroke();
       }
       c.fillStyle = this.col(P.pat, 0.55);
-      for (let i = 0; i < 24; i++) {
+      const spotCount = Math.round(24 * M.patDensity);
+      for (let i = 0; i < spotCount; i++) {
         c.beginPath();
         c.arc((this.rnd() - 0.4) * 22 * s, (this.rnd() - 0.4) * 70 * s, (0.7 + this.rnd()) * s, 0, TAU);
         c.fill();
@@ -1523,16 +1606,31 @@ class Painter {
       c.strokeStyle = 'rgba(0,0,0,0.4)';
       c.lineWidth = Math.max(0.6, 0.8 * s);
       c.stroke();
+      // жаберная крышка отделяет голову от вытянутого панцирного туловища.
+      c.beginPath();
+      c.moveTo(3 * s, -23 * s);
+      c.quadraticCurveTo(-1 * s, -16 * s, 3 * s, -9 * s);
+      c.strokeStyle = 'rgba(20,18,12,0.42)';
+      c.lineWidth = Math.max(0.5, 0.65 * s);
+      c.stroke();
     }
     // рыло-трубочка и корона
     c.beginPath();
     c.moveTo(14 * s, -36 * s);
-    c.lineTo(34 * s, -32 * s);
-    c.lineTo(34 * s, -28 * s);
+    c.lineTo(snoutTip * s, -32 * s);
+    c.lineTo(snoutTip * s, -28 * s);
     c.lineTo(14 * s, -28 * s);
     c.closePath();
     c.fillStyle = this.sil ?? this.col(mixR(P.body, P.belly, 0.3));
     c.fill();
+    if (!this.sil) {
+      c.beginPath();
+      c.moveTo((snoutTip - 2) * s, -31 * s);
+      c.lineTo(snoutTip * s, -30 * s);
+      c.strokeStyle = 'rgba(24,18,12,0.5)';
+      c.lineWidth = Math.max(0.5, 0.55 * s);
+      c.stroke();
+    }
     c.beginPath();
     c.moveTo(0, -40 * s);
     c.lineTo(3 * s, -48 * s);
@@ -1540,7 +1638,7 @@ class Painter {
     c.lineTo(9 * s, -47 * s);
     c.lineTo(11 * s, -39 * s);
     c.fill();
-    this.eye(10 * s, -33 * s, 3 * s);
+    this.eye(10 * s, -33 * s, 3 * s * M.eye);
   }
 
   mola() {
@@ -2065,13 +2163,13 @@ class Painter {
   }
 
   angler() {
-    const { L, f, c } = this;
+    const { L, M, f, c } = this;
     const g = genus(f);
     const lophius = g === 'Lophius';
     const deepA = inG(f, 'Melanocetus', 'Linophryne', 'Leviathan');
     const lure = lophius || deepA || g === 'Pogonophryne';
     const star = g === 'Uranoscopus';
-    const h = L * (deepA ? 0.7 : lophius ? 0.45 : 0.5);
+    const h = L * (deepA ? 0.7 : lophius ? 0.45 : star ? 0.38 : 0.5) * (star ? M.depth : 1);
     const T: [Pt, Pt, Pt, Pt] = [
       [L * 0.48, -h * 0.02],
       [L * 0.42, -h * 0.75],
@@ -2098,23 +2196,37 @@ class Painter {
       this.b(B[1], B[2], B[3]);
       c.closePath();
     };
-    this.caudal(-L * 0.4, h * 0.55, 'round', 0.85);
-    this.finAlong(topY, -L * 0.3, -L * 0.08, h * 0.25, -1, 'round', h);
-    if (!deepA) this.finAlong(topY, L * 0.0, L * 0.16, h * 0.22, -1, 'spiny', h, 4);
+    this.caudal(-L * 0.4, h * 0.55, 'round', star ? 0.78 : 0.85);
+    this.finAlong(topY, -L * 0.3, -L * 0.08, h * (star ? 0.18 * M.dorsalH : 0.25), -1, 'round', h);
+    if (!deepA) this.finAlong(topY, L * 0.0, L * 0.16, h * (star ? 0.28 * M.dorsalH : 0.22), -1, 'spiny', h, 4);
     this.finAlong(botY, -L * 0.3, -L * 0.12, h * 0.22, 1, 'round', h);
     this.skin(body, h, { topY, botY, head: L * 0.2, kind: 'none', front: L * 0.5, rear: -L * 0.4 });
     if (!this.sil) {
-      // пасть и зубы
+      // Пасть удильщика; у звёздочёта она короткая и направлена вверх.
       const my = (x: number) => h * (0.06 + Math.sin(((L * 0.5 - x) / (L * 0.38)) * PI) * 0.1);
       c.beginPath();
-      this.m(L * 0.5, h * 0.05);
-      this.q(L * 0.3, h * 0.24, L * 0.12, h * 0.08);
+      if (star) {
+        this.m(L * 0.49, -h * 0.035);
+        this.q(L * 0.43, -h * 0.15, L * 0.34, -h * 0.09);
+      } else {
+        this.m(L * 0.5, h * 0.05);
+        this.q(L * 0.3, h * 0.24, L * 0.12, h * 0.08);
+      }
       c.strokeStyle = 'rgba(0,0,0,0.75)';
-      c.lineWidth = Math.max(1, L * 0.018);
+      c.lineWidth = Math.max(1, L * (star ? 0.012 : 0.018));
       c.stroke();
       if (!star) {
         this.teeth(L * 0.14, L * 0.48, my, h * (deepA ? 0.16 : 0.09), false);
         this.teeth(L * 0.16, L * 0.47, (x) => my(x) + h * 0.04, h * (deepA ? 0.12 : 0.07), true);
+      } else {
+        // Короткий червеобразный отросток на дне рта — отличительный способ охоты.
+        c.strokeStyle = this.col(this.P.hasAccent ? this.P.accent : mixR(this.P.fin, this.P.belly, 0.42), 0.9);
+        c.lineWidth = Math.max(0.7, L * 0.007);
+        c.lineCap = 'round';
+        c.beginPath();
+        this.m(L * 0.46, -h * 0.015);
+        c.quadraticCurveTo(L * 0.52, h * 0.035, L * 0.48, h * (0.16 + Math.sin(this.wag) * 0.018));
+        c.stroke();
       }
       if (lophius || g === 'Scorpaenichthys') {
         // кожные лоскуты по краю челюсти
@@ -2129,7 +2241,7 @@ class Painter {
         }
       }
     }
-    if (!deepA) this.pectoral(L * 0.12, h * 0.15, 1.3);
+    if (!deepA) this.pectoral(L * 0.12, h * 0.15, star ? M.pectoral * 1.08 : 1.3);
     // удочка
     if (lure && g !== 'Pogonophryne') {
       const lx = L * 0.58 + Math.sin(this.wag) * L * 0.03;
@@ -2161,7 +2273,11 @@ class Painter {
       }
     }
     this.scars(topY, botY, L * 0.2, -L * 0.2);
-    this.eye(star ? L * 0.26 : L * 0.24, star ? topY(L * 0.26) + h * 0.06 : -h * 0.28, h * (deepA ? 0.05 : 0.07));
+    if (star) {
+      const eyeR = h * 0.055 * M.eye;
+      this.eye(L * 0.26, topY(L * 0.26) + h * 0.055, eyeR);
+      this.eye(L * 0.335, topY(L * 0.335) + h * 0.07, eyeR * 0.9);
+    } else this.eye(L * 0.24, -h * 0.28, h * (deepA ? 0.05 : 0.07));
   }
 
   squid() {
