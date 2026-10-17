@@ -414,7 +414,10 @@ export class GameAudio {
   }
 
   setEnabled(on: boolean) {
+    const was = this.enabled;
     this.enabled = on;
+    // Resume the score promptly when master sound is switched back on.
+    if (on && !was && this.music) this.chordT = 0;
     if (!this.ctx) return;
     const t = this.ctx.currentTime;
     this.ambBus.gain.setTargetAtTime(on && this.active ? BUS.amb : 0, t, 0.15);
@@ -1033,7 +1036,8 @@ export class GameAudio {
     this.tgt(this.musicBus.gain, this.music && this.enabled ? BUS.music * duck : 0, now, 1.2, "musicBus#24");
     this.chordT -= dt;
     if (this.chordT <= 0) {
-      this.chordT = this.music ? this.playChord(e) : 4;
+      // A muted master bus must not keep synthesizing chords into silence.
+      this.chordT = this.music && this.enabled ? this.playChord(e) : 4;
     }
   }
 }

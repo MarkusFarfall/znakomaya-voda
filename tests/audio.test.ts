@@ -140,6 +140,19 @@ test("выключенный звук глушит всё, включая муз
   assert.equal(ctx.total(), before, "фанфары не должны звучать при выключенном звуке");
 });
 
+test("update() не создаёт узлы музыки при mute и возобновляет музыку после unmute", () => {
+  const { a, ctx } = makeAudio(1);
+  const engine = stub();
+  a.setEnabled(false);
+  const beforeMuteTick = ctx.total();
+  a.update(engine, 1 / 20, 0);
+  assert.equal(ctx.total(), beforeMuteTick, "периодический chord scheduler не должен синтезировать музыку в тишину");
+
+  a.setEnabled(true);
+  a.update(engine, 1 / 20, 0);
+  assert.ok(ctx.total() > beforeMuteTick, "после включения master sound музыка должна возобновиться");
+});
+
 test("update() не падает на повреждённом сохранении", () => {
   const { a } = makeAudio();
   const broken: Record<string, unknown>[] = [
