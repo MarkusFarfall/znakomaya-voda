@@ -336,7 +336,7 @@ export function DailyPanel({ engine }: { engine: Engine }) {
       <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="label-brass">Задания на {new Date().toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}</div>
-          <p className="mt-1 max-w-md text-[12px] leading-relaxed muted">Три поручения на реальные сутки. Выполните все — получите сундук дня и продлите серию: каждый день подряд добавляет 10% к наградам (до +60%).</p>
+          <p className="mt-1 max-w-md text-[12px] leading-relaxed muted">Три поручения на реальные сутки: рыбалка, занятие другого типа и отдельный челлендж. Награды и опыт растут с уровнем; недавние шаблоны не повторяются, если есть выбор. Серия добавляет 10% к выплатам за день (до +60%). Выполните все — получите сундук дня.</p>
         </div>
         <div className="flex gap-6 text-right">
           <div><div className="label">Серия</div><div className="num text-[22px] text-[var(--brass-2,#e3c996)]">{d.streak} <span className="text-[12px] dim">дн.</span></div></div>

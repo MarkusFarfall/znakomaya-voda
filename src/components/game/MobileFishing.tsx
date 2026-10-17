@@ -119,17 +119,24 @@ export function MobileFishing({
                   b.id === "worm" ||
                   (e.s.baits[b.id] ?? 0) > 0 ||
                   e.s.currentBait === b.id,
-              ).map((b) => (
-                <button
-                  key={b.id}
-                  aria-label={`Наживка: ${b.name}`}
-                  aria-pressed={e.s.currentBait === b.id}
-                  title={b.name}
-                  onClick={() => e.setBait(b.id)}
-                >
-                  <BaitIcon id={b.id} size={20} />
-                </button>
-              ))}
+              ).map((b) => {
+                const count = b.id === "worm" ? "∞" : (e.s.baits[b.id] ?? 0).toLocaleString("ru-RU");
+                const countLabel = b.id === "worm" ? "безлимитный запас" : `осталось ${e.s.baits[b.id] ?? 0}`;
+                return (
+                  <button
+                    key={b.id}
+                    className="mobile-fishing__bait"
+                    aria-label={`Наживка: ${b.name}, ${countLabel}`}
+                    aria-pressed={e.s.currentBait === b.id}
+                    title={`${b.name} · ${b.id === "worm" ? "безлимит" : `×${e.s.baits[b.id] ?? 0}`}`}
+                    disabled={b.id !== "worm" && !(e.s.baits[b.id] ?? 0)}
+                    onClick={() => e.setBait(b.id)}
+                  >
+                    <BaitIcon id={b.id} size={20} />
+                    <span className="mobile-fishing__bait-count" aria-hidden="true">{count}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

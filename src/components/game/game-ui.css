@@ -339,8 +339,8 @@
 .local-navigation__readout { display:flex; align-items:center; gap:9px; min-width:0; margin-top:7px; padding:7px 9px; border:1px solid #aebda31f; border-radius:9px; background:linear-gradient(100deg,#d5bd8910,#80bba70a); }
 .local-navigation__readout-mark { width:24px; flex:0 0 24px; color:#d8c28f; font-size:17px; text-align:center; }
 .local-navigation__readout > div { min-width:0; flex:1; display:flex; flex-direction:column; gap:2px; }
-.local-navigation__readout strong { overflow:hidden; color:#e6d5aa; font-size:10px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
-.local-navigation__readout > div > span { overflow:hidden; color:#9cafa6; font-size:9px; line-height:1.35; text-overflow:ellipsis; white-space:nowrap; }
+.local-navigation__readout strong { color:#e6d5aa; font-size:10px; font-weight:600; line-height:1.3; white-space:normal; overflow-wrap:anywhere; }
+.local-navigation__readout > div > span { color:#9cafa6; font-size:9px; line-height:1.35; white-space:normal; overflow-wrap:anywhere; }
 .local-navigation__readout-count { display:grid; place-items:center; width:26px; height:26px; flex:0 0 26px; border:1px solid #d5bd8936; border-radius:50%; color:#e9d59f; font-size:11px; }
 .local-navigation__chartrow { display:flex; align-items:center; gap:8px; margin-top:6px; }
 .local-navigation__chart { position:relative; flex:1; height:58px; overflow:hidden; border-radius:6px; }
@@ -383,8 +383,10 @@
 .mobile-fishing__rudder { display:flex; gap:6px; }
 .mobile-fishing__rudder .water-hold { flex:1 1 0; width:auto; max-width:var(--control-size,56px); }
 .mobile-fishing__baits { display:flex; gap:6px; overflow-x:auto; scrollbar-width:thin; }
-.mobile-fishing__baits button { width:44px; height:44px; flex:0 0 44px; display:flex; justify-content:center; align-items:center; border:1px solid #94ae9a40; border-radius:11px; background:#152a2f; }
+.mobile-fishing__baits button { position:relative; width:44px; height:44px; flex:0 0 44px; display:flex; justify-content:center; align-items:center; border:1px solid #94ae9a40; border-radius:11px; background:#152a2f; }
 .mobile-fishing__baits button[aria-pressed=true] { border-color:#dfbd7e; background:#333b32; }
+.mobile-fishing__baits button:disabled { opacity:.45; cursor:not-allowed; }
+.mobile-fishing__bait-count { position:absolute; right:1px; bottom:1px; min-width:16px; height:15px; padding:0 3px; border:1px solid #ddc384aa; border-radius:999px; background:#091319; color:#f5e5bf; font-size:9px; font-weight:700; line-height:13px; text-align:center; font-variant-numeric:tabular-nums; }
 .mobile-fishing__primary { min-width:110px; width:40%; height:var(--control-size,56px); min-height:44px; flex-shrink:0; border-radius:14px; border:1px solid #f4da9d88; background:linear-gradient(135deg,#e9d4a0,#b79a5c); color:#17242a; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:5px; user-select:none; -webkit-touch-callout:none; }
 .mobile-fishing__primary>span { font-weight:700; font-size:14px; }
 .mobile-fishing__primary>small { font-size:8px; }

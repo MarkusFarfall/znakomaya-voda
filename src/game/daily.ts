@@ -37,6 +37,8 @@ export interface DailyState {
   lastComplete: string;
   bonusClaimed: boolean;
   rerolls: number;
+  /** До шести последних шаблонов — чтобы не повторять поручения несколько дней подряд. */
+  recentTpls?: string[];
 }
 
 interface Ctx {
@@ -54,7 +56,20 @@ interface Tpl {
 }
 
 const unlockedLocs = (s: SaveData) => (s.unlocked?.length ? s.unlocked : ["bay"]) as LocId[];
-const scale = (lvl: number) => 1 + lvl * 0.09;
+
+/** Денежная часть ежедневных наград заметно растёт с уровнем игрока. */
+export const dailyLevelMultiplier = (level: number) => {
+  const safeLevel = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
+  return 1 + (safeLevel - 1) * 0.12;
+};
+
+/** Опыт растёт осторожнее: его требование к уровню увеличивается существенно быстрее денег. */
+export const dailyXpMultiplier = (level: number) => {
+  const safeLevel = Number.isFinite(level) ? Math.max(1, Math.floor(level)) : 1;
+  return 1 + (safeLevel - 1) * 0.035;
+};
+
+const scale = dailyLevelMultiplier;
 
 const TEMPLATES: Tpl[] = [
   {
@@ -91,7 +106,7 @@ const TEMPLATES: Tpl[] = [
   },
   {
     id: "catch_weight", weight: 2,
-    make: ({ level, rnd }) => { const g = Math.round((20 + rnd() * 30) * scale(level)); return { title: `Выловить ${g} кг рыбы`, goal: g, reward: Math.round(g * 9 * scale(level) * 0.6), xp: Math.round(g * 2) }; },
+    make: ({ level, rnd }) => { const g = Math.round((8 + rnd() * 10) * scale(level)); return { title: `Выловить ${g} кг рыбы`, goal: g, reward: Math.round(g * 22), xp: Math.round(g * 2) }; },
     match: (_t, e) => (e.k === "catch" ? e.weight : 0),
   },
   {
@@ -246,7 +261,7 @@ const TEMPLATES: Tpl[] = [
   },
   {
     id: "catch_two_locs", weight: 1, minLevel: 4,
-    make: ({ s, level }) => (unlockedLocs(s).length < 2 ? null : { title: "Поймать рыбу в трёх разных акваториях", goal: 3, reward: Math.round(480 * scale(level)), xp: 100, p: { seen: "" } }),
+    make: ({ s, level }) => (unlockedLocs(s).length < 3 ? null : { title: "Поймать рыбу в трёх разных акваториях", goal: 3, reward: Math.round(480 * scale(level)), xp: 100, p: { seen: "" } }),
     match: (t, e) => {
       if (e.k !== "catch") return 0;
       const seen = String(t.p?.seen ?? "").split(",").filter(Boolean);
@@ -276,6 +291,25 @@ const TEMPLATES: Tpl[] = [
   },
 ];
 
+export type DailyTaskFamily = "routine" | "challenge" | "market" | "exploration" | "skill" | "care";
+
+const TASK_FAMILIES: Partial<Record<string, DailyTaskFamily>> = {
+  catch_species: "challenge", catch_rare: "challenge", catch_new: "challenge", catch_weight: "challenge",
+  catch_big: "challenge", catch_deep: "challenge", variant: "challenge", catch_uncommon: "challenge",
+  catch_epic: "challenge", catch_record: "challenge", catch_small: "challenge", catch_shape_flat: "challenge",
+  catch_shark: "challenge", catch_eel: "challenge", catch_value: "challenge", catch_streak_clean: "challenge",
+  catch_two_locs: "challenge", catch_species_count: "challenge", no_escape: "challenge",
+  perfect: "skill", jump: "skill",
+  sell: "market", sell_away: "market", order: "market", buy_gear: "market",
+  find: "exploration", sail: "exploration", visit_port: "exploration",
+  release: "care",
+};
+
+export const dailyTaskFamily = (tpl: string): DailyTaskFamily => TASK_FAMILIES[tpl] ?? "routine";
+const SIDE_FAMILIES = ["market", "exploration", "skill", "care"] as const satisfies readonly DailyTaskFamily[];
+export const isDailySideFamily = (family: DailyTaskFamily) => (SIDE_FAMILIES as readonly string[]).includes(family);
+const ALL_FAMILIES: readonly DailyTaskFamily[] = ["routine", "challenge", ...SIDE_FAMILIES];
+
 const TPL_BY_ID = Object.fromEntries(TEMPLATES.map((t) => [t.id, t]));
 
 export function todayKey(d = new Date()) {
@@ -296,32 +330,64 @@ function seedRng(str: string) {
   };
 }
 
-/** Три задания на день, детерминированно по дате и игроку */
-export function makeTasks(s: SaveData, level: number, date: string, salt = 0): DailyTask[] {
+/** Три задания на день, детерминированно по дате и игроку. */
+export function makeTasks(s: SaveData, level: number, date: string, salt = 0, recentTpls: readonly string[] = []): DailyTask[] {
   const rnd = seedRng(`${date}|${s.name}|${salt}|${s.stats.totalCaught > 0 ? 1 : 0}`);
   const pick = <T,>(a: T[]) => a[Math.floor(rnd() * a.length)];
   const ctx: Ctx = { s, level, rnd, pick };
   const out: DailyTask[] = [];
   const used = new Set<string>();
-  let guard = 0;
-  while (out.length < 3 && guard++ < 60) {
-    const avail = TEMPLATES.filter((t) => !used.has(t.id) && (t.minLevel ?? 0) <= level);
-    const tot = avail.reduce((a, t) => a + t.weight, 0);
-    let r = rnd() * tot;
-    let tpl = avail[0];
-    for (const t of avail) { r -= t.weight; if (r <= 0) { tpl = t; break; } }
-    used.add(tpl.id);
-    const m = tpl.make(ctx);
-    if (!m) continue;
-    out.push({ id: `${date}-${tpl.id}-${out.length}`, tpl: tpl.id, progress: 0, done: false, claimed: false, ...m });
+  const recent = new Set(recentTpls);
+
+  const take = (families: readonly DailyTaskFamily[], index: number): DailyTask | null => {
+    // Сначала избегаем шаблонов последних дней; если подходящих заданий нет,
+    // ослабляем только это ограничение, не ломая категории и прогресс.
+    for (const avoidRecent of [true, false]) {
+      let avail = TEMPLATES.filter((t) => !used.has(t.id) && (t.minLevel ?? 0) <= level
+        && families.includes(dailyTaskFamily(t.id)) && (!avoidRecent || !recent.has(t.id)));
+      while (avail.length) {
+        const total = avail.reduce((sum, t) => sum + t.weight, 0);
+        let r = rnd() * total;
+        let at = 0;
+        for (; at < avail.length - 1; at++) { r -= avail[at].weight; if (r < 0) break; }
+        const tpl = avail[at];
+        avail = avail.filter((t) => t.id !== tpl.id);
+        used.add(tpl.id);
+        const made = tpl.make(ctx);
+        if (!made) continue;
+        return {
+          id: `${date}-${tpl.id}-${index}`,
+          tpl: tpl.id,
+          progress: 0,
+          done: false,
+          claimed: false,
+          ...made,
+          xp: Math.round(made.xp * dailyXpMultiplier(level)),
+        };
+      }
+    }
+    return null;
+  };
+
+  // Ежедневный набор сочетает обычную рыбалку, занятие вне основного цикла
+  // и отдельный челлендж. Поэтому однотипные поручения не занимают все слоты.
+  const slots: readonly (readonly DailyTaskFamily[])[] = [["routine"], SIDE_FAMILIES, ["challenge"]];
+  for (const [index, families] of slots.entries()) {
+    let task = take(families, index);
+    if (!task) {
+      const unusedFamilies = ALL_FAMILIES.filter((family) => !out.some((t) => dailyTaskFamily(t.tpl) === family));
+      task = take(unusedFamilies, index) ?? take(ALL_FAMILIES, index);
+    }
+    if (task) out.push(task);
   }
-  // третье задание — «сложное»: награда выше
+
+  // Третий слот зарезервирован под ограниченный челлендж с повышенной оплатой.
   if (out[2]) { out[2].reward = Math.round(out[2].reward * 1.5); out[2].xp = Math.round(out[2].xp * 1.5); }
   return out;
 }
 
 export function newDaily(): DailyState {
-  return { date: "", tasks: [], streak: 0, lastComplete: "", bonusClaimed: false, rerolls: 1 };
+  return { date: "", tasks: [], streak: 0, lastComplete: "", bonusClaimed: false, rerolls: 1, recentTpls: [] };
 }
 
 /** Проверка смены дня; возвращает true, если задания обновились */
@@ -332,7 +398,10 @@ export function rollDaily(d: DailyState, s: SaveData, level: number, now = new D
   y.setDate(y.getDate() - 1);
   if (d.lastComplete && d.lastComplete !== todayKey(y) && d.lastComplete !== key) d.streak = 0;
   d.date = key;
-  d.tasks = makeTasks(s, level, key);
+  d.recentTpls = [...new Set([...d.tasks.map((t) => t.tpl), ...(Array.isArray(d.recentTpls) ? d.recentTpls : [])])]
+    .filter((tpl) => typeof tpl === "string" && !!TPL_BY_ID[tpl])
+    .slice(0, 6);
+  d.tasks = makeTasks(s, level, key, 0, d.recentTpls);
   d.bonusClaimed = false;
   d.rerolls = 1;
   return true;

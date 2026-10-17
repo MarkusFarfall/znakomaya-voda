@@ -22,6 +22,7 @@ import { DailyTracker, FindModal, JournalModal, LetterModal, QuestTracker, XpBar
 import { SettingsModal } from "./SettingsModal";
 import { setBoat3dPref } from "@/game/render/boats3d/boat3d";
 import { CatchModal, fmt, PortModal, type PortTab } from "./Panels";
+import { CoolerModal } from "./CoolerModal";
 import { Codex } from "./Codex";
 import { TravelChoice, TravelOverlay } from "./Travel";
 import { MobileFishing } from "./MobileFishing";
@@ -52,7 +53,7 @@ export default function Game() {
   const [boot, setBoot] = useState<Boot>({ state: "loading" });
   const [playing, setPlaying] = useState(false);
   const [resting, setResting] = useState(false);
-  const [panel, setPanel] = useState<null | "codex" | "port" | "journal" | "friends">(null);
+  const [panel, setPanel] = useState<null | "codex" | "port" | "journal" | "friends" | "cooler">(null);
   const [letter, setLetter] = useState<number | null>(null);
   const [tripReq, setTripReq] = useState<Trip | null>(null);
   const [travelling, setTravelling] = useState<{ trip: Trip; mode: TravelMode } | null>(null);
@@ -485,7 +486,7 @@ export default function Game() {
     audioRef.current.setMuffled(playing && (panel !== null || settingsOpen || letter !== null || authOpen !== null));
   }, [engine, playing, panel, settingsOpen, letter, authOpen, travelling, tripReq, engine.s.atPort, boot.state]);
 
-  const openPanel = useCallback((p: "codex" | "journal" | "friends") => {
+  const openPanel = useCallback((p: "codex" | "journal" | "friends" | "cooler") => {
     audioRef.current.ui("open");
     setPanel((cur) => (cur === p ? null : cur === "port" ? cur : p));
   }, []);
@@ -799,7 +800,15 @@ export default function Game() {
             <div className="glass px-4 py-3">
               <div className="grid grid-cols-3 gap-3">
                 <div><div className="label">Средства</div><div className="num text-[17px] text-[var(--brass-2,#e3c996)]">{fmt(s.money)} ₽</div></div>
-                <div><div className="label">Садок</div><div className={`num text-[17px] ${engine.coolerFull ? "text-[var(--color-bad)]" : "text-[#f1ebdd]"}`}>{s.cooler.length}<span className="dim">/{engine.coolerCap}</span></div></div>
+                <button
+                  className="min-w-0 text-left transition hover:text-[var(--brass)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--brass)]"
+                  onClick={() => openPanel("cooler")}
+                  aria-label={`Открыть садок: ${s.cooler.length} из ${engine.coolerCap}`}
+                  title="Просмотреть улов и отпустить выбранную рыбу"
+                >
+                  <div className="label">Садок</div>
+                  <div className={`num text-[17px] ${engine.coolerFull ? "text-[var(--color-bad)]" : "text-[#f1ebdd]"}`}>{s.cooler.length}<span className="dim">/{engine.coolerCap}</span></div>
+                </button>
                 <div><div className="label">Кодекс</div><div className="num text-[17px] text-[#f1ebdd]">{found}<span className="dim">/{FISH.length}</span></div></div>
               </div>
               <div className="rule my-2.5" />
@@ -843,7 +852,13 @@ export default function Game() {
                   </div>
                   <div className="glass num flex items-center gap-3 whitespace-nowrap px-3 py-1.5 text-[12px]">
                     <span className="text-[var(--brass-2,#e3c996)]">{fmt(s.money)} ₽</span>
-                    <span className={engine.coolerFull ? "text-[var(--color-bad)]" : "text-[#ece6d8]"}><Icon name="basket" size={12} className="mr-1 inline -translate-y-px opacity-60" />{s.cooler.length}/{engine.coolerCap}</span>
+                    <button
+                      type="button"
+                      className={`inline-flex items-center gap-1.5 rounded-sm transition hover:text-[var(--brass-2,#e3c996)] focus-visible:outline focus-visible:outline-1 focus-visible:outline-[var(--brass)] ${engine.coolerFull ? "text-[var(--color-bad)]" : "text-[#ece6d8]"}`}
+                      onClick={() => openPanel("cooler")}
+                      aria-label={`Открыть садок: ${s.cooler.length} из ${engine.coolerCap}`}
+                      title="Просмотреть улов и отпустить выбранную рыбу"
+                    ><Icon name="basket" size={12} />{s.cooler.length}/{engine.coolerCap}</button>
                   </div>
                 </div>
               </div>
@@ -1114,6 +1129,7 @@ export default function Game() {
           {engine.phase === "caught" && engine.lastFind && <FindModal engine={engine} />}
           {panel === "codex" && <Codex codex={engine.s.codex} onClose={closePanel} />}
           {panel === "journal" && <JournalModal engine={engine} onClose={closePanel} />}
+          {panel === "cooler" && <CoolerModal engine={engine} onClose={closePanel} />}
           {settingsOpen && <SettingsModal settings={settings} setSettings={setSettings} camMode={camMode} onCamMode={setCamMode} onClose={() => setSettingsOpen(false)} />}
           {panel === "port" && <PortModal key={portTab} engine={engine} cloud={cloud} initialTab={portTab} mapOnly={!engine.s.atPort && portTab === "map"} onClose={closePanel} onTravel={requestTrip} onRest={startRest} onReset={reset} />}
           {letter !== null && <LetterModal engine={engine} index={letter} onClose={() => { audio.ui("paper"); setLetter(null); }} />}

@@ -112,6 +112,7 @@ export type PortTab = "market" | "orders" | "gear" | "bait" | "boats" | "map" | 
 export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, initialTab = "market", mapOnly = false }: { engine: Engine; onClose: () => void; onTravel: (t: Trip) => void; onRest: () => void; onReset: () => void; cloud: string; initialTab?: PortTab; mapOnly?: boolean }) {
   const [tab, setTab] = useState<PortTab>(initialTab);
   const [flash, setFlash] = useState<string | null>(null);
+  const [pendingRelease, setPendingRelease] = useState<string | null>(null);
   const s = engine.s;
   const say = (m: string) => { setFlash(m); setTimeout(() => setFlash(null), 2400); };
   const quote = engine.coolerQuote();
@@ -207,6 +208,7 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
                     const best = PORTS.filter((p) => s.portsKnown.includes(p.id) && p.id !== s.port).map((p) => ({ p, d: (p.demand[f.loc[0]] ?? 1) * (f.rarity === "epic" || f.rarity === "legendary" ? p.rareDemand : 1) })).sort((a, b) => b.d - a.d)[0];
                     const hereD = engine.demand(c.fishId);
                     const forOrder = s.orders.some((o) => o.fishId === c.fishId && c.weight >= o.minWeight);
+                    const confirmRelease = pendingRelease === c.uid;
                     return (
                       <tr key={c.uid} className="border-t border-[var(--line)]">
                         <td className="w-20 py-1.5"><FishIcon fish={f} size={72} height={36} variant={c.variant} /></td>
@@ -221,7 +223,19 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
                         <td className="num py-1.5 text-right muted">{fmtW(c.weight)}</td>
                         <td className={`num hidden py-1.5 text-right sm:table-cell ${m >= 1 ? "text-[var(--color-ok)]" : "text-[var(--color-bad)]"}`}>{m >= 1.9 ? "×2" : `${m >= 1 ? "+" : "−"}${Math.abs(Math.round((m - 1) * 100))}%`}</td>
                         <td className="num py-1.5 text-right text-[var(--brass-2,#e3c996)]">{fmt(quote.get(c.uid) ?? engine.marketValue(c))} ₽{sat < 0.999 && <div className="text-[10px] text-[var(--color-bad)]">рынок −{Math.round((1 - sat) * 100)}%</div>}</td>
-                        <td className="w-24 py-1.5 text-right"><button className="btn btn-sm btn-quiet" onClick={() => engine.sellOne(c.uid)}>Продать</button></td>
+                        <td className="w-28 py-1.5 text-right">
+                          <div className="flex flex-col items-end gap-1">
+                            <button className="btn btn-sm btn-quiet" onClick={() => engine.sellOne(c.uid)}>Продать</button>
+                            {confirmRelease ? (
+                              <div className="flex gap-1">
+                                <button className="btn btn-sm btn-quiet" aria-label={`Оставить ${f.name}`} onClick={() => setPendingRelease(null)}>Нет</button>
+                                <button className="btn btn-sm btn-danger" aria-label={`Подтвердить выпуск ${f.name}`} onClick={() => { if (engine.releaseCoolerFish(c.uid)) { setPendingRelease(null); say(`${f.name} отпущена`); } }}>Да</button>
+                              </div>
+                            ) : (
+                              <button className="btn btn-sm btn-quiet" aria-label={`Отпустить ${f.name}`} onClick={() => setPendingRelease(c.uid)}>Отпустить</button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     );
                   })}

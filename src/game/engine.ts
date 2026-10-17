@@ -10,7 +10,7 @@ import type { DirectorMessage, DirectorSave, Outcome } from "./events/types";
 import { GAME_EVENT_BY_ID, GAME_EVENTS } from "./events/gameCatalog";
 import { ACHIEVEMENTS, FINDS, FIND_BY_ID, levelFromXp, levelReward, levelTitle, PERKS, perkPoints, QUESTS, RANK_LEVEL, rankCost, spentPoints, type FindDef } from "./progress";
 import type { GearKind } from "./world";
-import { applyDaily, dailyChestReward, newDaily, rollDaily, streakBonus, todayKey, makeTasks, type DailyEvent, type DailyState } from "./daily";
+import { applyDaily, dailyChestReward, dailyTaskFamily, isDailySideFamily, newDaily, rollDaily, streakBonus, todayKey, makeTasks, type DailyEvent, type DailyState } from "./daily";
 import type { ActiveEvent, BaitId, CaughtFish, FishDef, LocId, Order, PortId, Rarity, SaveData, Season, Variant, WeatherId } from "./types";
 import {
   BAIT_BY_ID,
@@ -1377,6 +1377,19 @@ export class Engine {
     this.markDirty();
   }
 
+  /** Вернуть выбранную рыбу из садка в море; улов, деньги и записи кодекса не удаляются. */
+  releaseCoolerFish(uid: string) {
+    const index = this.s.cooler.findIndex((fish) => fish.uid === uid);
+    if (index < 0) return false;
+    const [fish] = this.s.cooler.splice(index, 1);
+    this.s.stats.releases++;
+    this.dailyEvent({ k: "release" });
+    this.checkProgress();
+    this.toast("Рыба отпущена", "info", `${FISH_BY_ID[fish.fishId].name} возвращена в воду · запись о поимке сохранена`);
+    this.markDirty();
+    return true;
+  }
+
   // ─────────── travel ───────────
   travelMinutes(to: LocId) {
     return this.travelMinutesTo(LOC_POS[to]);
@@ -1474,12 +1487,29 @@ export class Engine {
     this.markDirty();
     return true;
   }
-  /** Заменить одно невыполненное задание (раз в день) */
+  /** Заменить одно невыполненное задание (раз в день), сохраняя разнообразие набора. */
   rerollDaily(id: string) {
     const d = this.daily;
     const i = d.tasks.findIndex((t) => t.id === id);
     if (i < 0 || d.rerolls <= 0 || d.tasks[i].done) return false;
-    const fresh = makeTasks(this.s, this.level, d.date, 7 + d.tasks.length + Math.floor(Math.random() * 1000)).find((t) => !d.tasks.some((x) => x.tpl === t.tpl));
+
+    const targetFamily = dailyTaskFamily(d.tasks[i].tpl);
+    const targetIsSide = isDailySideFamily(targetFamily);
+    const remaining = d.tasks.filter((_, index) => index !== i);
+    const remainingFamilies = new Set(remaining.map((t) => dailyTaskFamily(t.tpl)));
+    const excluded = [...(Array.isArray(d.recentTpls) ? d.recentTpls : []), ...d.tasks.map((t) => t.tpl)];
+    let fresh: DailyState["tasks"][number] | undefined;
+
+    for (let attempt = 0; attempt < 24 && !fresh; attempt++) {
+      const candidates = makeTasks(this.s, this.level, d.date, 7 + d.tasks.length + attempt + Math.floor(Math.random() * 1000), excluded);
+      const compatible = candidates.filter((t) => {
+        const family = dailyTaskFamily(t.tpl);
+        const sameSlot = targetIsSide ? isDailySideFamily(family) : family === targetFamily;
+        return sameSlot && !d.tasks.some((current) => current.tpl === t.tpl);
+      });
+      fresh = compatible.find((t) => !remainingFamilies.has(dailyTaskFamily(t.tpl))) ?? compatible[0];
+    }
+
     if (!fresh) return false;
     fresh.id = `${d.date}-r-${fresh.tpl}`;
     d.tasks[i] = fresh;
