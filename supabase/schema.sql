@@ -99,6 +99,26 @@ CREATE UNIQUE INDEX "friendships_pair_uq" ON "friendships" USING btree ("a_user_
 CREATE INDEX "friendships_a_idx" ON "friendships" USING btree ("a_user_id","status");
 CREATE INDEX "friendships_b_idx" ON "friendships" USING btree ("b_user_id","status");
 
+-- Live-позиции отдельно от прогресса; запись имеет короткий TTL на уровне API.
+CREATE TABLE "friend_presence" (
+	"player_id" varchar(64) PRIMARY KEY NOT NULL,
+	"session_id" varchar(64) NOT NULL,
+	"location" varchar(32) NOT NULL,
+	"x" real NOT NULL,
+	"heading" integer DEFAULT 1 NOT NULL,
+	"velocity" real DEFAULT 0 NOT NULL,
+	"boat" integer DEFAULT 0 NOT NULL,
+	"activity" varchar(12) DEFAULT 'drifting' NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "friend_presence_x_range" CHECK ("x" >= 0 and "x" <= 1),
+	CONSTRAINT "friend_presence_heading_known" CHECK ("heading" in (-1, 1)),
+	CONSTRAINT "friend_presence_velocity_range" CHECK ("velocity" between -0.08 and 0.08),
+	CONSTRAINT "friend_presence_boat_range" CHECK ("boat" between 0 and 8),
+	CONSTRAINT "friend_presence_activity_known" CHECK ("activity" in ('sailing', 'fishing', 'drifting'))
+);
+ALTER TABLE "friend_presence" ADD CONSTRAINT "friend_presence_player_id_players_id_fk" FOREIGN KEY ("player_id") REFERENCES "public"."players"("id") ON DELETE cascade ON UPDATE no action;
+CREATE INDEX "friend_presence_location_updated_idx" ON "friend_presence" USING btree ("location", "updated_at");
+
 -- ── безопасность для Supabase (см. security.sql) ──
 alter table public.users    enable row level security;
 alter table public.sessions enable row level security;
@@ -106,3 +126,4 @@ alter table public.players  enable row level security;
 alter table public.saves    enable row level security;
 alter table public.catches  enable row level security;
 alter table public.friendships enable row level security;
+alter table public.friend_presence enable row level security;

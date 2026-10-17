@@ -1,5 +1,5 @@
 import { migrateSave } from "./engine";
-import type { FriendAction, FriendProfile, FriendsOverview, SearchResult } from "./friends";
+import type { FriendAction, FriendPresenceUpdate, FriendProfile, FriendsOverview, LiveFriendPresence, SearchResult } from "./friends";
 import type { CaughtFish, SaveData } from "./types";
 
 /** Локальный кэш сохранений: ключ — профиль игрока из аккаунта. Гостевого режима нет. */
@@ -232,6 +232,18 @@ export async function deleteAccount(password: string) {
 export async function fetchFriends(): Promise<FriendsOverview | null> {
   const r = await req<FriendsOverview>("/api/friends");
   return r.ok ? r.data : null;
+}
+
+/** Heartbeat отдельного краткоживущего присутствия; `null` завершает сеанс на воде. */
+export async function syncFriendPresence(playerId: string, sessionId: string, presence: FriendPresenceUpdate | null): Promise<{ friends: LiveFriendPresence[]; serverNow: string } | null> {
+  const r = await req<{ friends?: LiveFriendPresence[]; serverNow?: string }>("/api/friends/live", {
+    method: "POST",
+    keepalive: presence === null,
+    body: JSON.stringify({ playerId, sessionId, active: presence !== null, ...(presence ? { presence } : {}) }),
+  });
+  return r.ok && Array.isArray(r.data.friends) && typeof r.data.serverNow === "string"
+    ? { friends: r.data.friends, serverNow: r.data.serverNow }
+    : null;
 }
 
 /** Одно действие: заявка, принять, отклонить, отозвать, удалить, приватность. */

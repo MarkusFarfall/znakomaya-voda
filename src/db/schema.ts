@@ -148,3 +148,29 @@ export const friendships = pgTable(
     check("friendships_status_known", sql`${t.status} in ('pending', 'accepted')`),
   ],
 );
+
+/** Краткоживущая позиция в игровом мире; отдельно от сохранения прогресса. */
+export const friendPresence = pgTable(
+  "friend_presence",
+  {
+    playerId: varchar("player_id", { length: 64 })
+      .primaryKey()
+      .references(() => players.id, { onDelete: "cascade" }),
+    sessionId: varchar("session_id", { length: 64 }).notNull(),
+    location: varchar("location", { length: 32 }).notNull(),
+    x: real("x").notNull(),
+    heading: integer("heading").notNull().default(1),
+    velocity: real("velocity").notNull().default(0),
+    boat: integer("boat").notNull().default(0),
+    activity: varchar("activity", { length: 12 }).notNull().default("drifting"),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("friend_presence_location_updated_idx").on(t.location, t.updatedAt),
+    check("friend_presence_x_range", sql`${t.x} >= 0 and ${t.x} <= 1`),
+    check("friend_presence_heading_known", sql`${t.heading} in (-1, 1)`),
+    check("friend_presence_velocity_range", sql`${t.velocity} between -0.08 and 0.08`),
+    check("friend_presence_boat_range", sql`${t.boat} between 0 and 8`),
+    check("friend_presence_activity_known", sql`${t.activity} in ('sailing', 'fishing', 'drifting')`),
+  ],
+);

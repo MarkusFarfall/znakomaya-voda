@@ -34,7 +34,7 @@ const climate: Record<string, string> = {
   misty: "Туманный берег",
 };
 
-function Terrain({ uid }: { uid: string }) {
+export function WorldTerrain({ uid }: { uid: string }) {
   return (
     <g aria-hidden="true">
       <defs>
@@ -367,7 +367,7 @@ export function WorldAtlas({
                 drag.current = null;
               }}
             >
-              <Terrain uid={uid} />
+              <WorldTerrain uid={uid} />
               {!route.here && !route.local && (
                 <path
                   d={curve}

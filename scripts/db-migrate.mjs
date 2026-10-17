@@ -87,6 +87,22 @@ try {
             create index if not exists friendships_b_idx on public.friendships (b_user_id, status);
             alter table public.friendships enable row level security;`,
     },
+    {
+      name: 'friend_presence',
+      sql: `create table if not exists public.friend_presence (
+              player_id varchar(64) primary key references public.players(id) on delete cascade,
+              session_id varchar(64) not null,
+              location varchar(32) not null,
+              x real not null check (x >= 0 and x <= 1),
+              heading integer not null default 1 check (heading in (-1, 1)),
+              velocity real not null default 0 check (velocity between -0.08 and 0.08),
+              boat integer not null default 0 check (boat between 0 and 8),
+              activity varchar(12) not null default 'drifting' check (activity in ('sailing', 'fishing', 'drifting')),
+              updated_at timestamptz not null default now()
+            );
+            create index if not exists friend_presence_location_updated_idx on public.friend_presence (location, updated_at);
+            alter table public.friend_presence enable row level security;`,
+    },
   ];
   for (const t of later) {
     const has = await client.query("select to_regclass('public.' || $1)::text as t", [t.name]);
@@ -117,9 +133,18 @@ try {
       sql: `alter table public.players add column if not exists hide_location boolean not null default false;`,
     },
     {
+      label: 'идентификатор live-сеанса для безопасной остановки старой вкладки',
+      sql: `alter table public.friend_presence add column if not exists session_id varchar(64) not null default '';
+            alter table public.friend_presence alter column session_id drop default;`,
+    },
+    {
       label: 'ключ идемпотентности уловов (повторная отправка не задваивает запись)',
       sql: `alter table public.catches add column if not exists cid varchar(40);
             create unique index if not exists catches_cid_uq on public.catches (cid);`,
+    },
+    {
+      label: 'индекс присутствия друзей',
+      sql: `create index if not exists friend_presence_location_updated_idx on public.friend_presence (location, updated_at);`,
     },
   ];
   for (const a of alters) {
@@ -141,6 +166,7 @@ try {
     catches: ['id', 'player_id', 'fish_id', 'weight', 'variant', 'location_id', 'game_day', 'created_at', 'cid'],
     rate_limits: ['key', 'count', 'reset_at'],
     friendships: ['id', 'a_user_id', 'b_user_id', 'requested_by', 'status', 'created_at', 'updated_at', 'accepted_at'],
+    friend_presence: ['player_id', 'session_id', 'location', 'x', 'heading', 'velocity', 'boat', 'activity', 'updated_at'],
   };
   const tableNames = Object.keys(requiredColumns);
   const columnRows = await client.query(

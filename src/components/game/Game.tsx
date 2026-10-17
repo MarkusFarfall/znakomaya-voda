@@ -6,7 +6,7 @@ import { GameAudio } from "@/game/audio";
 import { depthToU, Engine, newSave, uToDepth, type TravelMode, type Trip } from "@/game/engine";
 import { FISH } from "@/game/fish";
 import { FIGHT_PANEL_HEIGHT } from "@/game/fishing";
-import { clearLocal, deleteRemote, fetchMe, flushCatches, forgetRememberedAccount, loadLocal, loadRemote, loadRememberedAccount, logCatch, logout as apiLogout, pickNewest, rememberAccount, saveLocal, saveRemote, type AccountUser } from "@/game/persist";
+import { clearLocal, deleteRemote, fetchMe, flushCatches, forgetRememberedAccount, loadLocal, loadRemote, loadRememberedAccount, logCatch, logout as apiLogout, pickNewest, rememberAccount, saveLocal, saveRemote, syncFriendPresence, type AccountUser } from "@/game/persist";
 import { RecoveryScreen, rememberFailure } from "./Recovery";
 import { AccountBadge, ProfileModal, type AccountState } from "./Account";
 import { AuthScreen } from "./AuthScreen";
@@ -50,6 +50,7 @@ export default function Game() {
   const [audio0] = useState(() => new GameAudio());
   const audioRef = useRef<GameAudio>(audio0);
   const pidRef = useRef<string>("");
+  const presenceSessionRef = useRef<{ playerId: string; sessionId: string } | null>(null);
   const [boot, setBoot] = useState<Boot>({ state: "loading" });
   const [playing, setPlaying] = useState(false);
   const [resting, setResting] = useState(false);
@@ -69,6 +70,7 @@ export default function Game() {
   const [cloud, setCloud] = useState<string>("проверка…");
   /** Друзья: список, заявки и значок на кнопке. Работает и до начала игры. */
   const friends = useFriends(account.user?.id ?? null);
+  const accountUserId = account.user?.id;
   const [, force] = useReducer((x: number) => x + 1, 0);
   const [name, setName] = useState("");
   const lastRemote = useRef(0);
@@ -300,6 +302,8 @@ export default function Game() {
   /** Выход: сохраняем прогресс на сервер и возвращаемся на экран входа. */
   const onLogout = useCallback(async () => {
     await persist(true);
+    const live = presenceSessionRef.current;
+    if (live) await syncFriendPresence(live.playerId, live.sessionId, null);
     await apiLogout();
     forgetRememberedAccount();
     setAccount({ user: null, stats: null, offline: false });
@@ -372,6 +376,97 @@ export default function Game() {
   const mobileControls=touch||view.compact;
   const buttonFishing=mobileControls&&settings.controls.fishing==='buttons';
   useEffect(()=>{sceneRef.current.mobileButtons=buttonFishing;engineRef.current.cancelInput();},[buttonFishing,settings.controls.sailing]);
+
+  /** Короткий heartbeat не трогает saves; остановка/порт/скрытая вкладка освобождают live-сеанс. */
+  useEffect(() => {
+    const playerId = pidRef.current;
+    if (!playing || !accountUserId || account.offline || !playerId) {
+      sceneRef.current.setFriendPresence([]);
+      return;
+    }
+    const sessionId = typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `zv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+    const session = { playerId, sessionId };
+    presenceSessionRef.current = session;
+    let closed = false;
+    let requestPending = false;
+    let leaseActive = false;
+    let releasePending = false;
+
+    const canPublish = () => !closed
+      && friends.data?.hideLocation !== true
+      && !travelling
+      && document.visibilityState === "visible"
+      && !engineRef.current.s.atPort;
+
+    const sendStop = () => {
+      if (requestPending) { releasePending = true; return; }
+      if (!leaseActive && !releasePending) return;
+      leaseActive = false;
+      releasePending = false;
+      requestPending = true;
+      void syncFriendPresence(playerId, sessionId, null).finally(() => {
+        requestPending = false;
+        releasePending = false;
+      });
+    };
+
+    const release = () => {
+      sceneRef.current.setFriendPresence([]);
+      if (!leaseActive && !requestPending) return;
+      leaseActive = false;
+      releasePending = true;
+      if (requestPending) return;
+      sendStop();
+    };
+
+    const publish = async () => {
+      if (!canPublish()) { release(); return; }
+      if (requestPending) return;
+      const current = engineRef.current;
+      const position = {
+        location: current.s.location,
+        x: current.navigation.nx,
+        heading: current.navigation.heading,
+        velocity: current.navigation.velocity / current.navigation.worldWidth,
+        boat: current.s.boat,
+        activity: current.navigation.moving ? "sailing" as const : current.phase !== "idle" ? "fishing" as const : "drifting" as const,
+      };
+      requestPending = true;
+      leaseActive = true;
+      let response: Awaited<ReturnType<typeof syncFriendPresence>> = null;
+      try { response = await syncFriendPresence(playerId, sessionId, position); }
+      catch { /* повторим по таймеру; локальный снимок истечёт по TTL */ }
+      requestPending = false;
+      if (releasePending || !canPublish()) {
+        leaseActive = false;
+        releasePending = true;
+        sendStop();
+        return;
+      }
+      if (response) sceneRef.current.setFriendPresence(response.friends, response.serverNow);
+    };
+
+    const onVisibility = () => { if (document.visibilityState === "visible") void publish(); else release(); };
+    const onPageHide = () => release();
+    const timer = window.setInterval(() => { void publish(); }, 2_000);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("pageshow", onVisibility);
+    void publish();
+
+    return () => {
+      closed = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("pageshow", onVisibility);
+      release();
+      if (presenceSessionRef.current?.sessionId === sessionId) presenceSessionRef.current = null;
+    };
+  }, [playing, accountUserId, account.offline, friends.data?.hideLocation, travelling]);
+
   const quality = settings.quality;
   useEffect(() => {
     const canvas = canvasRef.current;

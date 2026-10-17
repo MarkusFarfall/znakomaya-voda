@@ -5,12 +5,13 @@ import { AquatoryStream } from "./aquatoryStream";
 import { LocalWake } from "./localWake";
 import { depthToU, JUMP_TIME, TIME_SCALE, type Engine, type SonarBand } from "../engine";
 import { FISH } from "../fish";
+import { FRIEND_PRESENCE_TTL_MS, type LiveFriendPresence } from "../friends";
 import { drawFish, drawFishGlow, fishScreenLen } from "../fishDraw";
 import type { FishDef } from "../types";
 import { PrecipitationField } from "./precipitation";
 import { projectFightFish } from "./fishingGeometry";
-import { BAIT_BY_ID } from "../world";
-import { BOAT_SPECS, drawBoat } from "./boat";
+import { BAIT_BY_ID, BOATS } from "../world";
+import { BOAT_SPECS, drawBoat, drawFleetBoat } from "./boat";
 import { Boat3D } from "./boats3d/boat3d";
 import type { Frame } from "./frame";
 import { drawBobberPointer, drawFightPanel, drawPower, drawRuler, drawSonar } from "./hud";
@@ -95,6 +96,17 @@ export class Scene {
   private sonar: SonarBand[] = [];
   private sonarT = 0;
   private whaleX = -500;
+  private friendPresence: { presence: LiveFriendPresence; receivedAt: number; ageAtReceiptMs: number }[] = [];
+
+  setFriendPresence(snapshot: readonly LiveFriendPresence[], serverNow = new Date().toISOString()) {
+    const receivedAt = Date.now();
+    const serverTime = Date.parse(serverNow);
+    this.friendPresence = snapshot.slice(0, 50).map((presence) => {
+      const updatedAt = Date.parse(presence.updatedAt);
+      const serverAge = Number.isFinite(serverTime) && Number.isFinite(updatedAt) ? Math.max(0, serverTime - updatedAt) : 0;
+      return { presence, receivedAt, ageAtReceiptMs: serverAge };
+    });
+  }
 
   private init(W: number, H: number) {
     if (W === this.W && H === this.H && this.initQuality === this.quality) return;
@@ -339,6 +351,7 @@ export class Scene {
     ctx.restore();
     tip = [bx + (tip[0] - bx) * turnScale, tip[1]];
     if (this.voyage === null && this.gfx.foam) this.localWake.draw(f);
+    if (this.voyage === null) this.drawFriendFleet(f, screenX, screenW, z);
     if (this.voyage === null && e.navigationMode) this.drawNavigation(f);
     if (this.gfx.foam) drawSurfaceFront(f, this.rings);
     this.rings = this.rings.filter((r) => r.t < 0.7);
@@ -393,6 +406,60 @@ export class Scene {
     if (e.fade > 0) {
       ctx.fillStyle = `rgba(2,4,10,${smooth(clamp(e.fade, 0, 1))})`;
       ctx.fillRect(0, 0, screenW, H);
+    }
+  }
+
+  private drawFriendFleet(f: Frame, screenX: (x: number) => number, screenW: number, z: number) {
+    if (!this.friendPresence.length) return;
+    const now = Date.now();
+    const visible = this.friendPresence.flatMap((entry) => {
+      const { presence } = entry;
+      if (presence.location !== f.loc.id) return [];
+      const ageMs = entry.ageAtReceiptMs + Math.max(0, now - entry.receivedAt);
+      if (ageMs >= FRIEND_PRESENCE_TTL_MS) return [];
+      const age = Math.max(0, Math.min(2.5, ageMs / 1000));
+      const x = clamp(presence.x + presence.velocity * age, 0, 1) * f.W;
+      const sx = screenX(x);
+      if (sx < -90 || sx > screenW + 90) return [];
+      const boat = BOATS[presence.boat] ?? BOATS[0];
+      return [{ presence, x, sx, boat, speed: Math.abs(presence.velocity * f.W) / navigationSpeed(boat) }];
+    }).sort((a, b) => a.x - b.x);
+
+    for (const { presence, x, sx, boat, speed } of visible) {
+      drawFleetBoat(f, x, boat, presence.heading, speed, presence.activity);
+      const { ctx } = f;
+      const label = presence.username.slice(0, 24);
+      const fontSize = 12 / z;
+      ctx.save();
+      ctx.font = `650 ${fontSize}px ui-sans-serif, system-ui, sans-serif`;
+      const pad = 7 / z;
+      const width = Math.min(190 / z, ctx.measureText(label).width + pad * 2);
+      const height = 19 / z;
+      const labelY = f.waveY(x) - (76 + boat.tier * 9) * f.sc - 12 / z;
+      const labelX = clamp(x, this.cameraX + width / 2, this.cameraX + screenW / z - width / 2);
+      if (Math.abs(labelX - x) > 1 / z) {
+        ctx.beginPath();
+        ctx.moveTo(x, labelY + height * 0.56);
+        ctx.lineTo(labelX, labelY + height * 0.56);
+        ctx.lineWidth = 1 / z;
+        ctx.strokeStyle = "rgba(174, 223, 209, .58)";
+        ctx.stroke();
+      }
+      roundRect(ctx, labelX - width / 2, labelY - height / 2, width, height, 7 / z);
+      ctx.fillStyle = "rgba(4, 20, 25, .88)";
+      ctx.fill();
+      ctx.lineWidth = 1 / z;
+      ctx.strokeStyle = "rgba(174, 223, 209, .58)";
+      ctx.stroke();
+      ctx.fillStyle = "#f1f6e9";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(label, labelX, labelY, width - pad * 2);
+      ctx.beginPath();
+      ctx.arc(labelX, labelY + height * 0.56, 2.1 / z, 0, Math.PI * 2);
+      ctx.fillStyle = "#79d5b3";
+      ctx.fill();
+      ctx.restore();
     }
   }
 

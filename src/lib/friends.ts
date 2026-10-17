@@ -1,7 +1,7 @@
 import "server-only";
 import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { catches, friendships, players, saves, users } from "@/db/schema";
+import { catches, friendPresence, friendships, players, saves, users } from "@/db/schema";
 import { isClean } from "@/lib/auth";
 import { PORT_BY_ID, SPOT_BY_ID, WEATHER_INFO } from "@/game/world";
 import {
@@ -260,10 +260,11 @@ export async function removeRelation(me: string, otherId: unknown): Promise<Frie
 /** Скрыть/показать своё местоположение от друзей. */
 export async function setHideLocation(me: string, hide: boolean): Promise<FriendResult> {
   const res = await db.update(players).set({ hideLocation: hide }).where(eq(players.userId, me)).returning({ id: players.id });
-  if (!res.length) {
-    const p = await db.select({ id: players.id }).from(players).where(eq(players.userId, me)).limit(1);
-    if (!p[0]) return { ok: false, status: 404, error: "Профиль не найден" };
-  }
+  const profiles = res.length ? res : await db.select({ id: players.id }).from(players).where(eq(players.userId, me)).limit(1);
+  if (!profiles.length) return { ok: false, status: 404, error: "Профиль не найден" };
+  // Удаляем координаты немедленно. Читатель дополнительно фильтрует hide_location,
+  // так что приватность не зависит от успеха этой уборки.
+  if (hide) await db.delete(friendPresence).where(inArray(friendPresence.playerId, profiles.map((profile) => profile.id)));
   return { ok: true };
 }
 

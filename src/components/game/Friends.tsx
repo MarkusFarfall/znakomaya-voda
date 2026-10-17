@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { FISH_BY_ID } from "@/game/fish";
-import { LOCATIONS, LOC_POS, PORTS, PORT_BY_ID } from "@/game/world";
+import { LOCATIONS, PORTS, PORT_BY_ID } from "@/game/world";
+import { targetPoint } from "@/game/atlas";
+import { WorldTerrain } from "./WorldAtlas";
 import {
   avatarHue, boatOf, dayLabel, initialsOf, isOnline, lastSeenLabel, locOf, normalizeQuery,
   playTimeLabel, rankFleet, whereLabel, FRIEND_LIMIT,
@@ -55,8 +57,12 @@ function areaLabel(key: string): string {
 
 function pointFor(where: FriendSummary["where"]): [number, number] | null {
   if (!where || where.hidden) return null;
-  if (where.atPort && where.port) return PORT_BY_ID[where.port]?.pos ?? null;
-  return where.location ? LOC_POS[where.location] ?? null : null;
+  const target = where.atPort && where.port
+    ? { kind: "port" as const, id: where.port }
+    : where.location ? { kind: "loc" as const, id: where.location } : null;
+  if (!target) return null;
+  const [x, y] = targetPoint(target);
+  return [x / 10, y / 6.25];
 }
 
 function metricLabel(metric: FleetMetric, value: number): string {
@@ -98,38 +104,31 @@ function FleetMap({ members, selectedArea, onSelectArea }: { members: SocialMemb
 
   return (
     <div className="friends-fleet-map" aria-label="Последние сохранённые позиции экипажа">
-      <svg className="friends-fleet-map-art" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          <pattern id={`${mapId}-grid`} width="8" height="8" patternUnits="userSpaceOnUse"><path d="M8 0H0V8" fill="none" stroke="#b2ddd4" strokeOpacity=".11" strokeWidth=".18" /></pattern>
-          <pattern id={`${mapId}-ice`} width="1.7" height="1.7" patternUnits="userSpaceOnUse"><path d="M0 1.7L1.7 0" stroke="#d9eee6" strokeOpacity=".22" strokeWidth=".16" /></pattern>
-          <radialGradient id={`${mapId}-glow`} cx="48%" cy="49%" r="68%"><stop stopColor="#177d75" stopOpacity=".2" /><stop offset="1" stopColor="#06191d" stopOpacity="0" /></radialGradient>
-        </defs>
-        <rect width="100" height="100" fill="#07191d" />
-        <rect width="100" height="100" fill={`url(#${mapId}-glow)`} />
-        <rect width="100" height="100" fill={`url(#${mapId}-grid)`} />
-        <path d="M0 0h26c-3 4-8 4-9 8-1 4 6 5 5 9-1 4-8 4-8 8 0 5 8 6 7 10-1 4-8 5-7 9 1 4 7 5 5 9-2 5-9 5-8 10 1 4 6 6 4 10-2 4-8 5-7 9l3 9-11 2z" fill="#182d2b" stroke="#adcac159" strokeWidth=".3" />
-        <path d="M0 83c12 0 17-3 26-2 6 1 8 4 14 5 7 1 11-3 17-2 6 1 11 6 18 5 8-1 14-5 25-5v16H0z" fill={`url(#${mapId}-ice)`} stroke="#b5d4ce66" strokeWidth=".35" />
-        <path d="M9 74C17 61 23 55 31 48S45 38 53 42 65 57 74 52 87 36 94 26" fill="none" stroke="#9ed5ca" strokeOpacity=".28" strokeWidth=".35" strokeDasharray="1.2 1.3" />
-        {[0, 1, 2, 3].map((index) => <ellipse key={index} cx="79" cy="28" rx={7 + index * 4} ry={3.8 + index * 2.2} fill="none" stroke="#a9d5d0" strokeOpacity=".12" strokeWidth=".2" />)}
+      <svg className="friends-fleet-map-art" viewBox="0 0 1000 625" preserveAspectRatio="none" aria-hidden="true">
+        <WorldTerrain uid={mapId} />
       </svg>
 
       {LOCATIONS.map((location) => {
-        const [x, y] = LOC_POS[location.id];
-        return <span key={location.id} className="friends-map-place" style={{ left: `${x}%`, top: `${y}%` }} title={location.name} aria-hidden="true"><i />{location.name}</span>;
+        const [x, y] = targetPoint({ kind: "loc", id: location.id });
+        return <span key={location.id} className="friends-map-place" style={{ left: `${x / 10}%`, top: `${y / 6.25}%` }} title={location.name} aria-hidden="true"><i />{location.name}</span>;
       })}
-      {PORTS.map((port) => <span key={port.id} className="friends-map-port" style={{ left: `${port.pos[0]}%`, top: `${port.pos[1]}%` }} title={port.name} aria-hidden="true"><i /></span>)}
+      {PORTS.map((port) => {
+        const [x, y] = targetPoint({ kind: "port", id: port.id });
+        return <span key={port.id} className="friends-map-port" style={{ left: `${x / 10}%`, top: `${y / 6.25}%` }} title={port.name} aria-hidden="true"><i /></span>;
+      })}
 
       {areas.map((area) => {
         const names = area.members.map((member) => member.isMe ? "Вы" : member.username).join(", ");
-        const online = area.members.some((member) => isOnline(member.lastSeenAt));
+        const newest = Math.max(0, ...area.members.map((member) => safeTime(member.where?.updatedAt)));
+        const saved = newest ? `Последнее сохранение: ${lastSeenLabel(new Date(newest).toISOString())}` : "Сохранённая позиция";
         return (
           <button
             key={area.key}
             type="button"
-            className={`friends-map-marker ${selectedArea === area.key ? "is-selected" : ""} ${online ? "is-live" : ""}`}
+            className={`friends-map-marker ${selectedArea === area.key ? "is-selected" : ""}`}
             style={{ left: `${area.position[0]}%`, top: `${area.position[1]}%` }}
-            title={`${areaLabel(area.key)}: ${names}`}
-            aria-label={`${areaLabel(area.key)}: ${names}. Показать в экипаже`}
+            title={`${areaLabel(area.key)}: ${names}. ${saved}`}
+            aria-label={`${areaLabel(area.key)}: ${names}. ${saved}. Показать в экипаже`}
             onClick={() => onSelectArea(selectedArea === area.key ? null : area.key)}
           >
             <span className="friends-map-marker-core"><Icon name={area.portId ? "anchor" : "boat"} size={14} /></span>
@@ -138,8 +137,7 @@ function FleetMap({ members, selectedArea, onSelectArea }: { members: SocialMemb
         );
       })}
       {areas.length === 0 && <div className="friends-map-empty"><Icon name="map" size={20} /><span>Пока нет сохранённых точек на карте</span></div>}
-      <div className="friends-map-compass" aria-hidden="true"><span>N</span><Icon name="arrowR" size={14} /></div>
-      <div className="friends-map-scale" aria-hidden="true"><span /> 1 000 миль</div>
+      <div className="friends-map-disclaimer"><Icon name="clock" size={11} /> Срез по сохранениям · не live</div>
     </div>
   );
 }
@@ -151,24 +149,11 @@ export function FriendChart({ where, boat, compact = false }: { where: FriendSum
   const hidden = !!where?.hidden;
   return (
     <div className={`friends-chart ${compact ? "is-compact" : ""}`}>
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          <pattern id={`${chartId}-grid`} width="8" height="8" patternUnits="userSpaceOnUse"><path d="M8 0H0V8" fill="none" stroke="#b2ddd4" strokeOpacity=".12" strokeWidth=".18" /></pattern>
-          <radialGradient id={`${chartId}-deep`} cx="78%" cy="35%" r="60%"><stop stopColor="#061115" /><stop offset="1" stopColor="#0b2023" stopOpacity="0" /></radialGradient>
-        </defs>
-        <rect width="100" height="100" fill="#0b2023" />
-        <rect width="100" height="100" fill={`url(#${chartId}-grid)`} />
-        <rect width="100" height="100" fill={`url(#${chartId}-deep)`} />
-        <path d="M0 0h24c-3 5-8 5-9 10s6 5 5 10-8 4-8 9 7 7 5 11-8 4-7 9 6 6 4 10-8 6-6 12l3 8H0z" fill="#20302a" stroke="#c8d8bd45" strokeWidth=".35" />
-        <path d="M0 86c11-3 17-1 25 1s13 2 21 0 13 0 19 3 12 3 19 1 11-2 16-1v10H0z" fill="#cfe1d738" stroke="#cfe1d750" strokeWidth=".35" />
-        <path d="M12 72C23 60 28 53 40 49s20-1 28 3 16 1 26-12" fill="none" stroke="#9ed5ca" strokeOpacity=".22" strokeWidth=".4" strokeDasharray="1.4 1.8" />
-        {LOCATIONS.map((location) => {
-          const [x, y] = LOC_POS[location.id];
-          return <rect key={location.id} x={x - 0.5} y={y - 0.5} width="1" height="1" transform={`rotate(45 ${x} ${y})`} fill="#d8e4d7" fillOpacity=".4" />;
-        })}
+      <svg viewBox="0 0 1000 625" preserveAspectRatio="none" aria-hidden="true">
+        <WorldTerrain uid={chartId} />
       </svg>
       {target && !hidden && <span className="friends-chart-pin" style={{ left: `${target[0]}%`, top: `${target[1]}%` }}><i /><Icon name={where?.atPort ? "anchor" : "boat"} size={16} /></span>}
-      <div className="friends-chart-stamp"><Icon name={hidden ? "lock" : where?.atPort ? "anchor" : "compass"} size={13} />{hidden ? "Координаты закрыты" : whereLabel(where)}</div>
+      <div className="friends-chart-stamp"><Icon name={hidden ? "lock" : where?.atPort ? "anchor" : "compass"} size={13} /><span>{hidden ? "Координаты закрыты" : where ? `${whereLabel(where)} · сохранено ${lastSeenLabel(where.updatedAt)}` : whereLabel(where)}</span></div>
       {!hidden && boat && <div className="friends-chart-boat">{boat.name} · класс {boat.tier}</div>}
       {hidden && <div className="friends-chart-veil"><Icon name="lock" size={17} /><span>Местоположение скрыто</span></div>}
       {!where && <div className="friends-chart-veil"><Icon name="compass" size={17} /><span>Воды ещё не отмечены</span></div>}
@@ -200,7 +185,7 @@ function WhereLine({ f }: { f: FriendSummary }) {
     <div className="friends-where-line">
       <span className={`friends-where-copy ${w?.hidden ? "is-private" : ""}`}>
         <Icon name={w?.hidden ? "lock" : w?.atPort ? "anchor" : "pin"} size={13} />
-        <span className="truncate">{whereLabel(w)}</span>
+        <span className="friends-where-location"><span className="truncate">{whereLabel(w)}</span>{!w?.hidden && w?.updatedAt && <small>позиция сохранена {lastSeenLabel(w.updatedAt)}</small>}</span>
         {!w?.hidden && w?.weather && <Icon name={WEATHER_ICON[w.weather]} size={13} />}
       </span>
       <span className={`friends-presence ${online ? "is-online" : ""}`}>
@@ -624,12 +609,12 @@ export function FriendsModal({ state, onClose, onUi, me }: { state: FriendsState
 
           {d && view === "overview" && (
             <div className="friends-page friends-overview-page">
-              <div className="friends-page-heading"><div><div className="friends-kicker">ПОСЛЕДНИЙ СРЕЗ СЕТИ</div><h2>Флот на карте</h2><p>Точки обновляются по сохранениям игроков. Скрытые координаты здесь не появляются.</p></div><button type="button" className="friends-outline-button" disabled={refreshing} onClick={() => void refresh()}><Icon name="forward" size={15} className={refreshing ? "friends-spin" : ""} />Обновить</button></div>
+              <div className="friends-page-heading"><div><div className="friends-kicker">ПОСЛЕДНИЙ СРЕЗ СЕТИ</div><h2>Флот на карте</h2><p>Это последние сохранённые точки, а не live-позиции. Скрытые координаты здесь не появляются; живые лодки видны в общей игровой акватории.</p></div><button type="button" className="friends-outline-button" disabled={refreshing} onClick={() => void refresh()}><Icon name="forward" size={15} className={refreshing ? "friends-spin" : ""} />Обновить</button></div>
               <div className="friends-dashboard-grid">
                 <section className="friends-map-card">
-                  <div className="friends-panel-heading"><div><span className="friends-panel-index">01</span><div><div className="friends-kicker">РАДАР ЭКИПАЖА</div><h3>Последние отметки</h3></div></div><span className="friends-map-live"><i />{sailingCount} в море · {atPortCount} в портах</span></div>
+                  <div className="friends-panel-heading"><div><span className="friends-panel-index">01</span><div><div className="friends-kicker">РАДАР ЭКИПАЖА</div><h3>Последние отметки</h3></div></div><span className="friends-map-snapshot"><i />Сохранённые позиции</span></div>
                   <FleetMap members={members} selectedArea={selectedArea} onSelectArea={(area) => { onUi(); setSelectedArea(area); if (area) { setFilter("all"); setView("fleet"); } }} />
-                  <div className="friends-map-foot"><span><i className="map-dot is-on" />В сети</span><span><i className="map-dot" />Последнее сохранение</span><span className="friends-map-foot-note">Нажмите метку, чтобы отфильтровать экипаж</span></div>
+                  <div className="friends-map-foot"><span><i className="map-dot" />Последнее сохранение</span><span className="friends-map-foot-note">Нажмите метку, чтобы отфильтровать экипаж · live-лодки появляются в сцене</span></div>
                 </section>
                 <aside className="friends-overview-rail">
                   <section className="friends-panel friends-presence-panel">
@@ -829,7 +814,7 @@ function ProfileHero({ profile, self, onRemove }: { profile: FriendProfile; self
   const boat = profile.where?.hidden ? null : boatOf(profile.where?.boat ?? null);
   return (
     <section className="friends-profile-hero">
-      <div className="friends-profile-identity"><Avatar id={profile.userId} name={profile.username} size={76} online={online} self={self} /><div className="friends-profile-name"><div className="friends-profile-overline"><span className={online ? "is-live" : ""}><i />{online ? "В ИГРЕ СЕЙЧАС" : lastSeenLabel(profile.lastSeenAt).toUpperCase()}</span><span>КАПИТАН · УРОВЕНЬ {profile.level}</span></div><h2>{profile.username}</h2><p>{whereLabel(profile.where)}{!profile.where?.hidden && profile.where?.weatherName ? ` · ${profile.where.weatherName}` : ""}</p></div><div className="friends-profile-action">{!self && <button type="button" className="friends-remove-action" onClick={onRemove}>Убрать из друзей</button>}</div></div>
+      <div className="friends-profile-identity"><Avatar id={profile.userId} name={profile.username} size={76} online={online} self={self} /><div className="friends-profile-name"><div className="friends-profile-overline"><span className={online ? "is-live" : ""}><i />{online ? "В ИГРЕ СЕЙЧАС" : lastSeenLabel(profile.lastSeenAt).toUpperCase()}</span><span>КАПИТАН · УРОВЕНЬ {profile.level}</span></div><h2>{profile.username}</h2><p>{whereLabel(profile.where)}{!profile.where?.hidden && profile.where?.updatedAt ? ` · сохранено ${lastSeenLabel(profile.where.updatedAt)}` : ""}{!profile.where?.hidden && profile.where?.weatherName ? ` · ${profile.where.weatherName}` : ""}</p></div><div className="friends-profile-action">{!self && <button type="button" className="friends-remove-action" onClick={onRemove}>Убрать из друзей</button>}</div></div>
       <div className="friends-profile-details"><div className="friends-profile-chart"><FriendChart where={profile.where} boat={boat} compact /></div><div className="friends-profile-vessel">{boat ? <><BoatPreview hull={boat.hull} trim={boat.trim} tier={boat.tier} style={boat.style} className="w-full" /><div><span>ТЕКУЩЕЕ СУДНО · КЛАСС {boat.tier}</span><b>{boat.name}</b><small>{boat.desc}</small></div></> : <div className="friends-no-vessel"><Icon name={profile.where?.hidden ? "lock" : "boat"} size={22} /><span>{profile.where?.hidden ? "Игрок скрыл сведения о судне" : "Сведения о судне ещё не сохранены"}</span></div>}</div><div className="friends-profile-meta"><span><i>АККАУНТ С</i><b>{profile.accountSince ? new Date(profile.accountSince).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }) : "—"}</b></span><span><i>ПРОВЕДЕНО В ИГРЕ</i><b>{playTimeLabel(profile.playSeconds)}</b></span><span><i>ДРУЖБА С</i><b>{self ? "Вы — капитан" : profile.friendsSince ? new Date(profile.friendsSince).toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" }) : "—"}</b></span></div></div>
     </section>
   );

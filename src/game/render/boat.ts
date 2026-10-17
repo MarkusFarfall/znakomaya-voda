@@ -10,8 +10,8 @@
  * у форштевня растёт бурун, за кормой остаётся пенный след, у глиссирующих — веер брызг и «петушиный хвост»,
  * у тяжёлых судов — кормовая волна; паруса плавно поднимаются и спускаются.
  */
-import type { BoatStyle } from "../types";
-import type { Frame } from "./frame";
+import type { BoatDef, BoatStyle } from "../types";
+import type { EngineView, Frame } from "./frame";
 import { clamp, hexA } from "./util";
 import { M, makePen, type Pose, type R } from "./boats/kit";
 import { drawArt } from "./boats/art";
@@ -50,6 +50,49 @@ export const BOAT_SPECS: Record<BoatStyle, Spec> = {
 };
 
 const FOAM_RATE: Record<WakeKind, number> = { oars: 7, plane: 46, disp: 24, sail: 18, heavy: 30 };
+
+/** Та же арта лодки, что у игрока, но с безопасным снимком характеристик удалённого капитана. */
+export function drawFleetBoat(
+  f: Frame,
+  x: number,
+  boat: BoatDef,
+  heading: 1 | -1,
+  speed: number,
+  activity: "sailing" | "fishing" | "drifting",
+) {
+  const { ctx } = f;
+  const spec = BOAT_SPECS[boat.style] ?? BOAT_SPECS.row;
+  const k = M * f.sc;
+  const reach = spec.half * 0.78 * k;
+  const angle = Math.atan2(f.waveY(x + reach) - f.waveY(x - reach), reach * 2);
+  const boatSpeed = clamp(speed, 0, 1);
+  const pose: Pose = activity === "sailing" ? "helm" : "fish";
+  const e: EngineView = {
+    boat,
+    temperature: f.e.temperature,
+    phase: activity === "fishing" ? "waiting" : "idle",
+    power: 0,
+    castT: 0,
+    reeling: false,
+    pullDir: 0,
+    hooked: null,
+  };
+  const rainy = ["rain", "storm", "snow"].includes(f.weather);
+  const r: R = {
+    p: makePen(f), ctx, b: boat, e, t: f.t, night: f.night, wind: f.wind,
+    weather: f.weather, pose, speed: boatSpeed, sail: pose === "helm" ? boatSpeed : 0,
+    flow: boatSpeed * 95 * f.sc, rainy, cold: f.e.temperature < 5,
+    coat: rainy ? "#e8b820" : f.e.temperature < 5 ? "#5a3a2a" : "#3e4e3e",
+    swing: -angle * 0.7, emit: () => {},
+  };
+  const y = f.waveY(x) + 0.05 * k - spec.lift * boatSpeed * k;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.scale(heading * k, k);
+  drawArt(r, boat.style);
+  ctx.restore();
+}
 
 interface Foam {
   x: number;

@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   avatarHue, boatOf, dayLabel, initialsOf, isOnline, isValidUserId, lastSeenLabel, locOf, normalizeQuery,
-  pairOf, playTimeLabel, portOf, rankFleet, fleetMetricValue, redactHiddenWhere, spotOf, weatherOf, whereLabel,
-  FRIEND_LIMIT, INCOMING_LIMIT, ONLINE_WINDOW_MS, PENDING_OUT_LIMIT,
+  pairOf, playTimeLabel, portOf, rankFleet, fleetMetricValue, normalizeFriendPresenceUpdate, redactHiddenWhere, spotOf, weatherOf, whereLabel,
+  FRIEND_LIMIT, FRIEND_PRESENCE_TTL_MS, INCOMING_LIMIT, ONLINE_WINDOW_MS, PENDING_OUT_LIMIT,
   type FriendWhere,
 } from "../src/game/friends";
 import { BOATS, DAYS_PER_SEASON, LOCATIONS, SEASONS } from "../src/game/world";
@@ -44,6 +44,7 @@ test("пределы дружбы разумны", () => {
   assert.ok(FRIEND_LIMIT >= 10 && FRIEND_LIMIT <= 500);
   assert.ok(PENDING_OUT_LIMIT > 0 && PENDING_OUT_LIMIT <= FRIEND_LIMIT);
   assert.ok(ONLINE_WINDOW_MS >= MIN && ONLINE_WINDOW_MS <= 30 * MIN);
+  assert.equal(FRIEND_PRESENCE_TTL_MS, 9_000, "live-маркер быстро исчезает после потери heartbeat");
 });
 
 test("«был в сети»: только что, минуты, часы, вчера, дни, дата", () => {
@@ -162,6 +163,19 @@ test("приватность удаляет координаты, порт и д
   assert.equal(redactHiddenWhere(null), null);
   const publicSnapshot = { ...privateSnapshot, hidden: false };
   assert.equal(redactHiddenWhere(publicSnapshot), publicSnapshot);
+});
+
+test("снимок присутствия проверяет координату, скорость, направление и судно", () => {
+  const snapshot = { location: "bay", x: 0.4, heading: -1, velocity: -0.01, boat: 2, activity: "sailing" as const };
+  assert.deepEqual(normalizeFriendPresenceUpdate(snapshot), snapshot);
+  assert.equal(normalizeFriendPresenceUpdate({ ...snapshot, x: 1.01 }), null);
+  assert.equal(normalizeFriendPresenceUpdate({ ...snapshot, velocity: 0.2 }), null);
+  assert.equal(normalizeFriendPresenceUpdate({ ...snapshot, heading: 0 }), null);
+  assert.equal(normalizeFriendPresenceUpdate({ ...snapshot, location: "unknown-sea" }), null);
+  assert.equal(normalizeFriendPresenceUpdate({ ...snapshot, location: "toString" }), null);
+  assert.equal(normalizeFriendPresenceUpdate({ ...snapshot, location: "__proto__" }), null);
+  assert.equal(normalizeFriendPresenceUpdate({ ...snapshot, boat: 999 }), null);
+  assert.equal(normalizeFriendPresenceUpdate({ ...snapshot, activity: "teleport" }), null);
 });
 
 test("предел входящих заявок есть и он больше исходящих", () => {

@@ -68,6 +68,8 @@ test("миграция умеет добить схему до нужного в
   assert.match(migrate, /create unique index if not exists/i);
   // Ключ идемпотентности уловов должен доезжать до схемы.
   assert.match(migrate, /catches_cid_uq/);
+  assert.match(migrate, /friend_presence/);
+  assert.match(migrate, /friend_presence_location_updated_idx/);
 });
 
 // ─────────── против живой базы ───────────
@@ -109,6 +111,7 @@ test("база: таблицы, RLS и целостность кругом", aga
     await db.insert(schema.players).values({ id: playerId, userId, name: "Тест" });
     await db.insert(schema.saves).values({ playerId, data: { money: 1 }, codexCount: 1, playSeconds: 10 });
     await db.insert(schema.catches).values({ playerId, fishId: "goby", weight: 0.2, locationId: "bay", cid: `c${stamp}` });
+    await db.insert(schema.friendPresence).values({ playerId, sessionId: `s-${stamp}`, location: "bay", x: 0.42, heading: -1, velocity: 0.02, boat: 0, activity: "sailing" });
     const second = `usr_${stamp}b`.slice(0, 40);
     await db.insert(schema.users).values({ id: second, username: `t${stamp}b`, usernameLower: `t${stamp}b`, passwordHash: "x" });
     await db.insert(schema.friendships).values({ aUserId: userId < second ? userId : second, bUserId: userId < second ? second : userId, requestedBy: userId });
@@ -118,18 +121,27 @@ test("база: таблицы, RLS и целостность кругом", aga
     const counted = await db.execute(sql`select count(*)::int as n from catches where player_id = ${playerId}`);
     assert.equal((counted.rows as { n: number }[])[0].n, 1, "повторная отправка улова задвоила запись");
 
-    // 5. Дружба читается с любой стороны и в обоих направлениях.
+    // 5. Идемпотентный ключ live-presence — player_id, независимо от сохранения.
+    await db.insert(schema.friendPresence).values({ playerId, sessionId: `s2-${stamp}`, location: "bay", x: 0.45, heading: 1, velocity: 0, boat: 0, activity: "drifting" })
+      .onConflictDoUpdate({ target: schema.friendPresence.playerId, set: { sessionId: `s2-${stamp}`, x: 0.45, updatedAt: new Date() } });
+    const presence = await db.select().from(schema.friendPresence).where(eq(schema.friendPresence.playerId, playerId));
+    assert.equal(presence.length, 1);
+    assert.equal(presence[0].x, 0.45);
+    assert.equal(presence[0].sessionId, `s2-${stamp}`);
+
+    // 6. Дружба читается с любой стороны и в обоих направлениях.
     const [a, b] = userId < second ? [userId, second] : [second, userId];
     const pair = await db.select().from(schema.friendships).where(and(eq(schema.friendships.aUserId, a), eq(schema.friendships.bUserId, b))).limit(1);
     assert.equal(pair.length, 1);
 
-    // 6. Удаление аккаунта уносит всё за собой.
+    // 7. Удаление аккаунта уносит всё за собой, включая краткоживущую позицию.
     await db.delete(schema.users).where(eq(schema.users.id, userId));
     const left = await db.execute(sql`
       select (select count(*)::int from players where id = ${playerId}) as players,
              (select count(*)::int from saves where player_id = ${playerId}) as saves,
-             (select count(*)::int from catches where player_id = ${playerId}) as catches`);
-    assert.deepEqual(left.rows[0], { players: 0, saves: 0, catches: 0 }, "каскадное удаление не сработало");
+             (select count(*)::int from catches where player_id = ${playerId}) as catches,
+             (select count(*)::int from friend_presence where player_id = ${playerId}) as presence`);
+    assert.deepEqual(left.rows[0], { players: 0, saves: 0, catches: 0, presence: 0 }, "каскадное удаление не сработало");
     await db.delete(schema.users).where(eq(schema.users.id, second));
   } finally {
     await pool.end();

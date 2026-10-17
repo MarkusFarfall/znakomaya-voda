@@ -19,12 +19,46 @@ export const PENDING_OUT_LIMIT = 20;
 export const INCOMING_LIMIT = 100;
 /** «В игре сейчас» — если профиль сохранялся не дольше этого окна назад. */
 export const ONLINE_WINDOW_MS = 5 * 60_000;
+/** После 9 секунд без heartbeat live-маркер считается потерянным и скрывается. */
+export const FRIEND_PRESENCE_TTL_MS = 9_000;
 export const SEARCH_MIN = 2;
 export const SEARCH_RESULTS = 8;
 
 export type FriendAction = "request" | "accept" | "decline" | "cancel" | "remove" | "clear" | "privacy";
 
 /** Последняя известная точка друга: снимок мира из таблицы saves. */
+export type FriendActivity = "sailing" | "fishing" | "drifting";
+
+export interface FriendPresenceUpdate {
+  location: LocId;
+  /** Положение 0..1 по всей непрерывной акватории, не по отдельному месту. */
+  x: number;
+  heading: 1 | -1;
+  /** Скорость в долях ширины акватории за секунду. */
+  velocity: number;
+  boat: number;
+  activity: FriendActivity;
+}
+
+export interface LiveFriendPresence extends FriendPresenceUpdate {
+  userId: string;
+  username: string;
+  updatedAt: string;
+}
+
+/** Проверка сетевого снимка до записи: координата не может уехать за край мира. */
+export function normalizeFriendPresenceUpdate(raw: unknown): FriendPresenceUpdate | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const value = raw as Partial<FriendPresenceUpdate>;
+  const location = locOf(value.location);
+  if (!location || typeof value.x !== "number" || !Number.isFinite(value.x) || value.x < 0 || value.x > 1) return null;
+  if (value.heading !== 1 && value.heading !== -1) return null;
+  if (typeof value.velocity !== "number" || !Number.isFinite(value.velocity) || Math.abs(value.velocity) > 0.08) return null;
+  if (typeof value.boat !== "number" || !boatOf(value.boat)) return null;
+  if (value.activity !== "sailing" && value.activity !== "fishing" && value.activity !== "drifting") return null;
+  return { location: location.id, x: value.x, heading: value.heading, velocity: value.velocity, boat: value.boat, activity: value.activity };
+}
+
 export interface FriendWhere {
   location: LocId | null;
   locationName: string | null;
@@ -187,7 +221,7 @@ export const boatOf = (i: number | null | undefined): BoatDef | null =>
   typeof i === "number" && Number.isInteger(i) && i >= 0 && i < BOATS.length ? BOATS[i] : null;
 
 export const locOf = (id: string | null | undefined) =>
-  typeof id === "string" && id in LOC_BY_ID ? LOC_BY_ID[id as LocId] : null;
+  typeof id === "string" && Object.prototype.hasOwnProperty.call(LOC_BY_ID, id) ? LOC_BY_ID[id as LocId] : null;
 
 export const spotOf = (id: string | null | undefined) => (typeof id === "string" ? SPOT_BY_ID[id] ?? null : null);
 
