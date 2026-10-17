@@ -598,24 +598,45 @@ class Painter {
         c.fill();
       }
     } else if (p === 'bars') {
-      const n = M.patDensity > 1.1 ? 6 : 5;
-      for (let i = 0; i < n; i++) {
-        const x = front - span * (0.16 + (i / (n - 1)) * 0.72);
-        const w = L * 0.03 * M.patScale;
-        const t = topY(x);
-        const bt = t + (botY(x) - t) * 0.82;
-        for (const [k, a] of [
-          [1.9, 0.16],
-          [1, 0.5],
-        ] as const) {
-          c.fillStyle = this.col(P.pat, a);
+      if (inG(f, 'Scomber')) {
+        // Скумбрия: узкие волнистые седловидные полосы только по верхней половине тела.
+        const n = Math.round(7 * M.patDensity);
+        c.lineCap = 'round';
+        c.lineJoin = 'round';
+        c.strokeStyle = this.col(P.pat, 0.68);
+        c.lineWidth = L * 0.014 * M.patScale;
+        for (let stripe = 0; stripe < n; stripe++) {
+          const x0 = front - span * (0.16 + (stripe / Math.max(1, n - 1)) * 0.7);
           c.beginPath();
-          this.m(x - w * k, t - h * 0.1);
-          this.l(x + w * k, t - h * 0.1);
-          this.q(x + w * k * 0.7, (t + bt) / 2, x + w * 0.3, bt);
-          this.l(x - w * 0.3, bt);
-          this.q(x - w * k * 0.8, (t + bt) / 2, x - w * k, t - h * 0.1);
-          c.fill();
+          for (let i = 0; i <= 12; i++) {
+            const t = i / 12;
+            const y = topY(x0) + (botY(x0) - topY(x0)) * (0.06 + t * 0.42);
+            const x = x0 + Math.sin(t * 5.4 + stripe * 0.7) * L * 0.018 * M.patScale;
+            if (i) this.l(x, y);
+            else this.m(x, y);
+          }
+          c.stroke();
+        }
+      } else {
+        const n = M.patDensity > 1.1 ? 6 : 5;
+        for (let i = 0; i < n; i++) {
+          const x = front - span * (0.16 + (i / (n - 1)) * 0.72);
+          const w = L * 0.03 * M.patScale;
+          const t = topY(x);
+          const bt = t + (botY(x) - t) * 0.82;
+          for (const [k, a] of [
+            [1.9, 0.16],
+            [1, 0.5],
+          ] as const) {
+            c.fillStyle = this.col(P.pat, a);
+            c.beginPath();
+            this.m(x - w * k, t - h * 0.1);
+            this.l(x + w * k, t - h * 0.1);
+            this.q(x + w * k * 0.7, (t + bt) / 2, x + w * 0.3, bt);
+            this.l(x - w * 0.3, bt);
+            this.q(x - w * k * 0.8, (t + bt) / 2, x - w * k, t - h * 0.1);
+            c.fill();
+          }
         }
       }
     } else if (p === 'stripes') {
@@ -1015,6 +1036,51 @@ class Painter {
     const xo = L * (0.24 + sn * 0.03);
     this.skin(body, h, { topY, botY, head: xo - L * 0.02, kind: inG(f, 'Thunnus', 'Katsuwonus', 'Auxis', 'Scomber', 'Sarda', 'Gymnosarda') ? 'fine' : 'cycloid', silver });
 
+    if (M.scutes && g === 'Gasterosteus' && !this.sil) {
+      // Костные боковые пластины трёхиглой колюшки.
+      const c = this.c;
+      c.save();
+      body();
+      c.clip();
+      for (let i = 0; i < 7; i++) {
+        const x = L * (0.24 - i * 0.075);
+        const y = (topY(x) + botY(x)) * 0.5 + this.by(x);
+        c.beginPath();
+        c.moveTo(x + L * 0.027, y);
+        c.lineTo(x + L * 0.009, y - h * 0.085);
+        c.lineTo(x - L * 0.02, y - h * 0.04);
+        c.lineTo(x - L * 0.02, y + h * 0.04);
+        c.lineTo(x + L * 0.009, y + h * 0.085);
+        c.closePath();
+        c.fillStyle = this.col(mixR(this.P.back, WHITE, 0.45), 0.72);
+        c.fill();
+        c.strokeStyle = this.col(mixR(this.P.back, BLACK, 0.3), 0.55);
+        c.lineWidth = Math.max(0.45, L * 0.004);
+        c.stroke();
+      }
+      c.restore();
+    }
+
+    if ((M.shoulderSpot || M.lateralOcellus) && !this.sil) {
+      const x = M.lateralOcellus ? L * 0.015 : L * 0.285;
+      const y = (topY(x) + botY(x)) * (M.lateralOcellus ? 0.47 : 0.43) + this.by(x);
+      const radius = L * (M.lateralOcellus ? 0.052 : 0.018);
+      const c = this.c;
+      c.save();
+      body();
+      c.clip();
+      c.beginPath();
+      c.ellipse(x, y, radius, radius * 0.78, 0, 0, TAU);
+      c.fillStyle = this.col(mixR(this.P.back, BLACK, M.lateralOcellus ? 0.7 : 0.58), 0.9);
+      c.fill();
+      if (M.lateralOcellus) {
+        c.strokeStyle = this.col(mixR(this.P.belly, WHITE, 0.42), 0.95);
+        c.lineWidth = Math.max(0.8, L * 0.012);
+        c.stroke();
+      }
+      c.restore();
+    }
+
     // Узкое тёмное кольцо на хвостовом стебле ласкиря.
     if (M.caudalBand && !this.sil) {
       const c = this.c;
@@ -1143,6 +1209,21 @@ class Painter {
       this.c.lineWidth = Math.max(0.5, L * 0.004);
       this.c.stroke();
     }
+    if (M.caudalOcellus && !this.sil) {
+      const x = -L * 0.31;
+      const y = (topY(x) + botY(x)) * 0.48 + this.by(x);
+      this.c.save();
+      body();
+      this.c.clip();
+      this.c.beginPath();
+      this.c.ellipse(x, y, L * 0.025, h * 0.095, 0, 0, TAU);
+      this.c.fillStyle = this.col(mixR(this.P.back, BLACK, 0.58), 0.92);
+      this.c.fill();
+      this.c.strokeStyle = this.col(mixR(this.P.belly, WHITE, 0.2), 0.85);
+      this.c.lineWidth = Math.max(0.6, L * 0.006);
+      this.c.stroke();
+      this.c.restore();
+    }
     if (barreleye && !this.sil) {
       // прозрачный купол головы
       const c = this.c;
@@ -1207,7 +1288,7 @@ class Painter {
         break;
       }
       case 'spiny':
-        this.finAlong(topY, -L * 0.02, L * 0.21, H * 0.48, -1, 'spiny', h, 8);
+        this.finAlong(topY, -L * 0.02, L * 0.21, H * 0.48, -1, 'spiny', h, M.dorsalSpines);
         this.finAlong(topY, -L * 0.28, -L * 0.01, H * 0.36, -1, 'round', h);
         break;
       default:
@@ -1245,8 +1326,8 @@ class Painter {
   /** Камбалы: вид на глазную сторону */
   flat() {
     const { L, M, f, c } = this;
-    const elong = inG(f, 'Solea', 'Microstomus') ? 0.62 : inG(f, 'Scophthalmus') ? 1.08 : inG(f, 'Hippoglossus', 'Reinhardtius', 'Paralichthys') ? 0.78 : 0.85 * M.depth;
-    const h = L * 0.62 * elong;
+    const baseElong = inG(f, 'Solea', 'Microstomus') ? 0.62 : inG(f, 'Scophthalmus') ? 1.08 : inG(f, 'Hippoglossus', 'Reinhardtius', 'Paralichthys') ? 0.78 : 0.85;
+    const h = L * 0.62 * baseElong * M.depth;
     const rx = L * (inG(f, 'Solea') ? 0.44 : 0.4);
     const T: [Pt, Pt, Pt, Pt] = [
       [L * 0.42, h * 0.02],
@@ -1272,7 +1353,7 @@ class Painter {
       this.b(B[1], B[2], B[3]);
       c.closePath();
     };
-    this.caudal(-rx + L * 0.02, h * 0.55, inG(f, 'Hippoglossus', 'Reinhardtius') ? 'emarg' : 'round', 0.9);
+    this.caudal(-rx + L * 0.02, h * 0.55 * M.tailSize, M.tail, 0.9);
     // кайма плавников вокруг тела
     this.finAlong(topY, -rx * 0.9, L * 0.34, h * 0.13, -1, 'round', h * 0.3);
     this.finAlong(botY, -rx * 0.9, L * 0.24, h * 0.12, 1, 'round', h * 0.3);
@@ -1936,10 +2017,10 @@ class Painter {
       this.b(B[1], B[2], B[3]);
       c.closePath();
     };
-    this.caudal(-L * 0.4, h * 1.6, 'lunate', 1.15);
-    if (sail) this.finAlong(topY, -L * 0.18, L * 0.28, h * 2.5, -1, 'sail', h, 0, this.P.hasAccent ? mixR(this.P.fin, this.P.accent, 0.3) : undefined);
-    else if (sword) this.finAlong(topY, L * 0.12, L * 0.24, h * 1.3, -1, 'pointed', h);
-    else this.finAlong(topY, -L * 0.2, L * 0.26, h * 1.35, -1, 'pointed', h, 0, this.P.hasAccent ? mixR(this.P.fin, this.P.accent, 0.25) : undefined);
+    this.caudal(-L * 0.4, h * 1.6 * M.tailSize, M.tail, 1.15);
+    if (sail) this.finAlong(topY, -L * 0.18, L * 0.28, h * 2.5 * M.dorsalH, -1, 'sail', h, 0, this.P.hasAccent ? mixR(this.P.fin, this.P.accent, 0.3) : undefined);
+    else if (sword) this.finAlong(topY, L * 0.12, L * 0.24, h * 1.3 * M.dorsalH, -1, 'pointed', h);
+    else this.finAlong(topY, -L * 0.2, L * 0.26, h * 1.35 * M.dorsalH, -1, 'pointed', h, 0, this.P.hasAccent ? mixR(this.P.fin, this.P.accent, 0.25) : undefined);
     this.finAlong(botY, -L * 0.22, -L * 0.06, h * 0.7, 1, 'pointed', h);
     this.skin(body, h, { topY, botY, head: L * 0.25, kind: 'fine', silver: true, front: L * 0.38, rear: -L * 0.4 });
     // клюв / меч
@@ -1986,7 +2067,7 @@ class Painter {
       c.stroke();
     }
     this.scars(topY, botY, L * 0.2, -L * 0.25);
-    this.eye(L * 0.31, -h * 0.1, Math.max(L * 0.012, h * 0.12));
+    this.eye(L * 0.31, -h * 0.1, Math.max(L * 0.012, h * 0.12 * M.eye));
   }
 
   /** Скаты, манты, морской ангел — вид сверху */
@@ -1997,11 +2078,11 @@ class Painter {
     const eagle = g === 'Aetobatus';
     const angel = g === 'Squatina';
     const flap = Math.sin(this.wag * 0.9) * 0.18;
-    const W = L * (manta ? 0.95 : eagle ? 0.85 : angel ? 0.5 : 0.62);
+    const W = L * (manta ? 0.95 : eagle ? 0.85 : angel ? 0.5 : 0.62) * this.M.depth;
     const P = this.P;
     const wy = (k: number) => W * 0.5 * (1 - flap * k);
     // хвост
-    const tl = L * (eagle ? 0.95 : manta ? 0.35 : angel ? 0.42 : 0.5);
+    const tl = L * (eagle ? 0.95 : manta ? 0.35 : angel ? 0.42 : 0.5) * this.M.tailSize;
     c.strokeStyle = this.sil ?? this.col(P.fin);
     c.lineCap = 'round';
     c.lineWidth = Math.max(0.8, L * (angel ? 0.05 : 0.018));
@@ -2169,7 +2250,7 @@ class Painter {
     const deepA = inG(f, 'Melanocetus', 'Linophryne', 'Leviathan');
     const lure = lophius || deepA || g === 'Pogonophryne';
     const star = g === 'Uranoscopus';
-    const h = L * (deepA ? 0.7 : lophius ? 0.45 : star ? 0.38 : 0.5) * (star ? M.depth : 1);
+    const h = L * (deepA ? 0.7 : lophius ? 0.45 : star ? 0.38 : 0.5) * M.depth;
     const T: [Pt, Pt, Pt, Pt] = [
       [L * 0.48, -h * 0.02],
       [L * 0.42, -h * 0.75],
@@ -2281,78 +2362,110 @@ class Painter {
   }
 
   squid() {
-    const { L, f, c } = this;
-    const h = L * 0.2;
+    const { L, f, c, M } = this;
+    const g = genus(f);
+    const colossal = g === 'Mesonychoteuthis';
+    const h = L * (colossal ? 0.23 : 0.2) * M.depth;
     const P = this.P;
     const ph = this.wag;
-    // щупальца
+    // Две ловчие щупальца гигантского кальмара длиннее рук; у колоссального — короче и толще.
     c.lineCap = 'round';
     for (let i = 0; i < 10; i++) {
       const long = i < 2;
-      const len = long ? 0.62 : 0.4;
+      const len = long ? (colossal ? 0.48 : 0.62) : (colossal ? 0.34 : 0.4);
       const pts: Pt[] = [];
-      for (let k = 0; k <= 10; k++) {
+      let px = -L * 0.04;
+      let py = (i - 4.5) * h * 0.07;
+      pts.push([px, py]);
+      for (let k = 1; k <= 10; k++) {
         const t = k / 10;
-        pts.push([-L * 0.04 - t * L * len, (i - 4.5) * h * 0.07 + Math.sin(ph * 1.3 + t * 5 + i) * h * 0.32 * t]);
+        px = -L * 0.04 - t * L * len;
+        py = (i - 4.5) * h * 0.07 + Math.sin(ph * 1.3 + t * 5 + i) * h * (colossal ? 0.25 : 0.32) * t;
+        pts.push([px, py]);
       }
       c.strokeStyle = this.sil ?? this.col(mixR(P.belly, P.body, 0.4));
       for (let k = 1; k < pts.length; k++) {
-        c.lineWidth = Math.max(0.6, h * (long ? 0.07 : 0.13) * (1 - (k / pts.length) * 0.75));
+        c.lineWidth = Math.max(0.6, h * (long ? 0.08 : 0.14) * (colossal ? 1.18 : 1) * (1 - (k / pts.length) * 0.75));
         c.beginPath();
         c.moveTo(pts[k - 1][0], pts[k - 1][1]);
         c.lineTo(pts[k][0], pts[k][1]);
         c.stroke();
       }
-      if (long && !this.sil) {
+      if (!this.sil && !colossal && long) {
         const [x, y] = pts[pts.length - 1];
         c.fillStyle = this.col(P.body);
         c.beginPath();
         c.ellipse(x, y, L * 0.03, h * 0.08, 0, 0, TAU);
         c.fill();
       }
-      if (!long && !this.sil && this.det >= 2) {
-        c.fillStyle = 'rgba(255,240,230,0.5)';
-        for (let k = 2; k < 9; k += 2) {
-          c.beginPath();
-          c.arc(pts[k][0], pts[k][1] + h * 0.03, h * 0.025, 0, TAU);
-          c.fill();
+      if (!this.sil && this.det >= 1) {
+        if (colossal) {
+          // Колоссальный кальмар вооружён вращающимися крючьями, а не рядами присосок.
+          c.strokeStyle = this.col(mixR(P.fin, WHITE, 0.55), 0.88);
+          c.lineWidth = Math.max(0.6, L * 0.004);
+          for (let k = 2; k < pts.length - 1; k += 2) {
+            const [x, y] = pts[k];
+            c.beginPath();
+            c.moveTo(x, y);
+            c.lineTo(x - L * 0.012, y + h * 0.045);
+            c.lineTo(x - L * 0.025, y + h * 0.035);
+            c.stroke();
+          }
+        } else if (!long) {
+          c.fillStyle = 'rgba(255,240,230,0.5)';
+          for (let k = 2; k < pts.length - 2; k += 2) {
+            c.beginPath();
+            c.arc(pts[k][0] + L * 0.016, pts[k][1], h * 0.025, 0, TAU);
+            c.fill();
+          }
         }
       }
     }
-    // мантия
+    // Мантия у колоссального кальмара шире и короче; у Architeuthis — вытянутая.
     const mantle = () => {
       c.beginPath();
       c.moveTo(L * 0.5, 0);
-      c.bezierCurveTo(L * 0.3, -h * 0.9, -L * 0.04, -h * 0.62, -L * 0.07, 0);
-      c.bezierCurveTo(-L * 0.04, h * 0.62, L * 0.3, h * 0.9, L * 0.5, 0);
+      if (colossal) {
+        c.bezierCurveTo(L * 0.3, -h * 1.08, -L * 0.06, -h * 0.82, -L * 0.12, 0);
+        c.bezierCurveTo(-L * 0.06, h * 0.82, L * 0.3, h * 1.08, L * 0.5, 0);
+      } else {
+        c.bezierCurveTo(L * 0.3, -h * 0.9, -L * 0.04, -h * 0.62, -L * 0.07, 0);
+        c.bezierCurveTo(-L * 0.04, h * 0.62, L * 0.3, h * 0.9, L * 0.5, 0);
+      }
       c.closePath();
     };
-    // плавники
     const finP = () => {
       c.beginPath();
       c.moveTo(L * 0.5, 0);
-      c.quadraticCurveTo(L * 0.42, -h * 0.9, L * 0.3, -h * 0.55);
-      c.lineTo(L * 0.3, h * 0.55);
-      c.quadraticCurveTo(L * 0.42, h * 0.9, L * 0.5, 0);
+      c.quadraticCurveTo(L * 0.42, -h * (colossal ? 1.08 : 0.9), L * 0.3, -h * (colossal ? 0.68 : 0.55));
+      c.lineTo(L * 0.3, h * (colossal ? 0.68 : 0.55));
+      c.quadraticCurveTo(L * 0.42, h * (colossal ? 1.08 : 0.9), L * 0.5, 0);
       c.closePath();
     };
     this.membrane(finP, [L * 0.4, 0], [L * 0.4, -h], null, 0.9, 0.7);
-    this.skin(mantle, h, { topY: (x) => -h * 0.6 * Math.sin(clamp((x + L * 0.07) / (L * 0.57), 0, 1) * PI), botY: (x) => h * 0.6 * Math.sin(clamp((x + L * 0.07) / (L * 0.57), 0, 1) * PI), head: 0, kind: 'none', front: L * 0.5, rear: -L * 0.07 });
+    this.skin(mantle, h, {
+      topY: (x) => -h * (colossal ? 0.72 : 0.6) * Math.sin(clamp((x + L * (colossal ? 0.12 : 0.07)) / (L * (colossal ? 0.62 : 0.57)), 0, 1) * PI),
+      botY: (x) => h * (colossal ? 0.72 : 0.6) * Math.sin(clamp((x + L * (colossal ? 0.12 : 0.07)) / (L * (colossal ? 0.62 : 0.57)), 0, 1) * PI),
+      head: 0,
+      kind: 'none',
+      front: L * 0.5,
+      rear: colossal ? -L * 0.12 : -L * 0.07,
+    });
     if (!this.sil) {
-      // хроматофоры
       c.save();
       mantle();
       c.clip();
-      for (let i = 0; i < 40; i++) {
+      const chromatophoreCount = Math.round((colossal ? 48 : 40) * M.patDensity);
+      for (let i = 0; i < chromatophoreCount; i++) {
         const tw = 0.4 + 0.6 * Math.abs(Math.sin(ph * 0.7 + i));
         c.fillStyle = this.col(mixR(P.body, BLACK, 0.3), 0.35 * tw);
         c.beginPath();
-        c.arc(-L * 0.05 + this.rnd() * L * 0.52, (this.rnd() - 0.5) * h * 1.1, L * 0.008 * (0.5 + tw), 0, TAU);
+        c.arc(-L * (colossal ? 0.1 : 0.05) + this.rnd() * L * 0.55, (this.rnd() - 0.5) * h * 1.3, L * 0.008 * (0.5 + tw), 0, TAU);
         c.fill();
       }
       c.restore();
     }
-    this.eye(-L * 0.01, -h * 0.12, h * 0.2);
+    this.eye(-L * 0.01, -h * 0.12, h * (colossal ? 0.22 : 0.2) * M.eye);
     if (f.glow && !this.sil) this.photophores(() => h * 0.5, L * 0.3, 0, 5);
   }
 
@@ -2451,53 +2564,59 @@ class Painter {
   }
 
   puffer() {
-    const { L, c } = this;
+    const { L, c, M } = this;
     const r = L * 0.34;
+    const ry = r * 0.92 * M.depth;
     const P = this.P;
-    this.caudal(-r * 1.05, r * 0.75, 'round', 0.9);
-    this.finAlong((x) => -Math.sqrt(Math.max(0, r * r - x * x)), -r * 0.95, -r * 0.55, r * 0.35, -1, 'round', r);
-    this.finAlong((x) => Math.sqrt(Math.max(0, r * r - x * x)), -r * 0.95, -r * 0.6, r * 0.3, 1, 'round', r);
-    // иглы (рыба-ёж)
+    const topY: YFn = (x) => -ry * Math.sqrt(Math.max(0, 1 - (x * x) / (r * r)));
+    const botY: YFn = (x) => -topY(x);
+    this.caudal(-r * 1.05, ry * 0.75 * M.tailSize, M.tail, 0.9);
+    this.finAlong(topY, -r * 0.95, -r * 0.55, ry * 0.35, -1, 'round', ry);
+    this.finAlong(botY, -r * 0.95, -r * 0.6, ry * 0.3, 1, 'round', ry);
+    // Колючие лучи иглобрюха расходятся радиально от овального корпуса.
     if (!this.sil) {
       c.strokeStyle = this.col(mixR(P.fin, P.belly, 0.3));
       c.lineWidth = Math.max(0.6, L * 0.01);
       c.lineCap = 'round';
-      for (let i = 0; i < 26; i++) {
-        const a = (i / 26) * TAU + 0.1;
+      const spineCount = Math.round(26 * M.patDensity);
+      for (let i = 0; i < spineCount; i++) {
+        const a = (i / spineCount) * TAU + 0.1;
         c.beginPath();
-        c.moveTo(Math.cos(a) * r * 0.9, Math.sin(a) * r * 0.9);
-        c.lineTo(Math.cos(a - 0.35) * r * 1.22, Math.sin(a - 0.35) * r * 1.22);
+        c.moveTo(Math.cos(a) * r * 0.9, Math.sin(a) * ry * 0.9);
+        c.lineTo(Math.cos(a - 0.35) * r * 1.22, Math.sin(a - 0.35) * ry * 1.22);
         c.stroke();
       }
     }
     const body = () => {
       c.beginPath();
-      c.ellipse(0, 0, r, r * 0.92, 0, 0, TAU);
+      c.ellipse(0, 0, r, ry, 0, 0, TAU);
     };
-    this.skin(body, r * 1.84, {
-      topY: (x) => -Math.sqrt(Math.max(0, r * r - x * x)) * 0.92,
-      botY: (x) => Math.sqrt(Math.max(0, r * r - x * x)) * 0.92,
+    this.skin(body, ry * 2, {
+      topY,
+      botY,
       head: r * 0.5,
       kind: 'none',
       front: r,
       rear: -r,
     });
-    this.pectoral(r * 0.35, r * 0.05, 0.8);
+    this.pectoral(r * 0.35, ry * 0.05, 0.8 * M.pectoral);
     if (!this.sil) {
       c.strokeStyle = 'rgba(0,0,0,0.5)';
       c.lineWidth = Math.max(0.6, L * 0.01);
       c.beginPath();
-      c.arc(r * 0.98, r * 0.1, r * 0.08, PI * 0.6, PI * 1.4);
+      c.arc(r * 0.98, ry * 0.1, r * 0.08, PI * 0.6, PI * 1.4);
       c.stroke();
     }
-    this.eye(r * 0.55, -r * 0.28, r * 0.2);
+    this.eye(r * 0.55, -ry * 0.28, r * 0.2 * M.eye);
   }
 
   boxfish() {
-    const { L, c } = this;
-    const h = L * 0.5;
+    const { L, c, M } = this;
+    const h = L * 0.5 * M.depth;
     const P = this.P;
-    this.caudal(-L * 0.37, h * 0.5, 'round', 0.9);
+    this.caudal(-L * 0.37, h * 0.5 * M.tailSize, M.tail, 0.9);
+    this.finAlong(() => -h * 0.5, -L * 0.24, -L * 0.04, h * 0.2 * M.dorsalH, -1, 'round', h);
+    this.finAlong(() => h * 0.5, -L * 0.22, -L * 0.04, h * 0.16 * M.analH, 1, 'round', h);
     const box = () => {
       c.beginPath();
       this.m(L * 0.4, -h * 0.25);
@@ -2534,8 +2653,8 @@ class Painter {
         }
       c.restore();
     }
-    this.pectoral(L * 0.1, h * 0.12, 0.7);
-    this.eye(L * 0.26, -h * 0.18, h * 0.12);
+    this.pectoral(L * 0.1, h * 0.12, 0.7 * M.pectoral);
+    this.eye(L * 0.26, -h * 0.18, h * 0.12 * M.eye);
   }
 
   blob() {
@@ -2543,7 +2662,7 @@ class Painter {
     const g = genus(f);
     const lump = g === 'Cyclopterus';
     const snail = g === 'Pseudoliparis';
-    const h = L * (lump ? 0.62 : snail ? 0.34 : 0.6);
+    const h = L * (lump ? 0.62 : snail ? 0.34 : 0.6) * this.M.depth;
     const T: [Pt, Pt, Pt, Pt] = snail
       ? [
           [L * 0.46, 0],
@@ -2621,8 +2740,9 @@ class Painter {
         c.stroke();
       }
     }
-    this.pectoral(L * 0.18, h * 0.08, 1);
-    this.eye(L * 0.28, -h * 0.13, h * (lump ? 0.07 : 0.05));
+    this.pectoral(L * 0.18, h * 0.08, this.M.pectoral);
+    if (lump && this.M.pelvicDisc) this.pelvicDisc(-L * 0.08, h * 0.52, 0.95);
+    this.eye(L * 0.28, -h * 0.13, h * (lump ? 0.07 : 0.05) * this.M.eye);
   }
 }
 

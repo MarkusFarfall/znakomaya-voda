@@ -38,6 +38,14 @@ export interface Morph {
   caudalBand: boolean;
   /** Золотистое пятно на жаберной крышке у золотистого кефаля. */
   opercularSpot: boolean;
+  /** Контрастный ложный глазок у хвоста (например, у красного горбыля). */
+  caudalOcellus: boolean;
+  /** Отдельное тёмное пятно на боку, как у солнечника. */
+  lateralOcellus: boolean;
+  /** Плечевое пятно у пикши. */
+  shoulderSpot: boolean;
+  /** Число лучей-колючек в передней спинной секции. */
+  dorsalSpines: number;
   finEdge: string | null;
   ped: number; // толщина хвостового стебля
   patScale: number;
@@ -61,17 +69,82 @@ function hash(s: string) {
 const G = (f: FishDef) => f.latin.split(" ")[0];
 const inG = (f: FishDef, ...g: string[]) => g.includes(G(f));
 
-/**
- * Ручная художественная настройка первых 50 видов текущего порядка кодекса.
- * Это только силуэт и анатомические акценты; параметры улова не затрагиваются.
- */
+/** Все 301 позиции кодекса — детерминированные модели; порядок совпадает с FISH. */
 export const CURATED_FISH_MODEL_IDS = [
-  "goby", "horse_mackerel", "mullet", "red_mullet", "wrasse", "picarel", "blenny", "saddled_bream", "black_goby", "sprat",
-  "pipefish", "scorpionfish", "turbot", "croaker", "garfish", "bonito", "bluefish", "stargazer", "rainbow_wrasse", "sea_bream_bay",
-  "gilthead", "salema", "weever", "sea_horse", "shi_drum", "bay_turbot_giant", "bay_master", "atherina", "anchovy", "golden_mullet",
-  "flounder", "taran", "roach", "bream", "rudd", "crucian", "gudgeon", "pilengas", "sazan", "zander",
-  "asp", "chekhon", "tench", "shemaya", "catfish", "starry_sturgeon", "sturgeon", "sterlet", "beluga", "sea_bass",
+  "goby", "horse_mackerel", "mullet", "red_mullet", "wrasse", "picarel",
+  "blenny", "saddled_bream", "black_goby", "sprat", "pipefish", "scorpionfish",
+  "turbot", "croaker", "garfish", "bonito", "bluefish", "stargazer",
+  "rainbow_wrasse", "sea_bream_bay", "gilthead", "salema", "weever", "sea_horse",
+  "shi_drum", "bay_turbot_giant", "bay_master", "atherina", "anchovy", "golden_mullet",
+  "flounder", "taran", "roach", "bream", "rudd", "crucian",
+  "gudgeon", "pilengas", "sazan", "zander", "asp", "chekhon",
+  "tench", "shemaya", "catfish", "starry_sturgeon", "sturgeon", "sterlet",
+  "beluga", "sea_bass", "cod", "mackerel", "sargo", "pandora",
+  "gurnard", "sole", "comber", "tub_gurnard", "black_seabream", "rockling",
+  "seabass_lavrak", "dogfish", "pollack_yellow", "cuckoo_ray", "monkfish", "conger",
+  "cuckoo_wrasse", "john_dory", "red_scorpion", "wreckfish", "spurdog_giant", "angel_shark",
+  "stone_patriarch", "pollock", "whiting", "herring", "plaice_eu", "perch",
+  "smelt", "ide", "vendace", "garfish_baltic", "roach_baltic", "silver_bream",
+  "sea_trout", "lumpfish", "pike", "whitefish", "burbot", "zander_baltic",
+  "eel", "wels_skerry", "grayling", "atl_sturgeon", "sea_eagle_trout", "pike_legend",
+  "haddock", "plaice", "capelin", "blue_whiting", "polar_cod", "pink_salmon",
+  "saithe_black", "sprat_nor", "norway_pout", "spotted_wolffish", "char", "ling",
+  "tusk", "beaked_redfish", "norway_haddock", "arctic_skate", "lemon_sole", "halibut",
+  "salmon", "argentine", "porbeagle", "rabbit_chimaera", "black_scabbard", "greenland_shark",
+  "halibut_green", "nordvik_halibut", "lofoten_cod", "ballan", "surfperch", "garibaldi",
+  "kelp_bass", "opaleye", "rockfish_blue", "kelp_greenling", "wolffish", "thornback",
+  "sheephead", "lingcod", "cabezon", "halibut_cali", "treefish", "pacific_bonito",
+  "chimaera", "white_seabass", "leopard_shark", "wolf_eel", "sevengill", "giant_seabass",
+  "octopus", "white_sturgeon", "great_white", "kelp_leviathan", "clownfish", "surgeonfish",
+  "parrotfish", "butterflyfish", "rabbitfish", "damselfish", "goatfish_yellow", "squirrelfish",
+  "angelfish", "moray", "barracuda", "lionfish", "red_snapper", "boxfish",
+  "hawkfish", "bluefin_jack", "flame_angel", "grouper", "eagle_ray", "clown_trigger",
+  "moorish_idol", "giant_trevally", "coral_trout", "mandarin", "harlequin_tusk", "napoleon",
+  "tiger_shark", "manta", "dogtooth", "golden_moray", "sergeant", "mudskipper",
+  "mangrove_snapper", "mojarra", "sheepshead", "scat", "halfbeak", "pufferfish",
+  "blacktip", "archerfish", "snook", "jack_crevalle", "red_drum", "gar_tropical",
+  "bonefish", "tarpon", "lemon_shark", "cubera", "barramundi", "goliath",
+  "bull_shark", "sawfish", "yellowfin", "mahi", "sardine", "skipjack",
+  "albacore", "bullet_tuna", "pompano_black", "blue_shark", "cobia", "escolar",
+  "dolphinfish_pompano", "oilfish", "pilot_fish", "swordfish", "mako", "sailfish",
+  "hammerhead", "striped_marlin", "sunfish", "lancetfish", "tripletail", "blue_marlin",
+  "opah", "bluefin", "oceanic_whitetip", "shortfin_mako_giant", "santiago", "whale_shark",
+  "flying_fish", "soldierfish", "convict_tang", "moorish_tang", "bigeye_scad", "bluestripe_snapper",
+  "wahoo", "dentex", "triggerfish", "unicornfish", "bluefin_trevally", "opakapaka",
+  "amberjack", "lava_moray", "kampachi", "picasso_trigger", "onaga", "galapagos_shark",
+  "deepwater_snapper", "black_marlin", "deep_bigeye", "coelacanth", "pele_marlin", "hatchetfish",
+  "lanternfish", "grenadier", "bristlemouth", "hagfish", "deep_angler", "blobfish",
+  "viperfish", "orange_roughy", "snipe_eel", "fangtooth", "loosejaw", "gulper_shark",
+  "gulper", "ghost_chimaera", "black_swallower", "tripodfish", "pelican_eel", "anglerfish_beard",
+  "dragonfish_black", "cookiecutter", "giant_squid", "goblin_shark", "oarfish", "barreleye",
+  "sixgill", "abyss_octopus", "abyss_snail", "leviathan", "silverfish", "marbled_rockcod",
+  "bald_notothen", "emerald_rockcod", "antarctic_eelpout", "ice_pout", "macrourus", "icefish",
+  "antarctic_skate", "crocodile_icefish", "spiny_plunderfish", "marbled_plunderfish", "dragonfish", "toothfish",
+  "blue_whiting_giant", "unicorn_icefish", "sleeper_shark", "bathydraco", "southern_right_mola", "colossal_squid",
+  "white_icefish_king",
 ] as const;
+
+const FIRST_WAVE_IDS = new Set<string>(CURATED_FISH_MODEL_IDS.slice(0, 50));
+
+/**
+ * Базовый профиль формы для видов без отдельной исторической настройки.
+ * Сначала выбирается силуэт каталога, затем на него накладывается профиль таксона
+ * и, в последнюю очередь, видовые акценты. Никаких игровых параметров здесь нет.
+ */
+const ARCHETYPE_BASELINES: Record<FishDef["shape"], Partial<Morph>> = {
+  fusiform: { depth: 0.96, hump: 0, belly: 0.98, snout: 0.42, snoutLen: 0.02, jaw: "terminal", lips: false, tail: "fork", tailSize: 1, dorsal: "classic", dorsalH: 0.95, analH: 0.9, pectoral: 1, pectoralWing: false, eye: 1, barbels: 0, scutes: false, lateral: true, lateralScutes: false, finlets: false, adipose: false, headBump: false, pelvicDisc: false, headCirri: false, visibleTeeth: false, caudalBand: false, opercularSpot: false, caudalOcellus: false, lateralOcellus: false, shoulderSpot: false, dorsalSpines: 8, finEdge: null, ped: 0.065, patScale: 1, patDensity: 1, gills: 5, ratTail: false, thresher: false, hammer: false },
+  deep: { depth: 1.16, hump: 0.04, belly: 1.08, snout: 0.34, snoutLen: 0.02, jaw: "terminal", lips: false, tail: "round", tailSize: 0.94, dorsal: "spiny", dorsalH: 1.05, analH: 0.98, pectoral: 1.08, pectoralWing: false, eye: 1.04, barbels: 0, scutes: false, lateral: true, lateralScutes: false, finlets: false, adipose: false, headBump: false, pelvicDisc: false, headCirri: false, visibleTeeth: false, caudalBand: false, opercularSpot: false, caudalOcellus: false, lateralOcellus: false, shoulderSpot: false, dorsalSpines: 8, finEdge: null, ped: 0.08, patScale: 1.05, patDensity: 1, gills: 5, ratTail: false, thresher: false, hammer: false },
+  long: { depth: 0.76, hump: -0.02, belly: 0.9, snout: 0.62, snoutLen: 0.04, jaw: "terminal", lips: false, tail: "fork", tailSize: 0.92, dorsal: "low", dorsalH: 0.84, analH: 0.88, pectoral: 0.88, pectoralWing: false, eye: 1.08, barbels: 0, scutes: false, lateral: true, lateralScutes: false, finlets: false, adipose: false, headBump: false, pelvicDisc: false, headCirri: false, visibleTeeth: false, caudalBand: false, opercularSpot: false, caudalOcellus: false, lateralOcellus: false, shoulderSpot: false, dorsalSpines: 8, finEdge: null, ped: 0.055, patScale: 0.9, patDensity: 0.95, gills: 5, ratTail: false, thresher: false, hammer: false },
+  eel: { depth: 0.88, hump: 0, belly: 0.96, snout: 0.3, snoutLen: 0.02, jaw: "terminal", lips: false, tail: "pointed", tailSize: 0.82, dorsal: "long", dorsalH: 0.86, analH: 0.84, pectoral: 0.78, pectoralWing: false, eye: 1.12, barbels: 0, scutes: false, lateral: false, lateralScutes: false, finlets: false, adipose: false, headBump: false, pelvicDisc: false, headCirri: false, visibleTeeth: false, caudalBand: false, opercularSpot: false, caudalOcellus: false, lateralOcellus: false, shoulderSpot: false, dorsalSpines: 8, finEdge: null, ped: 0.035, patScale: 0.95, patDensity: 1, gills: 5, ratTail: false, thresher: false, hammer: false },
+  flat: { depth: 1, hump: 0, belly: 1, snout: 0.28, snoutLen: 0.02, jaw: "down", lips: false, tail: "round", tailSize: 0.85, dorsal: "long", dorsalH: 0.82, analH: 0.82, pectoral: 0.82, pectoralWing: false, eye: 1.05, barbels: 0, scutes: false, lateral: false, lateralScutes: false, finlets: false, adipose: false, headBump: false, pelvicDisc: false, headCirri: false, visibleTeeth: false, caudalBand: false, opercularSpot: false, caudalOcellus: false, lateralOcellus: false, shoulderSpot: false, dorsalSpines: 8, finEdge: null, ped: 0.05, patScale: 1, patDensity: 1, gills: 5, ratTail: false, thresher: false, hammer: false },
+  shark: { depth: 0.98, hump: 0, belly: 0.96, snout: 0.78, snoutLen: 0.02, jaw: "terminal", lips: false, tail: "pointed", tailSize: 1.05, dorsal: "classic", dorsalH: 1.15, analH: 0.7, pectoral: 1.12, pectoralWing: false, eye: 1.05, barbels: 0, scutes: false, lateral: false, lateralScutes: false, finlets: false, adipose: false, headBump: false, pelvicDisc: false, headCirri: false, visibleTeeth: false, caudalBand: false, opercularSpot: false, caudalOcellus: false, lateralOcellus: false, shoulderSpot: false, dorsalSpines: 8, finEdge: null, ped: 0.045, patScale: 1, patDensity: 1, gills: 5, ratTail: false, thresher: false, hammer: false },
+  billfish: { depth: 0.94, hump: -0.02, belly: 0.94, snout: 0.95, snoutLen: 0.26, jaw: "beak", lips: false, tail: "lunate", tailSize: 1.12, dorsal: "sail", dorsalH: 1.25, analH: 0.88, pectoral: 1.12, pectoralWing: false, eye: 1.04, barbels: 0, scutes: false, lateral: true, lateralScutes: false, finlets: false, adipose: false, headBump: false, pelvicDisc: false, headCirri: false, visibleTeeth: false, caudalBand: false, opercularSpot: false, caudalOcellus: false, lateralOcellus: false, shoulderSpot: false, dorsalSpines: 8, finEdge: null, ped: 0.04, patScale: 0.9, patDensity: 1, gills: 5, ratTail: false, thresher: false, hammer: false },
+  ray: { depth: 1, hump: 0, belly: 1, snout: 0.2, snoutLen: 0, jaw: "down", lips: false, tail: "pointed", tailSize: 1, dorsal: "low", dorsalH: 0.8, analH: 0.6, pectoral: 1.35, pectoralWing: false, eye: 1.05, barbels: 0, scutes: false, lateral: false, lateralScutes: false, finlets: false, adipose: false, headBump: false, pelvicDisc: false, headCirri: false, visibleTeeth: false, caudalBand: false, opercularSpot: false, caudalOcellus: false, lateralOcellus: false, shoulderSpot: false, dorsalSpines: 8, finEdge: null, ped: 0.05, patScale: 1, patDensity: 1, gills: 5, ratTail: false, thresher: false, hammer: false },
+  angler: { depth: 1.12, hump: 0.1, belly: 1.1, snout: 0.12, snoutLen: 0.02, jaw: "up", lips: false, tail: "round", tailSize: 0.88, dorsal: "spiny", dorsalH: 1.15, analH: 0.88, pectoral: 1.2, pectoralWing: false, eye: 1.2, barbels: 0, scutes: false, lateral: false, lateralScutes: false, finlets: false, adipose: false, headBump: false, pelvicDisc: false, headCirri: false, visibleTeeth: false, caudalBand: false, opercularSpot: false, caudalOcellus: false, lateralOcellus: false, shoulderSpot: false, dorsalSpines: 8, finEdge: null, ped: 0.06, patScale: 1, patDensity: 1, gills: 5, ratTail: false, thresher: false, hammer: false },
+  squid: { depth: 1, hump: 0, belly: 1, snout: 0.5, snoutLen: 0, jaw: "terminal", lips: false, tail: "round", tailSize: 1, dorsal: "low", dorsalH: 1, analH: 1, pectoral: 1, pectoralWing: false, eye: 1.1, barbels: 0, scutes: false, lateral: false, lateralScutes: false, finlets: false, adipose: false, headBump: false, pelvicDisc: false, headCirri: false, visibleTeeth: false, caudalBand: false, opercularSpot: false, caudalOcellus: false, lateralOcellus: false, shoulderSpot: false, dorsalSpines: 8, finEdge: null, ped: 0.04, patScale: 1, patDensity: 1, gills: 5, ratTail: false, thresher: false, hammer: false },
+  puffer: { depth: 1.12, hump: 0, belly: 1.04, snout: 0.22, snoutLen: 0, jaw: "terminal", lips: false, tail: "round", tailSize: 0.92, dorsal: "low", dorsalH: 0.76, analH: 0.72, pectoral: 1, pectoralWing: false, eye: 1.1, barbels: 0, scutes: false, lateral: false, lateralScutes: false, finlets: false, adipose: false, headBump: false, pelvicDisc: false, headCirri: false, visibleTeeth: false, caudalBand: false, opercularSpot: false, caudalOcellus: false, lateralOcellus: false, shoulderSpot: false, dorsalSpines: 8, finEdge: null, ped: 0.08, patScale: 1, patDensity: 1, gills: 5, ratTail: false, thresher: false, hammer: false },
+  blob: { depth: 1.05, hump: 0.12, belly: 1.08, snout: 0.14, snoutLen: 0, jaw: "terminal", lips: false, tail: "round", tailSize: 0.82, dorsal: "low", dorsalH: 0.7, analH: 0.72, pectoral: 0.86, pectoralWing: false, eye: 1.1, barbels: 0, scutes: false, lateral: false, lateralScutes: false, finlets: false, adipose: false, headBump: false, pelvicDisc: false, headCirri: false, visibleTeeth: false, caudalBand: false, opercularSpot: false, caudalOcellus: false, lateralOcellus: false, shoulderSpot: false, dorsalSpines: 8, finEdge: null, ped: 0.06, patScale: 1, patDensity: 1, gills: 5, ratTail: false, thresher: false, hammer: false },
+};
 
 /** Видоспецифичные поправки поверх общих семейных правил. */
 const MODEL_OVERRIDES: Record<string, Partial<Morph>> = {
@@ -126,6 +199,101 @@ const MODEL_OVERRIDES: Record<string, Partial<Morph>> = {
   sterlet: { depth: 0.86, hump: -0.02, belly: 0.9, snout: 0.9, snoutLen: 0.08, jaw: "down", tail: "fork", dorsal: "low", pectoral: 0.9, eye: 0.95, barbels: 2, scutes: true, lateral: false, patScale: 1.2 },
   beluga: { depth: 1.12, hump: 0.04, belly: 1.08, snout: 0.72, snoutLen: 0.05, jaw: "down", tail: "fork", dorsal: "low", pectoral: 1.12, eye: 1.12, barbels: 2, scutes: true, lateral: false, patScale: 0.9 },
   sea_bass: { depth: 1.18, hump: 0.04, belly: 1.08, snout: 0.24, tail: "truncate", dorsal: "spiny", dorsalH: 1.25, analH: 0.95, pectoral: 1.12, eye: 1.32, lateral: true, ped: 0.07 },
+  // №51–100: следующая полная волна видовых силуэтов и анатомических акцентов.
+  cod: { depth: 1.02, hump: 0.02, belly: 1.05, snout: 0.22, tail: "truncate", dorsal: "triple", dorsalH: 0.94, pectoral: 0.92, eye: 1.05, barbels: 1, lateral: true },
+  mackerel: { depth: 0.82, belly: 0.9, snout: 0.78, tail: "lunate", tailSize: 1.12, dorsal: "double", dorsalH: 0.9, finlets: true, ped: 0.045, patScale: 0.72 },
+  sargo: { depth: 1.24, hump: 0.05, belly: 1.12, snout: 0.28, tail: "fork", dorsal: "spiny", dorsalH: 1.12, patScale: 1.12, patDensity: 1.2 },
+  pandora: { depth: 0.98, belly: 0.96, snout: 0.3, tail: "emarg", dorsal: "spiny", dorsalH: 0.95, eye: 1.1, patScale: 0.92 },
+  gurnard: { depth: 0.98, snout: 0.12, tail: "truncate", dorsal: "double", pectoral: 1.55, pectoralWing: true, patScale: 1.1 },
+  sole: { depth: 0.92, snout: 0.12, jaw: "down", tail: "round", dorsal: "long", pectoral: 0.75, patScale: 0.9 },
+  comber: { depth: 1.05, hump: 0.05, snout: 0.28, tail: "truncate", dorsal: "spiny", dorsalH: 1.22, eye: 1.14 },
+  tub_gurnard: { depth: 0.9, snout: 0.08, tail: "truncate", dorsal: "double", pectoral: 1.45, pectoralWing: true, patScale: 1.28 },
+  black_seabream: { depth: 1.2, hump: 0.05, belly: 1.08, tail: "emarg", dorsal: "spiny", dorsalH: 1.08, patScale: 0.82, patDensity: 1.22 },
+  rockling: { depth: 0.82, snout: 0.12, tail: "round", dorsal: "long", dorsalH: 0.82, barbels: 3, lateral: false, patDensity: 1.15 },
+  seabass_lavrak: { depth: 0.92, snout: 0.6, tail: "emarg", dorsal: "double", dorsalH: 1.02, pectoral: 1.06, lateral: true, ped: 0.06 },
+  dogfish: { depth: 0.9, snout: 0.72, tail: "pointed", dorsal: "double", dorsalH: 0.8, pectoral: 1.08, ped: 0.05 },
+  pollack_yellow: { depth: 0.9, snout: 0.32, tail: "truncate", dorsal: "triple", dorsalH: 0.92, barbels: 0, lateral: true },
+  cuckoo_ray: { depth: 1.02, tail: "pointed", pectoral: 1.35, patScale: 1.15, patDensity: 0.82 },
+  monkfish: { depth: 1.24, hump: 0.13, belly: 1.2, snout: 0.12, jaw: "up", tail: "round", pectoral: 1.28, eye: 1.08, dorsal: "spiny" },
+  conger: { depth: 0.88, snout: 0.24, jaw: "up", tail: "pointed", dorsal: "long", pectoral: 0.82, eye: 1.08 },
+  cuckoo_wrasse: { depth: 0.98, belly: 1.02, snout: 0.42, lips: true, tail: "round", dorsal: "long", dorsalH: 1.08, patScale: 1.18 },
+  john_dory: { depth: 1.42, hump: 0.06, belly: 1.16, snout: 0.22, tail: "round", dorsal: "filament", dorsalH: 1.45, pectoral: 1.1, eye: 0.94, patScale: 1.15, lateralOcellus: true },
+  red_scorpion: { depth: 1.34, hump: 0.12, belly: 1.12, snout: 0.12, tail: "truncate", dorsal: "spiny", dorsalH: 1.45, pectoral: 1.5, eye: 1.24, patScale: 1.3 },
+  wreckfish: { depth: 1.34, hump: 0.12, belly: 1.18, snout: 0.24, tail: "round", dorsal: "spiny", dorsalH: 1.18, pectoral: 1.2, ped: 0.1 },
+  spurdog_giant: { depth: 0.9, snout: 0.72, tail: "pointed", tailSize: 1.45, thresher: true, dorsal: "classic", dorsalH: 0.9 },
+  angel_shark: { depth: 1.05, snout: 0.18, tail: "pointed", pectoral: 1.42, dorsal: "low", dorsalH: 0.72 },
+  stone_patriarch: { depth: 1.3, hump: 0.1, belly: 1.14, snout: 0.2, tail: "truncate", dorsal: "spiny", dorsalH: 1.32, pectoral: 1.16, eye: 1.18, patScale: 1.28 },
+  pollock: { depth: 0.88, snout: 0.32, tail: "truncate", dorsal: "triple", dorsalH: 0.92, barbels: 0, lateral: true },
+  whiting: { depth: 0.84, snout: 0.35, tail: "truncate", dorsal: "triple", dorsalH: 0.86, barbels: 1, eye: 1.12 },
+  herring: { depth: 0.78, snout: 0.62, jaw: "up", tail: "deepfork", tailSize: 1.06, dorsal: "low", eye: 1.24, ped: 0.045 },
+  plaice_eu: { depth: 1.04, snout: 0.24, tail: "round", pectoral: 0.8, patScale: 1.16, patDensity: 0.76 },
+  perch: { depth: 1.22, hump: 0.05, belly: 1.08, snout: 0.28, tail: "emarg", dorsal: "double", dorsalH: 1.2, eye: 1.05, patScale: 1.12 },
+  smelt: { depth: 0.72, snout: 0.54, tail: "deepfork", dorsal: "low", adipose: true, eye: 1.2, ped: 0.045 },
+  ide: { depth: 1.02, hump: 0.03, belly: 1.02, snout: 0.34, tail: "fork", dorsal: "classic", eye: 1.02, patScale: 1.1 },
+  vendace: { depth: 0.82, snout: 0.56, tail: "deepfork", dorsal: "low", adipose: true, eye: 1.25, patScale: 0.82 },
+  garfish_baltic: { depth: 0.8, snout: 0.28, tail: "fork", dorsal: "spiny", dorsalH: 1.18, scutes: true, lateralScutes: true, patScale: 0.9 },
+  roach_baltic: { depth: 0.98, hump: 0.02, belly: 1.02, tail: "fork", dorsal: "classic", eye: 1.14, patScale: 1.04 },
+  silver_bream: { depth: 1.24, hump: 0.06, belly: 1.12, snout: 0.2, tail: "emarg", dorsal: "classic", analH: 1.04, pectoral: 0.92 },
+  sea_trout: { depth: 0.96, snout: 0.44, tail: "fork", dorsal: "classic", adipose: true, patScale: 1.1, patDensity: 1.1 },
+  lumpfish: { depth: 1.18, hump: 0.1, belly: 1.12, snout: 0.12, tail: "round", dorsal: "low", pectoral: 1.12, pelvicDisc: true, patScale: 1.18 },
+  pike: { depth: 0.72, snout: 0.88, snoutLen: 0.07, jaw: "up", tail: "emarg", dorsal: "low", dorsalH: 0.7, analH: 0.72, pectoral: 0.84, eye: 1.08 },
+  whitefish: { depth: 0.9, snout: 0.52, tail: "fork", dorsal: "classic", adipose: true, eye: 1.05 },
+  burbot: { depth: 0.92, snout: 0.16, jaw: "down", tail: "round", dorsal: "long", barbels: 1, lateral: false, eye: 1.08 },
+  zander_baltic: { depth: 0.82, snout: 0.58, jaw: "up", tail: "emarg", dorsal: "double", dorsalH: 1.04, eye: 1.22, visibleTeeth: true },
+  eel: { depth: 0.88, snout: 0.3, jaw: "terminal", tail: "pointed", dorsal: "long", pectoral: 0.72, eye: 0.92 },
+  wels_skerry: { depth: 0.88, snout: 0.72, jaw: "up", tail: "fork", dorsal: "classic", adipose: true, eye: 1.22, visibleTeeth: true },
+  grayling: { depth: 0.9, snout: 0.4, tail: "fork", dorsal: "sail", dorsalH: 1.55, adipose: true, patScale: 0.84 },
+  atl_sturgeon: { depth: 0.94, snout: 0.88, snoutLen: 0.14, tail: "fork", dorsal: "low", barbels: 2, scutes: true, patScale: 1.18 },
+  sea_eagle_trout: { depth: 0.94, snout: 0.48, tail: "emarg", dorsal: "classic", adipose: true, patScale: 1.22, patDensity: 1.18 },
+  pike_legend: { depth: 0.74, snout: 0.92, snoutLen: 0.08, jaw: "up", tail: "emarg", dorsal: "low", dorsalH: 0.68, patScale: 1.32, patDensity: 0.72 },
+  haddock: { depth: 0.94, snout: 0.22, tail: "truncate", dorsal: "triple", barbels: 1, lateral: true, patScale: 0.82, shoulderSpot: true },
+  plaice: { depth: 0.92, snout: 0.2, tail: "round", pectoral: 0.78, patScale: 1.12, patDensity: 1.06 },
+  capelin: { depth: 0.72, snout: 0.56, tail: "deepfork", dorsal: "low", adipose: true, eye: 1.18, patScale: 0.78 },
+  blue_whiting: { depth: 0.82, snout: 0.3, tail: "truncate", dorsal: "triple", barbels: 0, eye: 1.14 },
+  // Дополнительные диагностические признаки в поздних океанических и абиссальных зонах.
+  pink_salmon: { depth: 1.02, hump: 0.14, belly: 1.05, tail: "emarg", adipose: true, dorsal: "classic", patScale: 1.12 },
+  spotted_wolffish: { depth: 0.96, snout: 0.22, jaw: "down", tail: "round", dorsal: "long", lips: true, visibleTeeth: true, patDensity: 1.2 },
+  arctic_skate: { depth: 1.05, tail: "pointed", pectoral: 1.3, patScale: 1.12, patDensity: 0.9 },
+  leopard_shark: { depth: 1.08, snout: 0.66, tail: "pointed", dorsal: "double", dorsalH: 1.08, patScale: 1.15 },
+  clownfish: { depth: 1.18, belly: 1.08, tail: "round", dorsal: "long", dorsalH: 1.12, pectoral: 1.08, patScale: 0.86 },
+  surgeonfish: { depth: 1.2, belly: 1.04, tail: "lunate", dorsal: "long", analH: 1.14, snout: 0.52, ped: 0.05 },
+  parrotfish: { depth: 1.18, snout: 0.48, jaw: "beak", lips: true, tail: "emarg", dorsal: "long", visibleTeeth: false },
+  butterflyfish: { depth: 1.2, snout: 0.95, jaw: "terminal", tail: "truncate", dorsal: "long", analH: 1.35, eye: 1.1, patScale: 0.86, caudalOcellus: true },
+  rabbitfish: { depth: 1.18, snout: 0.62, tail: "emarg", dorsal: "spiny", dorsalH: 1.18, eye: 1.08 },
+  mudskipper: { depth: 1.1, hump: 0.12, snout: 0.14, tail: "round", dorsal: "long", pectoral: 1.5, eye: 1.55, pelvicDisc: true, lateral: false },
+  mojarra: { depth: 1.08, snout: 0.86, jaw: "up", tail: "fork", dorsal: "spiny", pectoral: 0.92, eye: 1.08 },
+  sheepshead: { depth: 1.24, hump: 0.05, snout: 0.2, tail: "fork", dorsal: "spiny", dorsalH: 1.1, visibleTeeth: true, lips: true },
+  pufferfish: { depth: 1.18, belly: 1.08, snout: 0.2, tail: "round", dorsal: "low", pectoral: 1.08, eye: 1.18, patScale: 1.12, patDensity: 1.12 },
+  archerfish: { depth: 1.18, snout: 0.82, jaw: "up", tail: "emarg", dorsal: "classic", dorsalH: 1.1, eye: 1.18 },
+  red_drum: { depth: 0.98, hump: 0.03, belly: 1.02, tail: "truncate", dorsal: "double", caudalOcellus: true, lateral: true },
+  sawfish: { depth: 1, snout: 0.9, tail: "pointed", dorsal: "classic", pectoral: 1.25, gills: 5 },
+  flying_fish: { depth: 0.78, snout: 0.58, tail: "deepfork", dorsal: "low", pectoral: 1.55, pectoralWing: true, ped: 0.045 },
+  mandarin: { depth: 1.06, snout: 0.28, tail: "round", dorsal: "double", dorsalH: 1.14, pectoral: 1.08, eye: 1.2, patScale: 1.3, patDensity: 1.18 },
+  opah: { depth: 1.38, hump: 0.02, belly: 1.22, tail: "emarg", dorsal: "long", dorsalH: 1.2, analH: 1.2, pectoral: 1.2, eye: 1.08 },
+  coelacanth: { depth: 1.15, snout: 0.28, tail: "round", dorsal: "double", dorsalH: 0.92, pectoral: 1.2, patScale: 1.25 },
+  hatchetfish: { depth: 1.38, hump: 0.14, belly: 1.28, snout: 0.1, tail: "truncate", dorsal: "low", eye: 1.24, patScale: 0.7 },
+  bristlemouth: { depth: 0.72, snout: 0.74, jaw: "up", tail: "fork", dorsal: "low", eye: 1.2, visibleTeeth: true },
+  fangtooth: { depth: 1.08, snout: 0.08, jaw: "up", tail: "truncate", dorsal: "spiny", eye: 1.3, visibleTeeth: true },
+  loosejaw: { depth: 0.7, snout: 0.72, jaw: "up", tail: "truncate", dorsal: "low", eye: 1.25, visibleTeeth: true },
+  black_swallower: { depth: 0.92, belly: 1.2, snout: 0.1, jaw: "up", tail: "truncate", dorsal: "low", eye: 1.16, visibleTeeth: true },
+  tripodfish: { depth: 0.7, snout: 0.42, tail: "pointed", dorsal: "low", pectoral: 1.32, eye: 1.25 },
+  giant_squid: { depth: 1.16, eye: 1.5, patDensity: 1.1 },
+  colossal_squid: { depth: 1.32, eye: 1.6, patDensity: 1.2 },
+  barreleye: { depth: 0.9, snout: 0.12, tail: "truncate", dorsal: "low", eye: 1.55 },
+  abyss_octopus: { depth: 1.05, eye: 1.45, pectoral: 1.2 },
+  abyss_snail: { depth: 0.92, snout: 0.1, tail: "round", pectoral: 0.8, eye: 0.9 },
+  marbled_rockcod: { depth: 1.1, snout: 0.28, tail: "truncate", dorsal: "spiny", dorsalH: 1.14, patScale: 1.15 },
+  bald_notothen: { depth: 0.86, snout: 0.34, tail: "truncate", dorsal: "low", eye: 1.15, patDensity: 0.88 },
+  emerald_rockcod: { depth: 1.02, snout: 0.28, tail: "truncate", dorsal: "spiny", pectoral: 1.12, eye: 1.12 },
+  antarctic_skate: { depth: 1.05, tail: "pointed", pectoral: 1.32, patScale: 1.08 },
+  crocodile_icefish: { depth: 0.82, snout: 0.76, jaw: "up", tail: "truncate", dorsal: "low", eye: 1.12 },
+  spiny_plunderfish: { depth: 1.18, hump: 0.12, snout: 0.12, tail: "round", dorsal: "spiny", dorsalH: 1.2, pectoral: 1.15 },
+  marbled_plunderfish: { depth: 1.24, hump: 0.12, snout: 0.08, jaw: "up", tail: "round", dorsal: "spiny", pectoral: 1.18, eye: 1.2, headCirri: true },
+  toothfish: { depth: 1.08, snout: 0.44, tail: "truncate", dorsal: "double", pectoral: 1.12, eye: 1.14 },
+  unicorn_icefish: { depth: 0.86, snout: 0.64, snoutLen: 0.05, tail: "truncate", dorsal: "low", eye: 1.15 },
+  sleeper_shark: { depth: 1.08, snout: 0.56, tail: "pointed", dorsal: "low", dorsalH: 0.68, pectoral: 1.14 },
+  southern_right_mola: { depth: 1.24, hump: 0.02, belly: 1.18, tail: "round", dorsal: "long", dorsalH: 1.12, analH: 1.12, pectoral: 1.14, eye: 1.05 },
+  white_icefish_king: { depth: 1.16, snout: 0.42, tail: "truncate", dorsal: "double", pectoral: 1.12, eye: 1.18 },
 };
 
 const cache = new Map<string, Morph>();
@@ -165,6 +333,10 @@ export function getMorph(f: FishDef): Morph {
     visibleTeeth: false,
     caudalBand: false,
     opercularSpot: false,
+    caudalOcellus: false,
+    lateralOcellus: false,
+    shoulderSpot: false,
+    dorsalSpines: 8,
     finEdge: r() < 0.28 ? (f.colors.accent ?? null) : null,
     ped: rng(0.06, 0.12),
     patScale: rng(0.75, 1.35),
@@ -174,6 +346,9 @@ export function getMorph(f: FishDef): Morph {
     thresher: false,
     hammer: false,
   };
+
+  // Первые 50 сохраняют уже отточенную базу; остальные используют устойчивые архетипы.
+  if (!FIRST_WAVE_IDS.has(f.id)) Object.assign(m, ARCHETYPE_BASELINES[f.shape]);
 
   // ───── семейства ─────
   if (inG(f, "Acipenser", "Huso")) Object.assign(m, { snout: 1, snoutLen: f.id === "starry_sturgeon" ? 0.2 : f.id === "beluga" ? 0.05 : 0.11, jaw: "down", barbels: 2, scutes: true, tail: "fork", dorsal: "low", lateral: false });
@@ -187,7 +362,7 @@ export function getMorph(f: FishDef): Morph {
   if (inG(f, "Caranx", "Seriola", "Selar", "Trachurus", "Elagatis", "Naucrates")) Object.assign(m, { tail: "deepfork", lateralScutes: inG(f, "Caranx", "Trachurus", "Selar"), dorsal: "double", ped: 0.05 });
   if (inG(f, "Epinephelus", "Plectropomus", "Polyprion", "Stereolepis", "Paralabrax", "Serranus", "Myripristis", "Sargocentron")) Object.assign(m, { dorsal: "spiny", tail: inG(f, "Epinephelus", "Stereolepis") ? "round" : "truncate", jaw: "up", lips: inG(f, "Epinephelus", "Stereolepis") });
   if (inG(f, "Lutjanus", "Pristipomoides", "Etelis", "Lobotes")) Object.assign(m, { dorsal: "spiny", tail: inG(f, "Etelis", "Pristipomoides") ? "deepfork" : "emarg" });
-  if (inG(f, "Sebastes", "Scorpaena", "Pterois", "Scorpaenichthys", "Trachinus")) Object.assign(m, { dorsal: "spiny", dorsalH: inG(f, "Pterois") ? 2 : 1.2, eye: 1.3, jaw: "up", tail: "truncate" });
+  if (inG(f, "Sebastes", "Scorpaena", "Pterois", "Scorpaenichthys", "Trachinus")) Object.assign(m, { dorsal: "spiny", dorsalH: inG(f, "Pterois") ? 2 : 1.2, dorsalSpines: inG(f, "Pterois") ? 13 : 10, eye: 1.3, jaw: "up", tail: "truncate" });
   if (inG(f, "Labrus", "Symphodus", "Coris", "Cheilinus", "Choerodon", "Semicossyphus", "Hexagrammos")) Object.assign(m, { lips: true, tail: "round", dorsal: "long", snout: 0.35 });
   if (f.id === "napoleon" || f.id === "sheephead") m.headBump = true;
   if (inG(f, "Scarus")) Object.assign(m, { jaw: "beak", tail: "emarg", dorsal: "long" });
@@ -205,7 +380,37 @@ export function getMorph(f: FishDef): Morph {
   if (inG(f, "Rutilus", "Abramis", "Blicca", "Scardinius", "Leuciscus", "Alburnus", "Carassius", "Pelecus")) Object.assign(m, { dorsal: "classic", tail: "fork", jaw: inG(f, "Pelecus") ? "up" : m.jaw });
   if (inG(f, "Megalops", "Albula")) Object.assign(m, { tail: "deepfork", dorsal: f.id === "tarpon" ? "filament" : "classic", jaw: "up", eye: 1.3 });
   if (inG(f, "Sciaena", "Umbrina", "Sciaenops", "Atractoscion")) Object.assign(m, { barbels: f.id === "shi_drum" ? 1 : 0, dorsal: "double", tail: "truncate" });
-  if (inG(f, "Anarhichas")) Object.assign(m, { jaw: "down", lips: true });
+  if (inG(f, "Anarhichas", "Anarrhichthys", "Ophiodon")) Object.assign(m, { jaw: "down", lips: true, visibleTeeth: true });
+  if (inG(f, "Gasterosteus")) Object.assign(m, { depth: 0.76, dorsal: "spiny", dorsalH: 1.15, dorsalSpines: 3, tail: "fork", scutes: true, lateral: false });
+  if (inG(f, "Amphiprion")) Object.assign(m, { depth: 1.18, tail: "round", dorsal: "long", dorsalH: 1.1, analH: 1.08, pectoral: 1.08 });
+  if (inG(f, "Siganus")) Object.assign(m, { depth: 1.16, snout: 0.62, tail: "emarg", dorsal: "spiny", dorsalH: 1.15 });
+  if (inG(f, "Synchiropus")) Object.assign(m, { depth: 0.86, snout: 0.18, tail: "round", dorsal: "double", dorsalH: 1.15, eye: 1.25 });
+  if (inG(f, "Eucinostomus")) Object.assign(m, { snout: 0.86, jaw: "up", dorsal: "spiny", tail: "fork" });
+  if (inG(f, "Toxotes")) Object.assign(m, { snout: 0.82, jaw: "up", tail: "emarg", eye: 1.18 });
+  if (inG(f, "Periophthalmus")) Object.assign(m, { depth: 1.1, eye: 1.55, pectoral: 1.5, tail: "round", dorsal: "long" });
+  if (inG(f, "Girella")) Object.assign(m, { depth: 1.18, snout: 0.34, tail: "truncate", dorsal: "double" });
+  if (inG(f, "Brama")) Object.assign(m, { depth: 1.3, snout: 0.2, tail: "emarg", dorsal: "long", analH: 1.1 });
+  if (inG(f, "Hoplostethus")) Object.assign(m, { depth: 1.22, snout: 0.26, tail: "truncate", dorsal: "spiny", eye: 1.3 });
+  if (inG(f, "Diodon")) Object.assign(m, { depth: 1.18, tail: "round", eye: 1.18, pectoral: 1.08, patScale: 1.12 });
+  if (inG(f, "Ostracion")) Object.assign(m, { depth: 1.08, tail: "round", dorsal: "low", pectoral: 0.82, eye: 1.08, lateral: false });
+  if (inG(f, "Exocoetus")) Object.assign(m, { depth: 0.78, pectoralWing: true, pectoral: 1.55, tail: "deepfork", dorsal: "low" });
+  if (inG(f, "Argyropelecus")) Object.assign(m, { depth: 1.38, belly: 1.28, dorsal: "low", eye: 1.24 });
+  if (inG(f, "Myctophum")) Object.assign(m, { depth: 0.8, eye: 1.25, adipose: true, dorsal: "low" });
+  if (inG(f, "Anoplogaster", "Chiasmodon", "Malacosteus")) Object.assign(m, { jaw: "up", visibleTeeth: true, eye: 1.28 });
+  if (inG(f, "Dissostichus")) Object.assign(m, { depth: 1.08, tail: "truncate", dorsal: "double", pectoral: 1.12 });
+  if (inG(f, "Pogonophryne", "Harpagifer")) Object.assign(m, { depth: 1.2, hump: 0.12, dorsal: "spiny", pectoral: 1.15 });
+  if (inG(f, "Harpagifer")) Object.assign(m, { snout: 0.18, jaw: "terminal", eye: 1.12 });
+  if (inG(f, "Pogonophryne")) Object.assign(m, { snout: 0.08, jaw: "up", headCirri: true, eye: 1.2 });
+  if (inG(f, "Linophryne")) Object.assign(m, { jaw: "up", headCirri: true });
+  if (inG(f, "Lampris")) Object.assign(m, { depth: 1.38, tail: "emarg", dorsal: "long", analH: 1.2, pectoral: 1.2 });
+
+  // Камбалы: видовая длина корпуса берётся из общего профиля и уточняется таксономией.
+  if (f.shape === "flat") Object.assign(m, { lateral: false, dorsal: "long", tail: "round", pectoral: 0.82 });
+  if (inG(f, "Solea", "Microstomus")) Object.assign(m, { depth: 0.92, snout: 0.12, jaw: "down", patDensity: 0.86 });
+  if (inG(f, "Hippoglossus")) Object.assign(m, { depth: 0.96, snout: 0.5, tail: "emarg", dorsal: "long", pectoral: 0.9 });
+  if (inG(f, "Reinhardtius")) Object.assign(m, { depth: 0.86, snout: 0.42, tail: "emarg", lateral: true });
+  if (inG(f, "Scophthalmus")) Object.assign(m, { depth: 1.06, snout: 0.28, tail: "round", patScale: 1.12, patDensity: 1.15 });
+  if (inG(f, "Pleuronectes", "Platichthys", "Liopsetta", "Paralichthys", "Amblyraja", "Bathyraja", "Leucoraja", "Raja")) Object.assign(m, { depth: 1.02, tail: "round", patScale: 1.08 });
 
   // вытянутые
   if (f.shape === "long" || f.shape === "eel") {
@@ -219,7 +424,6 @@ export function getMorph(f: FishDef): Morph {
 
   // акулы
   if (f.shape === "shark") {
-    m.snout = rng(0.4, 1);
     if (inG(f, "Hexanchus")) m.gills = 6;
     if (inG(f, "Notorynchus")) m.gills = 7;
     if (inG(f, "Alopias")) m.thresher = true;
