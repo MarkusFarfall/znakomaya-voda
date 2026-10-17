@@ -257,9 +257,11 @@ export class Engine {
   navigation: LocalNavigation;
   navigationMode = false;
   private navEmit = 0;
+  private returnToFishingAfterStop = false;
   private resetNavigation() {
     this.navigationMode = false;
     this.navEmit = 0;
+    this.returnToFishingAfterStop = false;
     this.save.waterPosition = normalizeWaterPosition(this.save.waterPosition,this.save.location,this.save.spot,this.save.localPosition);
     this.navigation = new LocalNavigation(this.save.waterPosition,waterWidth(this.save.location));
     this.save.spot = regionAt(this.save.location,this.navigation.x).spot.id;
@@ -267,21 +269,42 @@ export class Engine {
   get navigationBlock(): string | null {
     return this.s.atPort ? "Сначала выйдите из порта" : this.phase !== "idle" ? "Сначала уберите снасть и закончите с рыбой" : null;
   }
+  get returningToFishing() { return this.returnToFishingAfterStop; }
   setNavigationMode(on: boolean) {
     if (on && this.navigationBlock) return false;
     if (!on && this.navigation.moving) return false;
+    this.returnToFishingAfterStop = false;
     this.navigationMode = on; this.cancelInput(); this.emit(); return true;
+  }
+  requestFishingMode() {
+    if (!this.navigationMode || this.navigationBlock) return false;
+    if (!this.navigation.moving) return this.setNavigationMode(false);
+    this.returnToFishingAfterStop = true;
+    this.navigation.stop();
+    this.markDirty();
+    this.emitNavigation();
+    return true;
   }
   navigateTo(nx: number) {
     if (this.paused || !this.navigationMode || this.navigationBlock) return false;
     if (!this.navigation.go(nx)) return false;
-    this.markDirty(); return true;
+    this.markDirty();
+    this.emitNavigation();
+    return true;
   }
   steerNavigation(dir: -1 | 0 | 1) {
     if(dir && (this.paused || !this.navigationMode || this.navigationBlock))return false;
-    this.navigation.steer(dir);this.markDirty();return true;
+    this.navigation.steer(dir);
+    this.markDirty();
+    this.emitNavigation();
+    return true;
   }
-  stopNavigation() { this.navigation.stop(); this.markDirty(); }
+  stopNavigation() {
+    this.returnToFishingAfterStop = false;
+    this.navigation.stop();
+    this.markDirty();
+    this.emitNavigation();
+  }
   private atmosphereInstance: Atmosphere | null = null;
   private eventDirectorInstance: EventDirector | null = null;
   private lastEventCheckpoint = -1;
@@ -350,6 +373,7 @@ export class Engine {
   onCatchLogged?: (c: CaughtFish) => void;
   private toastId = 1;
   private listeners = new Set<() => void>();
+  private navigationListeners = new Set<() => void>();
 
   constructor(save?: SaveData) {
     this.save = save ?? newSave();
@@ -520,7 +544,12 @@ export class Engine {
     this.listeners.add(fn);
     return () => { this.listeners.delete(fn); };
   }
+  subscribeNavigation(fn: () => void) {
+    this.navigationListeners.add(fn);
+    return () => { this.navigationListeners.delete(fn); };
+  }
   emit() { this.listeners.forEach((f) => f()); }
+  emitNavigation() { this.navigationListeners.forEach((f) => f()); }
   markDirty() { this.dirty = true; this.emit(); }
 
   toast(text: string, kind: Toast["kind"] = "info", sub?: string) {
@@ -588,6 +617,12 @@ export class Engine {
         return currentAt(habitat.feature, x, this.time, habitat.seed, atmo.wind, atmo.windDir);
       });
     }
+    const returnedToFishing = this.returnToFishingAfterStop && !this.navigation.moving;
+    if (returnedToFishing) {
+      this.returnToFishingAfterStop = false;
+      this.navigationMode = false;
+      this.cancelInput();
+    }
     if (wasMoving) {
       const previousSpot = this.s.spot;
       const region=regionAt(this.s.location,this.navigation.x);
@@ -603,8 +638,14 @@ export class Engine {
       this.s.localPosition = { spot: this.s.spot, x: region.nx, heading: this.navigation.heading };
       this.dirty = true;
       this.navEmit += dt;
-      if (this.navEmit >= .1 || !this.navigation.moving) { this.navEmit = 0; this.emit(); }
+      // Canvas movement stays on the frame loop; only the small navigation HUD
+      // needs 5 Hz updates. Avoid re-rendering the complete React game tree.
+      if (this.navEmit >= .2 || !this.navigation.moving) {
+        this.navEmit = 0;
+        this.emitNavigation();
+      }
     }
+    if (returnedToFishing) this.emit();
 
     const wdt = dt;
 

@@ -72,6 +72,39 @@ test('navigation and braking both block casting; fishing requires an explicit mo
   for (let i = 0; i < 300; i++) e.update(1 / 60);
   assert.equal(e.setNavigationMode(false), true); e.pointerDown(); assert.equal(e.phase, 'charging');
 });
+test('navigation motion updates its HUD without re-rendering the full game every frame', () => {
+  const e = engine();
+  e.setNavigationMode(true);
+  e.navigateTo(.7);
+  let gameUpdates = 0, navigationUpdates = 0;
+  e.subscribe(() => gameUpdates++);
+  e.subscribeNavigation(() => navigationUpdates++);
+  for (let i = 0; i < 26; i++) e.update(1 / 60);
+  assert.equal(gameUpdates, 0);
+  assert.equal(navigationUpdates, 2);
+  assert.ok(e.navigation.moving);
+});
+test('one-tap return to fishing brakes first and never casts automatically', () => {
+  const e = engine();
+  e.setNavigationMode(true);
+  e.navigateTo(.8);
+  for (let i = 0; i < 180; i++) e.update(1 / 60);
+  assert.ok(e.navigation.moving);
+  assert.equal(e.requestFishingMode(), true);
+  assert.equal(e.navigationMode, true);
+  assert.equal(e.returningToFishing, true);
+  assert.equal(e.navigation.target, null);
+  assert.equal(e.phase, 'idle');
+  e.pointerDown();
+  assert.equal(e.phase, 'idle');
+  for (let i = 0; i < 300 && e.navigationMode; i++) e.update(1 / 60);
+  assert.equal(e.navigationMode, false);
+  assert.equal(e.returningToFishing, false);
+  assert.equal(e.navigation.moving, false);
+  assert.equal(e.phase, 'idle');
+  e.pointerDown();
+  assert.equal(e.phase, 'charging');
+});
 test('pause, port and save replacement never let an old route move the vessel', () => {
   const e = engine(); e.setNavigationMode(true); e.navigateTo(.8); e.update(.1); const x = e.navigation.x;
   e.paused = true; e.update(3); assert.equal(e.navigation.x, x); assert.equal(e.navigateTo(.7), false);

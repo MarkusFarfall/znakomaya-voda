@@ -4,9 +4,9 @@ import { regionAt, waterBedAt, waterRegions } from "@/game/aquatory";
 import { HABITAT_CUES, habitatActivityText } from "@/game/exploration";
 import { DEFAULT_SETTINGS, type Settings } from "@/game/settings";
 import { HoldControl } from "./HoldControl";
-import type { CSSProperties } from "react";
+import { memo, useEffect, useReducer, type CSSProperties } from "react";
 
-export function LocalNavigationPanel({
+export const LocalNavigationPanel = memo(function LocalNavigationPanel({
   engine: e,
   scene,
   landscape,
@@ -19,6 +19,8 @@ export function LocalNavigationPanel({
   mobile?: boolean;
   controls?: Settings["controls"];
 }) {
+  const [, refresh] = useReducer((value: number) => value + 1, 0);
+  useEffect(() => e.subscribeNavigation(refresh), [e]);
   const n = e.navigation,
     W = n.worldWidth,
     manual = mobile && controls.sailing === "arrows";
@@ -100,11 +102,15 @@ export function LocalNavigationPanel({
           </button>
           <button
             className="btn btn-solid"
-            onClick={() => e.setNavigationMode(false)}
-            disabled={n.moving}
-            title={n.moving ? "Сначала остановите лодку" : "Приготовить снасть"}
+            onClick={() => e.requestFishingMode()}
+            disabled={e.returningToFishing}
+            title={
+              n.moving
+                ? "Лодка плавно затормозит и вернётся к рыбалке; заброс не начнётся сам"
+                : "Вернуться к рыбалке; заброс выполняется вручную"
+            }
           >
-            Рыбачить
+            {e.returningToFishing ? "Тормозим…" : "Рыбачить"}
           </button>
         </div>
       </div>
@@ -201,12 +207,18 @@ export function LocalNavigationPanel({
       </div>
       <div className="local-navigation__hint">
         <span>
-          {manual
-            ? "Держите стрелку для хода · отпустите для остановки"
-            : "Нажмите на воду или выберите точку на карте"}
+          {e.returningToFishing
+            ? "Тормозим — после остановки откроется рыбалка"
+            : manual
+              ? n.moving
+                ? "Стрелки — ход · «Рыбачить» плавно тормозит"
+                : "Держите стрелку для хода · отпустите для остановки"
+              : n.moving
+                ? "«Рыбачить» плавно остановит лодку; заброс — вручную"
+                : "Нажмите на воду или выберите точку на карте"}
         </span>
         <span>{Math.round(((n.nx - n.left) / (n.right - n.left)) * 100)}%</span>
       </div>
     </section>
   );
-}
+});
