@@ -20,7 +20,7 @@ import { AmbientLife } from "./ambient";
 import { SeabedRenderer } from "./seabed";
 import { SkyRenderer } from "./sky";
 import { drawBolt, drawIce, drawLeaves, makeBolt, type Bolt } from "./weatherFx";
-import { drawEventFx, type FxCall, type FxScene, type Layer } from "./eventFx";
+import { drawEventFx, EventFxBuffer, type FxScene } from "./eventFx";
 import { clamp, glow, hexA, mix, rng, smooth, af, rgbHex, FONTS, roundRect } from "./util";
 import {
   drawDepthOverlay,
@@ -47,6 +47,7 @@ export const CAM_MODES: CamMode[] = ["auto", "surface", "hook", "bottom"];
 export class Scene {
   mobileButtons = false;
   private stream = new AquatoryStream();
+  private fxBuffer = new EventFxBuffer();
   get streamedRegions(){return this.stream.residentIds;}
   private bottomAt(f:Frame,x:number){return f.bedDepth?f.sY+f.depthPx(f.bedDepth(x)):this.bed.bedY(x);}
   camY = 0;
@@ -97,6 +98,14 @@ export class Scene {
   private sonarT = 0;
   private whaleX = -500;
   private friendPresence: { presence: LiveFriendPresence; receivedAt: number; ageAtReceiptMs: number }[] = [];
+  private boatSource: Frame | null = null;
+  private boatX = 0;
+  private boatTurnScale = 1;
+  private readonly boatWaveY = (x: number) => {
+    const source = this.boatSource;
+    return source ? source.waveY(this.boatX + (x - this.boatX) * this.boatTurnScale) : 0;
+  };
+  private readonly boatFrame = {} as Frame;
 
   setFriendPresence(snapshot: readonly LiveFriendPresence[], serverNow = new Date().toISOString()) {
     const receivedAt = Date.now();
@@ -116,18 +125,6 @@ export class Scene {
     const r = rng(9);
     const snowN = this.quality >= 2 ? 130 : this.quality === 1 ? 80 : 45;
     this.snow = Array.from({ length: snowN }, () => [r() * W, r() * 3000, 0.5 + r() * 1.6]);
-  }
-
-  private eventFxCalls(e: Engine): FxCall[] {
-    const visible = new Map(e.eventDirector.visible().map((event) => [event.uid, event]));
-    const calls: FxCall[] = [];
-    for (const { live, def } of e.eventDirector.activeList()) {
-      const event = visible.get(live.uid);
-      if (!event || !def.fx?.length) continue;
-      const age = Math.max(0, (e.s.minutes - live.start) / TIME_SCALE);
-      for (const spec of def.fx) calls.push({ e: event, spec, age });
-    }
-    return calls;
   }
 
   private fxScene(f: Frame, boatX: number, rodTip?: readonly [number, number]): FxScene {
@@ -243,7 +240,7 @@ export class Scene {
       topRes: compact ? (land ? 64 : 118) : 210, buttonControls:this.mobileButtons, botRes: compact ? (this.mobileButtons?(land?140:195):(land ? 70 : 146)) : this.mobileButtons?195:150, depthPx, waveY,
       light: { dx: clamp((sunX / W) * 2 - 1, -1, 1), k: sunVis * (1 - night * 0.7) },
     };
-    const fxCalls = this.eventFxCalls(e);
+    const fxCalls = this.fxBuffer.build(e.eventDirector, e.s.minutes, TIME_SCALE);
     const fxBoatX = this.voyage !== null ? W * .3 : e.navigation.x;
     f.boatX = fxBoatX;
     if (this.voyage === null) this.localWake.update(f);
@@ -328,7 +325,13 @@ export class Scene {
     const mirror = facing < 0 ? -1 : 1;
     const turnScale = mirror * Math.max(.22, Math.abs(facing));
     ctx.save(); ctx.translate(bx, 0); ctx.scale(turnScale, 1); ctx.translate(-bx, 0);
-    const boatFrame: Frame = { ...f, localBoat: this.voyage === null, waveY: x => waveY(bx + (x - bx) * turnScale) };
+    this.boatSource = f;
+    this.boatX = bx;
+    this.boatTurnScale = turnScale;
+    const boatFrame = this.boatFrame;
+    Object.assign(boatFrame, f);
+    boatFrame.waveY = this.boatWaveY;
+    boatFrame.localBoat = this.voyage === null;
     if (!this.boat3d && typeof window !== "undefined") this.boat3d = new Boat3D();
     this.boat3d?.setEnabled(this.boat3dOn);
     const r3 = this.boat3d?.draw(ctx, boatFrame, bx, pose, speed01, Math.abs(ctx.getTransform().a / turnScale) || 1) ?? null;
@@ -354,7 +357,12 @@ export class Scene {
     if (this.voyage === null) this.drawFriendFleet(f, screenX, screenW, z);
     if (this.voyage === null && e.navigationMode) this.drawNavigation(f);
     if (this.gfx.foam) drawSurfaceFront(f, this.rings);
-    this.rings = this.rings.filter((r) => r.t < 0.7);
+    let ringWrite = 0;
+    for (let i = 0; i < this.rings.length; i++) {
+      const ring = this.rings[i];
+      if (ring.t < 0.7) this.rings[ringWrite++] = ring;
+    }
+    this.rings.length = ringWrite;
     if (atmo.ice > 0.02) {
       drawIce(ctx, t, W, (x) => waveY(x), atmo.ice, atmo.wind * atmo.windDir * 26 * sc, sc, atmo.palette.seaNear);
     }
@@ -614,7 +622,12 @@ export class Scene {
         ctx.fill();
       }
     }
-    this.schools = this.schools.filter((sch) => sch.x > left-400 && sch.x < right+400);
+    let keepSchool = 0;
+    for (let i = 0; i < this.schools.length; i++) {
+      const school = this.schools[i];
+      if (school.x > left - 400 && school.x < right + 400) this.schools[keepSchool++] = school;
+    }
+    this.schools.length = keepSchool;
     void t;
   }
 
@@ -744,7 +757,12 @@ export class Scene {
         ctx.restore();
       }
     }
-    this.creatures = this.creatures.filter((c) => c.x > left-120 && c.x < right+120 && c.y < f.cam + f.H * 3 && c.phase < 90);
+    let keepCreature = 0;
+    for (let i = 0; i < this.creatures.length; i++) {
+      const creature = this.creatures[i];
+      if (creature.x > left - 120 && creature.x < right + 120 && creature.y < f.cam + f.H * 3 && creature.phase < 90) this.creatures[keepCreature++] = creature;
+    }
+    this.creatures.length = keepCreature;
   }
 
   private updateAmbient(f: Frame) {
@@ -789,7 +807,12 @@ export class Scene {
       if (y < cam - 100 || y > cam + H + 100) continue;
       drawFish(ctx, a.f, a.x, y, a.len, a.dir, { wag: a.phase, alpha: 0.92, silhouette: a.known ? null : "rgba(4,10,18,0.72)" });
     }
-    this.ambient = this.ambient.filter((a) => a.x > left-220 && a.x < right+220);
+    let keepFish = 0;
+    for (let i = 0; i < this.ambient.length; i++) {
+      const fish = this.ambient[i];
+      if (fish.x > left - 220 && fish.x < right + 220) this.ambient[keepFish++] = fish;
+    }
+    this.ambient.length = keepFish;
   }
 
   private glowPass(f: Frame) {
@@ -883,7 +906,12 @@ export class Scene {
       ctx.arc(s.x, s.y, 1.6, 0, Math.PI * 2);
       ctx.fill();
     }
-    this.sprays = this.sprays.filter((s) => s.t < 1.2 && s.y < f.sY + 10);
+    let keepSpray = 0;
+    for (let i = 0; i < this.sprays.length; i++) {
+      const spray = this.sprays[i];
+      if (spray.t < 1.2 && spray.y < f.sY + 10) this.sprays[keepSpray++] = spray;
+    }
+    this.sprays.length = keepSpray;
   }
 
   private drawLine(f: Frame, tip: [number, number], bobX: number, hookY: number, fishPos: [number, number]) {
@@ -1084,7 +1112,12 @@ export class Scene {
       ctx.fillStyle = "rgba(255,255,255,0.5)";
       ctx.fillRect(b.x - b.r * 0.4, b.y - b.r * 0.5, 1, 1);
     }
-    this.bubbles = this.bubbles.filter((b) => b.y > sY && b.y > cam - 50);
+    let keepBubble = 0;
+    for (let i = 0; i < this.bubbles.length; i++) {
+      const bubble = this.bubbles[i];
+      if (bubble.y > sY && bubble.y > cam - 50) this.bubbles[keepBubble++] = bubble;
+    }
+    this.bubbles.length = keepBubble;
     if (this.bubbles.length > 220) this.bubbles.splice(0, this.bubbles.length - 220);
   }
 

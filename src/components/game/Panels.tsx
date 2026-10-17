@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { GameDialog, useGameDialog } from "./Dialog";
 import { ART } from "@/game/render/boats/art";
-import { getSprite } from "@/game/render/boats/sprites";
-import { boat3dSnapshot, getBoat3dPref } from "@/game/render/boats3d/boat3d";
+import { ensureSprite, getSprite } from "@/game/render/boats/sprites";
+import { getBoat3dPref } from "@/game/render/boats3d/boat3d";
+import { boat3dSnapshot } from "@/game/render/boats3d/boat3dImpl";
 import type { BoatStyle } from "@/game/types";
 import { gearList, isJumper, type Engine, type Trip } from "@/game/engine";
 import type { GearKind } from "@/game/world";
@@ -16,9 +17,9 @@ import { HarborGlyph, type HarborSymbol } from "./PortIdentity";
 import { WorldAtlas } from "./WorldAtlas";
 import { FishIcon } from "./FishIcon";
 import { BaitIcon, GearIcon, Icon, MiscIcon } from "./Icons";
+import { fmt, fmtW } from "./format";
 
-export const fmt = (n: number) => Math.round(n).toLocaleString("ru-RU");
-export const fmtW = (w: number) => (w < 1 ? `${Math.round(w * 1000)} г` : `${w.toFixed(w < 10 ? 2 : 1)} кг`);
+export { fmt, fmtW };
 const LEN_K: Record<string, number> = { fusiform: 0.011, deep: 0.024, flat: 0.02, eel: 0.0016, long: 0.0032, billfish: 0.006, shark: 0.008, angler: 0.03, ray: 0.04, squid: 0.004, blob: 0.04, puffer: 0.05 };
 export const fishLength = (f: FishDef, w: number) => Math.cbrt((w * 1000) / (LEN_K[f.shape] ?? 0.011));
 const fmtLen = (cm: number) => (cm >= 100 ? `${(cm / 100).toFixed(2)} м` : `${Math.round(cm)} см`);
@@ -509,7 +510,9 @@ export function BoatPreview(p: { hull: string; trim: string; tier: number; style
     const cv = ref.current;
     if (!cv) return;
     const st = (p.style ?? "row") as BoatStyle;
-    let raf = 0;
+    let active = true;
+    let spritePending: Promise<void> | null = null;
+    let spriteFailed = false;
     const draw = () => {
       const ctx = cv.getContext("2d");
       if (!ctx) return;
@@ -536,7 +539,16 @@ export function BoatPreview(p: { hull: string; trim: string; tier: number; style
         }
       }
       const sp = getSprite(st);
-      if (!sp) { raf = requestAnimationFrame(draw); return; }
+      if (!sp) {
+        if (!spritePending && !spriteFailed) {
+          spritePending = ensureSprite(st).then((sprite) => {
+            spritePending = null;
+            if (!sprite) { spriteFailed = true; return; }
+            if (active) draw();
+          });
+        }
+        return;
+      }
       const A = ART[st];
       const pxm = (W * 0.92) / 14.5;
       const bw = A.w * pxm;
@@ -554,8 +566,15 @@ export function BoatPreview(p: { hull: string; trim: string; tier: number; style
       ctx.restore();
       ctx.drawImage(sp.mips[0], x, y, bw, bh);
     };
-    raf = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(raf);
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(draw);
+    observer?.observe(cv);
+    window.addEventListener("resize", draw);
+    draw();
+    return () => {
+      active = false;
+      observer?.disconnect();
+      window.removeEventListener("resize", draw);
+    };
   }, [p.style, use3d]);
   return <canvas ref={ref} className={p.className ?? "my-2 h-24 w-full"} />;
 }

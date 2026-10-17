@@ -5,7 +5,7 @@ import { ART } from "./boats/art";
 import { berthScale } from "./portTerrain";
 import { drawBoat } from "./boat";
 import { Boat3D } from "./boats3d/boat3d";
-import { drawEventFx, type FxCall, type FxScene } from "./eventFx";
+import { drawEventFx, EventFxBuffer, type FxCall, type FxScene } from "./eventFx";
 import type { Frame } from "./frame";
 import type { KitAtmo, PF } from "./portFrame";
 import { PortKitScene, type FxLayer } from "./portKitScene";
@@ -47,6 +47,7 @@ export class PortScene {
   private snowfall = new PrecipitationField("snow");
   private boat3d: Boat3D | null = null;
   private current: Engine | null = null;
+  private fxBuffer = new EventFxBuffer();
   private fxCalls: FxCall[] = [];
   private rodTip: readonly [number, number] = [0, 0];
   private lightningBolt: Bolt = [];
@@ -67,14 +68,7 @@ export class PortScene {
   render(ctx: CanvasRenderingContext2D, e: Engine, W: number, H: number, dt: number) {
     if (W <= 0 || H <= 0) return;
     this.current = e;
-    const visible = new Map(e.eventDirector.visible().map(event => [event.uid, event]));
-    this.fxCalls = [];
-    for (const { live, def } of e.eventDirector.activeList()) {
-      const event = visible.get(live.uid);
-      if (!event || !def.fx?.length) continue;
-      const age = Math.max(0, (e.s.minutes - live.start) / TIME_SCALE);
-      for (const spec of def.fx) this.fxCalls.push({ e: event, spec, age });
-    }
+    this.fxCalls = this.fxBuffer.build(e.eventDirector, e.s.minutes, TIME_SCALE);
     ctx.save();
     try {
       this.scene.render(ctx, {

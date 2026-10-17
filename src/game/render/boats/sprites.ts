@@ -20,7 +20,8 @@ export interface Sprite {
 }
 
 const sprites = new Map<BoatStyle, Sprite>();
-const loading = new Set<BoatStyle>();
+const loading = new Map<BoatStyle, Promise<Sprite | null>>();
+const failed = new Set<BoatStyle>();
 const tints = new Map<string, HTMLCanvasElement>();
 
 function process(img: HTMLImageElement): Sprite {
@@ -102,34 +103,57 @@ function process(img: HTMLImageElement): Sprite {
   return { mips: [out], w: bw, h: bh };
 }
 
-function load(style: BoatStyle) {
-  // при SSR (пререндер Next.js) Image нет — рисунки грузятся только в браузере
-  if (typeof window === "undefined") return;
-  const img = new Image();
-  img.onload = () => {
-    try {
-      sprites.set(style, process(img));
-    } catch (err) {
-      console.warn("Не удалось обработать рисунок судна", style, err);
-    }
-  };
-  img.onerror = () => console.warn("Не загрузился рисунок судна", style);
-  img.src = BOAT_IMAGES[style];
+function load(style: BoatStyle): Promise<Sprite | null> {
+  const ready = sprites.get(style);
+  if (ready) return Promise.resolve(ready);
+  const pending = loading.get(style);
+  if (pending) return pending;
+  if (failed.has(style) || typeof window === "undefined") return Promise.resolve(null);
+
+  const promise = new Promise<Sprite | null>((resolve) => {
+    const img = new Image();
+    const finish = (sprite: Sprite | null) => {
+      loading.delete(style);
+      resolve(sprite);
+    };
+    img.onload = () => {
+      try {
+        const sprite = process(img);
+        sprites.set(style, sprite);
+        finish(sprite);
+      } catch (err) {
+        failed.add(style);
+        console.warn("Не удалось обработать рисунок судна", style, err);
+        finish(null);
+      }
+    };
+    img.onerror = () => {
+      failed.add(style);
+      console.warn("Не загрузился рисунок судна", style);
+      finish(null);
+    };
+    img.src = BOAT_IMAGES[style];
+  });
+  loading.set(style, promise);
+  return promise;
 }
 
-/** Спрайт судна или null, пока рисунок ещё грузится */
+/** Спрайт судна или null, пока рисунок ещё грузится; загрузка запускается по первому запросу. */
 export function getSprite(style: BoatStyle): Sprite | null {
-  const s = sprites.get(style);
-  if (s) return s;
-  if (!loading.has(style)) {
-    loading.add(style);
-    load(style);
-  }
+  const sprite = sprites.get(style);
+  if (sprite) return sprite;
+  if (typeof window !== "undefined" && !loading.has(style) && !failed.has(style)) void load(style);
   return null;
 }
 
+/** Дождаться декодирования и обработки одного рисунка, не подготавливая остальные стили. */
+export function ensureSprite(style: BoatStyle): Promise<Sprite | null> {
+  return load(style);
+}
+
+/** Явный прогрев всех изображений — используется только инструментом экспорта. */
 export function preloadBoats() {
-  for (const k of Object.keys(BOAT_IMAGES) as BoatStyle[]) getSprite(k);
+  for (const style of Object.keys(BOAT_IMAGES) as BoatStyle[]) void load(style);
 }
 
 export interface Level {
@@ -177,8 +201,8 @@ export function tinted(style: BoatStyle, color: string, level: number): HTMLCanv
 
 /** Сохранить все вырезанные суда как PNG с прозрачностью (их можно положить в public/boats/) */
 export async function exportSprites(): Promise<number> {
-  preloadBoats();
   const styles = Object.keys(BOAT_IMAGES) as BoatStyle[];
+  await Promise.all(styles.map((style) => ensureSprite(style)));
   let n = 0;
   for (const st of styles) {
     const sp = sprites.get(st);

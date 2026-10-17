@@ -9,9 +9,10 @@ import {
   avatarHue, boatOf, dayLabel, initialsOf, isOnline, lastSeenLabel, locOf, normalizeQuery,
   playTimeLabel, rankFleet, whereLabel, FRIEND_LIMIT,
   type FleetMetric, type FriendCatch, type FriendProfile, type FriendRequestRow, type FriendSummary,
-  type FriendsOverview, type RankedFleetMember, type SearchResult,
+  type RankedFleetMember, type SearchResult,
 } from "@/game/friends";
-import { fetchFriendProfile, fetchFriends, friendAction, searchPlayers } from "@/game/persist";
+import { fetchFriendProfile, friendAction, searchPlayers } from "@/game/persist";
+import type { FriendsState } from "./friendsHook";
 import type { BoatDef, LocId, PortId, Variant } from "@/game/types";
 import { fmt, fmtW, Modal } from "./Panels";
 import { Icon, WEATHER_ICON } from "./Icons";
@@ -308,54 +309,6 @@ function EmptyCard({ icon, title, text, action }: { icon: string; title: string;
 }
 
 // ───────────────────────── состояние и загрузка ─────────────────────────
-
-export interface FriendsState {
-  data: FriendsOverview | null;
-  failed: boolean;
-  pending: number;
-  reload: () => Promise<void>;
-}
-
-/** Список друзей и значок входящих заявок обновляются раз в минуту на видимой вкладке. */
-export function useFriends(userId: string | null): FriendsState {
-  const [snapshot, setSnapshot] = useState<{ userId: string; data: FriendsOverview } | null>(null);
-  const [failedUserId, setFailedUserId] = useState<string | null>(null);
-
-  const reload = useCallback(async () => {
-    if (!userId) return;
-    const data = await fetchFriends();
-    if (data) {
-      setSnapshot({ userId, data });
-      setFailedUserId(null);
-    } else setFailedUserId(userId);
-  }, [userId]);
-
-  useEffect(() => {
-    if (!userId) return;
-    let alive = true;
-    const load = async () => {
-      const data = await fetchFriends();
-      if (!alive) return;
-      if (data) {
-        setSnapshot({ userId, data });
-        setFailedUserId(null);
-      } else setFailedUserId(userId);
-    };
-    void load();
-    const timer = setInterval(() => {
-      if (typeof document === "undefined" || document.visibilityState === "visible") void load();
-    }, 60_000);
-    return () => { alive = false; clearInterval(timer); };
-  }, [userId]);
-
-  const data = userId && snapshot?.userId === userId ? snapshot.data : null;
-  return {
-    data,
-    failed: !!userId && failedUserId === userId,
-    pending: data?.incoming.length ?? 0,
-    reload,
-  };
-}
 
 // ───────────────────────── главный клуб ─────────────────────────
 

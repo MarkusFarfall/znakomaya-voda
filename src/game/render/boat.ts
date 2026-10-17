@@ -15,11 +15,6 @@ import type { EngineView, Frame } from "./frame";
 import { clamp, hexA } from "./util";
 import { M, makePen, type Pose, type R } from "./boats/kit";
 import { drawArt } from "./boats/art";
-import { preloadBoats } from "./boats/sprites";
-
-// рисунки судов грузятся заранее: к первому кадру они уже готовы
-preloadBoats();
-
 export type { Pose };
 
 type WakeKind = "oars" | "plane" | "disp" | "sail" | "heavy";

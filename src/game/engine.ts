@@ -4,8 +4,8 @@ import { currentAt } from "./waterPhysics";
 import { FISH, FISH_BY_ID, RARITY_INFO, VARIANT_INFO } from "./fish";
 import { BITE_WINDOWS, SURGE_WARNING_TIME, biteApproachSeconds } from "./fishing";
 import { FIGHT_STEP, newFightMotion, stepFightMotion, type FightMotion } from "./fishingPhysics";
-import { Atmosphere, type LightningStrike } from "./atmosphere";
-import { ctxFromAtmosphere, EventDirector } from "./events";
+import { Atmosphere, type AtmoMods, type LightningStrike } from "./atmosphere";
+import { ctxFromAtmosphere, EventDirector, type CtxInput } from "./events";
 import type { DirectorMessage, DirectorSave, Outcome } from "./events/types";
 import { GAME_EVENT_BY_ID, GAME_EVENTS } from "./events/gameCatalog";
 import { ACHIEVEMENTS, FINDS, FIND_BY_ID, levelFromXp, levelReward, levelTitle, PERKS, perkPoints, QUESTS, RANK_LEVEL, rankCost, spentPoints, type FindDef } from "./progress";
@@ -307,6 +307,9 @@ export class Engine {
   }
   private atmosphereInstance: Atmosphere | null = null;
   private eventDirectorInstance: EventDirector | null = null;
+  private readonly eventCtxExtra = { loc: null as string | null, deep: false };
+  private readonly eventCtxInput = {} as CtxInput;
+  private readonly eventMods: AtmoMods = {};
   private lastEventCheckpoint = -1;
   get s(): SaveData { return this.save; }
   set s(value: SaveData) {
@@ -433,8 +436,10 @@ export class Engine {
       daysPerSeason: DAYS_PER_SEASON,
     });
     atm.update(Math.max(0, dt));
-    director.update(T, ctxFromAtmosphere(atm, { loc: this.s.location, deep: this.loc.maxDepth > 100 }));
-    atm.mods = director.atmoMods();
+    this.eventCtxExtra.loc = this.s.location;
+    this.eventCtxExtra.deep = this.loc.maxDepth > 100;
+    director.update(T, ctxFromAtmosphere(atm, this.eventCtxExtra, this.eventCtxInput));
+    atm.mods = director.atmoMods(this.eventMods);
     // Применить эффекты текущего кадра сразу, не продвигая игровые часы повторно.
     atm.update(0);
     if (Math.floor(T) !== this.lastEventCheckpoint) {

@@ -7,7 +7,7 @@ import { Scene } from "@/game/render/scene";
 import { LOC_BY_ID, PORT_BY_ID, SPOT_BY_ID } from "@/game/world";
 import { Icon, MiscIcon } from "./Icons";
 import { useGameDialog } from "./Dialog";
-import { fmt } from "./Panels";
+import { fmt } from "./format";
 
 export const tripName = (t: Trip) => (t.kind === "port" ? PORT_BY_ID[t.port].name : LOC_BY_ID[t.loc].name);
 const fmtDur = (min: number) => (min >= 60 ? `${Math.floor(min / 60)} ч ${String(Math.round(min % 60)).padStart(2, "0")} мин` : `${Math.round(min)} мин`);

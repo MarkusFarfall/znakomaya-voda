@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
-import { DEFAULT_SETTINGS, normalizeSettings } from "@/game/settings";
+import dynamic from "next/dynamic";
+import { DEFAULT_SETTINGS, normalizeSettings, type Settings } from "@/game/settings";
 import { GameAudio } from "@/game/audio";
 import { depthToU, Engine, newSave, uToDepth, type TravelMode, type Trip } from "@/game/engine";
 import { FISH } from "@/game/fish";
@@ -18,20 +19,32 @@ import type { BaitId, SaveData } from "@/game/types";
 import { BAITS, PORT_BY_ID, SEASONS, WEATHER_INFO, spotsOf } from "@/game/world";
 import { BaitIcon, Icon, MoonIcon } from "./Icons";
 import { EventFeed } from "./EventFeed";
-import { DailyTracker, FindModal, JournalModal, LetterModal, QuestTracker, XpBar, type Settings } from "./Journal";
-import { SettingsModal } from "./SettingsModal";
+import { DailyTracker, QuestTracker, XpBar } from "./JournalTrackers";
+import type { PortTab } from "./Panels";
 import { setBoat3dPref } from "@/game/render/boats3d/boat3d";
-import { CatchModal, fmt, PortModal, type PortTab } from "./Panels";
-import { CoolerModal } from "./CoolerModal";
-import { Codex } from "./Codex";
-import { TravelChoice, TravelOverlay } from "./Travel";
+import { ensureSprite } from "@/game/render/boats/sprites";
+import type { FriendsState } from "./friendsHook";
+import { useFriends } from "./friendsHook";
 import { MobileFishing } from "./MobileFishing";
 import { LocalNavigationPanel } from "./LocalNavigation";
 import { PortHub } from "./PortHub";
-import { RestTransition } from "./RestTransition";
-import { FriendsModal, useFriends } from "./Friends";
+
+const LazyLoading = () => <div className="zv-ui absolute inset-0 z-[70] flex items-center justify-center bg-[#02050a]/35" aria-busy="true"><span className="label">Открываем…</span></div>;
+const CatchModal = dynamic(() => import("./Panels").then((mod) => mod.CatchModal), { ssr: false, loading: LazyLoading });
+const PortModal = dynamic(() => import("./Panels").then((mod) => mod.PortModal), { ssr: false, loading: LazyLoading });
+const FindModal = dynamic(() => import("./Journal").then((mod) => mod.FindModal), { ssr: false, loading: LazyLoading });
+const JournalModal = dynamic(() => import("./Journal").then((mod) => mod.JournalModal), { ssr: false, loading: LazyLoading });
+const LetterModal = dynamic(() => import("./Journal").then((mod) => mod.LetterModal), { ssr: false, loading: LazyLoading });
+const SettingsModal = dynamic(() => import("./SettingsModal").then((mod) => mod.SettingsModal), { ssr: false, loading: LazyLoading });
+const CoolerModal = dynamic(() => import("./CoolerModal").then((mod) => mod.CoolerModal), { ssr: false, loading: LazyLoading });
+const Codex = dynamic(() => import("./Codex").then((mod) => mod.Codex), { ssr: false, loading: LazyLoading });
+const TravelChoice = dynamic(() => import("./Travel").then((mod) => mod.TravelChoice), { ssr: false, loading: LazyLoading });
+const TravelOverlay = dynamic(() => import("./Travel").then((mod) => mod.TravelOverlay), { ssr: false, loading: LazyLoading });
+const RestTransition = dynamic(() => import("./RestTransition").then((mod) => mod.RestTransition), { ssr: false, loading: LazyLoading });
+const FriendsModal = dynamic(() => import("./Friends").then((mod) => mod.FriendsModal), { ssr: false, loading: LazyLoading });
 
 const CAM_NAMES: Record<CamMode, string> = { auto: "авто", surface: "поверхность", hook: "за снастью", bottom: "дно" };
+const fmt = (n: number) => Math.round(n).toLocaleString("ru-RU");
 const SETTINGS_KEY = "zv_settings";
 
 
@@ -53,6 +66,8 @@ export default function Game() {
   const presenceSessionRef = useRef<{ playerId: string; sessionId: string } | null>(null);
   const [boot, setBoot] = useState<Boot>({ state: "loading" });
   const [playing, setPlaying] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const startGuard = useRef(false);
   const [resting, setResting] = useState(false);
   const [panel, setPanel] = useState<null | "codex" | "port" | "journal" | "friends" | "cooler">(null);
   const [letter, setLetter] = useState<number | null>(null);
@@ -473,9 +488,10 @@ export default function Game() {
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    let raf = 0;
+    let raf: number | null = null;
+    let loop: ((now: number) => void) | null = null;
+    const schedule = () => { if (raf === null && loop) raf = requestAnimationFrame(loop); };
     let last = performance.now();
-    let lastRender = 0;
     let clearedWhileAuth = false;
     let W = 0, H = 0;
     sceneRef.current.quality = quality;
@@ -491,11 +507,13 @@ export default function Game() {
       canvas.width = Math.max(1, Math.floor(W * dpr));
       canvas.height = Math.max(1, Math.floor(H * dpr));
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      lastRender = 0;
+      clearedWhileAuth = false;
+      schedule();
     };
     resize();
     window.addEventListener("resize", resize);
-    const loop = (now: number) => {
+    loop = (now: number) => {
+      raf = null;
       const dt = Math.min(0.05, (now - last) / 1000);
       last = now;
       const e = engineRef.current;
@@ -503,8 +521,8 @@ export default function Game() {
       const scene = sceneRef.current;
 
       // Пока открыт экран входа, большой canvas с игрой не нужен: его заменяет
-      // лёгкая SVG-сцена авторизации. На титуле оставляем фон, но обновляем его
-      // реже, чтобы не тратить GPU на невидимую подложку.
+      // лёгкая SVG-сцена авторизации. Статичный титульный/переходный фон рисуется
+      // один раз; повторный кадр нужен только после resize или смены состояния.
       if (!playing || travelling || startupError) {
         if (!clearedWhileAuth) {
           ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -516,15 +534,9 @@ export default function Game() {
           clearedWhileAuth = true;
         }
         e.sfx.length = 0;
-        raf = requestAnimationFrame(loop);
         return;
       }
       if (clearedWhileAuth) { resize(); clearedWhileAuth = false; }
-      if (!playing && now - lastRender < 1000 / 20) {
-        raf = requestAnimationFrame(loop);
-        return;
-      }
-      lastRender = now;
       // Engine and renderer share the guard; either used to be able to kill RAF.
 
       // Размер canvas может оказаться нулевым (окно свёрнуто, элемент ещё не разложен).
@@ -567,10 +579,10 @@ export default function Game() {
         e.sfx.length = 0;
         e.lightningEvents.length = 0;
       }
-      raf = requestAnimationFrame(loop);
+      schedule();
     };
-    raf = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
+    schedule();
+    return () => { if (raf !== null) cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
   }, [quality, playing, boot.state, travelling, startupError]);
 
   useEffect(() => {
@@ -659,23 +671,35 @@ export default function Game() {
     return () => { window.removeEventListener("keydown", down); window.removeEventListener("keyup", up); };
   }, [playing, panel, letter, engine, openPort, openPanel, closePanel, unlockAudio, settings, setSettings, cycleCam, travelling, tripReq, authOpen, settingsOpen]);
 
-  const start = (fresh: boolean) => {
-    unlockAudio();
-    audioRef.current.setActive(true);
-    audio.ui("confirm");
-    const e = engineRef.current;
-    if (fresh) {
-      e.s = newSave(name.trim() || "Рыбак");
-      e.phase = "idle";
-      setTimeout(() => setLetter(0), 1400);
-      setTimeout(() => e.tip("tip_cast", "Удерживайте левую кнопку мыши или пробел, чтобы набрать силу заброса. Отпустите — снасть уйдёт в воду."), 5000);
-    } else if (name.trim()) e.s.name = name.trim();
-    e.fade = 1.4;
-    e.dirty = true;
-    e.checkProgress();
-    e.refreshDaily();
-    setPlaying(true);
-    setTimeout(() => persist(true), 500);
+  const start = async (fresh: boolean) => {
+    if (startGuard.current) return;
+    startGuard.current = true;
+    setStarting(true);
+    try {
+      // Keep the first game frame gesture-unlocked, then prepare only the boat the player will see.
+      unlockAudio();
+      audioRef.current.setActive(true);
+      audio.ui("confirm");
+      const e = engineRef.current;
+      if (fresh) {
+        e.s = newSave(name.trim() || "Рыбак");
+        e.phase = "idle";
+      } else if (name.trim()) e.s.name = name.trim();
+      await ensureSprite(e.boat.style);
+      if (fresh) {
+        setTimeout(() => setLetter(0), 1400);
+        setTimeout(() => e.tip("tip_cast", "Удерживайте левую кнопку мыши или пробел, чтобы набрать силу заброса. Отпустите — снасть уйдёт в воду."), 5000);
+      }
+      e.fade = 1.4;
+      e.dirty = true;
+      e.checkProgress();
+      e.refreshDaily();
+      setPlaying(true);
+      setTimeout(() => persist(true), 500);
+    } finally {
+      startGuard.current = false;
+      setStarting(false);
+    }
   };
 
   const reset = async () => {
@@ -786,13 +810,13 @@ export default function Game() {
                 <div className="label">Имя</div>
                 <input value={name} onChange={(e) => setName(e.target.value)} maxLength={24} placeholder="Рыбак" className="field !text-left" />
                 {boot.save && (
-                  <button className="btn btn-solid h-12 w-full justify-between px-5" onClick={() => start(false)}>
-                    <span>Продолжить</span>
+                  <button className="btn btn-solid h-12 w-full justify-between px-5" disabled={starting} onClick={() => void start(false)}>
+                    <span>{starting ? "Подготовка лодки…" : "Продолжить"}</span>
                     <span className="num text-[10px] opacity-70">день {Math.floor(boot.save.minutes / 1440) + 1} · {Object.keys(boot.save.codex).length}/{FISH.length}</span>
                   </button>
                 )}
-                <button className={`btn ${boot.save ? "btn-quiet" : "btn-solid"} h-12 w-full`} onClick={() => { if (!boot.save || confirm("Начать заново? Текущий прогресс будет перезаписан.")) start(true); }}>
-                  Новая игра
+                <button className={`btn ${boot.save ? "btn-quiet" : "btn-solid"} h-12 w-full`} disabled={starting} onClick={() => { if (!boot.save || confirm("Начать заново? Текущий прогресс будет перезаписан.")) void start(true); }}>
+                  {starting ? "Подготовка лодки…" : "Новая игра"}
                 </button>
                 <div className="flex items-center justify-between border-t border-[var(--line)] pt-3">
                   <div className="text-[11px] leading-snug">

@@ -1,5 +1,6 @@
 import type { AtmosphereState, Palette, RGB } from '../atmosphere/types';
 import type { FxId, FxSpec, VisibleEvent } from '../events/types';
+import type { ActiveInfo, EventDirector } from '../events';
 
 /**
  * Визуальные эффекты событий. Всё процедурное: положение частиц — функция от индекса,
@@ -43,6 +44,39 @@ export interface FxCall {
   spec: FxSpec;
   /** секунды реального времени с начала события */
   age: number;
+}
+
+/** Scratch event projections shared by the 2D sea and port renderers. */
+export class EventFxBuffer {
+  private visible: VisibleEvent[] = [];
+  private active: ActiveInfo[] = [];
+  private calls: FxCall[] = [];
+
+  build(director: EventDirector, minutes: number, timeScale: number): FxCall[] {
+    const visible = director.visible(this.visible);
+    const active = director.activeList(this.active);
+    let count = 0;
+    for (let i = 0; i < active.length; i++) {
+      const item = active[i];
+      const event = visible[i];
+      if (!event || event.uid !== item.live.uid || !item.def.fx?.length) continue;
+      const age = Math.max(0, (minutes - item.live.start) / timeScale);
+      for (const spec of item.def.fx) {
+        let call = this.calls[count];
+        if (!call) {
+          call = { e: event, spec, age };
+          this.calls.push(call);
+        } else {
+          call.e = event;
+          call.spec = spec;
+          call.age = age;
+        }
+        count++;
+      }
+    }
+    this.calls.length = count;
+    return this.calls;
+  }
 }
 
 type Draw = (S: FxScene, f: FxCall) => void;

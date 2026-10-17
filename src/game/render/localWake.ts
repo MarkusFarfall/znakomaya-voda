@@ -1,17 +1,26 @@
 import type { Frame } from './frame';
 import { BOAT_SPECS } from './boat';
 
-interface Crest { x: number; age: number; strength: number; dir: number; oar: boolean }
+interface Crest { x: number; age: number; strength: number; dir: number; oar: boolean; radius: number; decay: number }
 /** Water retains world-space impulses: turning the vessel never flips its old wake. */
 export class LocalWake {
   private crests: Crest[] = [];
   private clock = 0;
-  reset() { this.crests = []; this.clock = 0; }
+  reset() { this.crests.length = 0; this.clock = 0; }
   update(f: Pick<Frame, 'e' | 'dt' | 'sc'>) {
     const { e, sc } = f, dt = Math.max(0, Math.min(.1, f.dt));
     if (e.paused) return;
-    for (const q of this.crests) q.age += dt;
-    this.crests = this.crests.filter(q => q.age < 5);
+    let keep = 0;
+    for (let i = 0; i < this.crests.length; i++) {
+      const q = this.crests[i];
+      q.age += dt;
+      if (q.age < 5) {
+        q.radius = q.age * 23;
+        q.decay = Math.exp(-q.age * .9);
+        this.crests[keep++] = q;
+      }
+    }
+    this.crests.length = keep;
     const speed = Math.abs(e.navigation.velocity), dir = e.navigation.heading;
     this.clock += dt;
     const oar = e.boat.style === 'row' || e.boat.style === 'kayak';
@@ -19,16 +28,17 @@ export class LocalWake {
     if (speed > 1 && this.clock > interval) {
       this.clock = 0;
       const half = (BOAT_SPECS[e.boat.style] ?? BOAT_SPECS.row).half * 28 * sc;
-      this.crests.push({ x: e.navigation.x - dir * half * (oar ? .78 : .88), age: 0, strength: Math.min(1, speed / (oar ? 28 : 80)), dir, oar });
+      this.crests.push({ x: e.navigation.x - dir * half * (oar ? .78 : .88), age: 0, strength: Math.min(1, speed / (oar ? 28 : 80)), dir, oar, radius: 0, decay: 1 });
       if (this.crests.length > 64) this.crests.shift();
     }
   }
   heightAt(x: number) {
     let y = 0;
     for (let i = Math.max(0, this.crests.length - 12); i < this.crests.length; i++) {
-      const q = this.crests[i], dx = Math.abs(x - q.x), radius = q.age * 23;
-      const envelope = Math.exp(-Math.pow((dx - radius) / 15, 2));
-      y += Math.sin((dx - radius) * .14) * envelope * q.strength * Math.exp(-q.age * .9) * .55;
+      const q = this.crests[i], dx = Math.abs(x - q.x), ringDistance = dx - q.radius;
+      const u = ringDistance / 15;
+      const envelope = Math.exp(-u * u);
+      y += Math.sin(ringDistance * .14) * envelope * q.strength * q.decay * .55;
     }
     return y;
   }

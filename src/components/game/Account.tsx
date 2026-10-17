@@ -3,7 +3,7 @@
 import { useState, type FormEvent, type ReactNode } from "react";
 import { changePassword, deleteAccount, type AccountStats, type AccountUser } from "@/game/persist";
 import { Icon } from "./Icons";
-import { fmt } from "./Panels";
+import { fmt } from "./format";
 import { Field, PasswordField } from "./AuthFields";
 
 export interface AccountState {

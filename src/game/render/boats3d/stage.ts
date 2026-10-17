@@ -24,8 +24,6 @@ export interface StageHooks {
   bubble: (sx: number, sy: number) => void;
 }
 
-const rgb = (c: [number, number, number]) => new THREE.Color(c[0] / 255, c[1] / 255, c[2] / 255);
-
 export class VesselStage {
   readonly canvas = document.createElement('canvas');
   private renderer: THREE.WebGLRenderer;
@@ -37,6 +35,14 @@ export class VesselStage {
   private model: VesselModel | null = null;
   private key = '';
   private v = new THREE.Vector3();
+  private readonly env: Env3 = { t: 0, night: 0, lights: 0, day: 0, golden: 0, windS: 0, aw: 0, temp: 0, rain: 0, fog: 0 };
+  private readonly sunColor = new THREE.Color(0xffffff);
+  private readonly warmSun = new THREE.Color(0xffa860);
+  private readonly fillTint = new THREE.Color(0xc8e5e3);
+  private readonly whiteTint = new THREE.Color(0xffffff);
+  private readonly seaColor = new THREE.Color();
+  private readonly skyColor = new THREE.Color();
+  private readonly groundColor = new THREE.Color();
 
   private pr = 1;
   private quality = -1;
@@ -152,30 +158,29 @@ export class VesselStage {
     /* ───── анимация модели ───── */
     const sgn = Math.cos(b.psi) >= 0 ? 1 : -1;
     const vg = b.vw + f.lane.current(b.x);
-    const env: Env3 = {
-      t: f.t,
-      night: f.night,
-      lights: w.lights,
-      day: f.day,
-      golden: f.golden,
-      windS: f.windS,
-      aw: clamp(((f.windS - vg) * sgn) / 7, -1.4, 1.4),
-      temp: w.temp,
-      rain: w.rain,
-      fog: f.fog,
-    };
+    const env = this.env;
+    env.t = f.t;
+    env.night = f.night;
+    env.lights = w.lights;
+    env.day = f.day;
+    env.golden = f.golden;
+    env.windS = f.windS;
+    env.aw = clamp(((f.windS - vg) * sgn) / 7, -1.4, 1.4);
+    env.temp = w.temp;
+    env.rain = w.rain;
+    env.fog = f.fog;
     m.update(b, env, dt);
 
     /* ───── свет ───── */
     let el: number;
     let az: number;
     let inten: number;
-    const col = new THREE.Color(0xffffff);
+    const col = this.sunColor.set(0xffffff);
     if (w.sunElev > 2) {
       el = w.sunElev;
       az = w.sunAz;
       inten = 3.3 * clamp(w.sunVis * 1.15 + 0.1 * (1 - w.cover), 0, 1) + 0.15;
-      col.set(0xfff6e8).lerp(new THREE.Color(0xffa860), clamp(f.golden * 1.1, 0, 1));
+      col.set(0xfff6e8).lerp(this.warmSun, clamp(f.golden * 1.1, 0, 1));
     } else if (w.moonElev > 0) {
       el = w.moonElev;
       az = w.moonAz;
@@ -194,10 +199,13 @@ export class VesselStage {
     this.sun.target.updateMatrixWorld();
     this.sun.color.copy(col);
     this.sun.intensity = inten;
-    this.fill.color.copy(rgb(w.palette.seaNear).lerp(new THREE.Color(0xc8e5e3), 0.3));
+    this.seaColor.setRGB(w.palette.seaNear[0] / 255, w.palette.seaNear[1] / 255, w.palette.seaNear[2] / 255);
+    this.fill.color.copy(this.seaColor).lerp(this.fillTint, 0.3);
     this.fill.intensity = 0.18 + 0.34 * (1 - w.daylight) + 0.12 * w.cover;
-    this.hemi.color.copy(rgb(w.palette.skyMid).lerp(new THREE.Color(0xffffff), 0.25));
-    this.hemi.groundColor.copy(rgb(w.palette.seaNear).multiplyScalar(0.75));
+    this.skyColor.setRGB(w.palette.skyMid[0] / 255, w.palette.skyMid[1] / 255, w.palette.skyMid[2] / 255);
+    this.hemi.color.copy(this.skyColor).lerp(this.whiteTint, 0.25);
+    this.groundColor.setRGB(w.palette.seaNear[0] / 255, w.palette.seaNear[1] / 255, w.palette.seaNear[2] / 255).multiplyScalar(0.75);
+    this.hemi.groundColor.copy(this.groundColor);
     this.hemi.intensity = 0.42 + 0.55 * w.daylight + 0.14 * (1 - w.night);
     this.scene.environmentIntensity = 0.26 + 0.75 * w.daylight * (0.7 + 0.3 * (1 - w.cover)) + 0.08 * f.golden;
 
@@ -223,20 +231,21 @@ export class VesselStage {
     ctx.drawImage(this.canvas, sx0 - ox * k, f.sY - oy * k, this.width * k, this.height * k);
 
     /* ───── эмиттеры: дым и пузыри винта ───── */
-    const toMain = (v: THREE.Vector3): [number, number] => [sx0 + v.x * f.PXM, f.sY - (v.y - v.z * TAN) * f.PXM];
     m.root.updateMatrixWorld(true);
     const motor = b.geo.motor !== 'none';
     const smokeRate = motor ? 2.5 + 12 * b.rpm : 0.8;
     for (const o of m.smoke) {
       if (Math.random() < smokeRate * dt) {
         o.getWorldPosition(this.v);
-        const [mx, my] = toMain(this.v);
+        const mx = sx0 + this.v.x * f.PXM;
+        const my = f.sY - (this.v.y - this.v.z * TAN) * f.PXM;
         hooks.smoke(mx, my, 0.5);
       }
     }
     if (m.prop && b.rpm > 0.2 && Math.random() < (6 + 30 * b.rpm) * dt) {
       m.prop.getWorldPosition(this.v);
-      const [mx, my] = toMain(this.v);
+      const mx = sx0 + this.v.x * f.PXM;
+      const my = f.sY - (this.v.y - this.v.z * TAN) * f.PXM;
       hooks.bubble(mx, my);
     }
     return true;

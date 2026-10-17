@@ -46,6 +46,8 @@ export class EventDirector {
   private byId: Record<string, EventDef>;
   private live: LiveEvent[] = [];
   private queue: DirectorSave['queue'] = [];
+  private readonly liveSnapshot: LiveEvent[] = [];
+  private readonly queueSnapshot: DirectorSave['queue'] = [];
   private cd: Record<string, number> = {};
   private seen: DirectorSave['seen'] = {};
   private buffs: Buff[] = [];
@@ -57,6 +59,13 @@ export class EventDirector {
   private lastCat: string | null = null;
   private listeners = new Set<(m: DirectorMessage) => void>();
   private ctx: EventCtx | null = null;
+  private readonly contextSeen = (id: string) => this.seen[id]?.n ?? 0;
+  private readonly contextActive = (id: string) => {
+    for (const live of this.live) if (live.id === id) return true;
+    return false;
+  };
+  private readonly contextSince = (id: string) => this.seen[id] ? this.T - this.seen[id].last : Infinity;
+  private readonly progressScratch = { k: 0, p: 0, omen: 1 };
 
   constructor(o: DirectorOptions = {}) {
     this.catalog = o.catalog ?? EVENTS;
@@ -94,13 +103,19 @@ export class EventDirector {
   }
 
   private makeCtx(inp: CtxInput): EventCtx {
-    return {
-      ...inp,
-      T: this.T,
-      seen: (id) => this.seen[id]?.n ?? 0,
-      active: (id) => this.live.some((l) => l.id === id),
-      since: (id) => (this.seen[id] ? this.T - this.seen[id].last : Infinity),
-    };
+    if (!this.ctx) {
+      this.ctx = {
+        ...inp,
+        T: this.T,
+        seen: this.contextSeen,
+        active: this.contextActive,
+        since: this.contextSince,
+      };
+    } else {
+      Object.assign(this.ctx, inp);
+      this.ctx.T = this.T;
+    }
+    return this.ctx;
   }
 
   /** Сдвиг всех таймеров (время перемотали вручную) */
@@ -125,20 +140,33 @@ export class EventDirector {
     this.T = T;
     const c = (this.ctx = this.makeCtx(inp));
 
-    for (const l of [...this.live]) {
+    const liveSnapshot = this.liveSnapshot;
+    liveSnapshot.length = 0;
+    for (const l of this.live) liveSnapshot.push(l);
+    for (const l of liveSnapshot) {
       if (l.phase === 'omen' && T >= l.start) {
         l.phase = 'active';
         this.onStart(l);
       }
       if (l.phase === 'active' && T >= l.end) this.finish(l);
     }
-    if (this.buffs.length) this.buffs = this.buffs.filter((b) => b.until > T);
+    if (this.buffs.length) {
+      let keep = 0;
+      for (let i = 0; i < this.buffs.length; i++) {
+        const buff = this.buffs[i];
+        if (buff.until > T) this.buffs[keep++] = buff;
+      }
+      this.buffs.length = keep;
+    }
 
-    for (const q of [...this.queue]) {
+    const queueSnapshot = this.queueSnapshot;
+    queueSnapshot.length = 0;
+    for (const q of this.queue) queueSnapshot.push(q);
+    for (const q of queueSnapshot) {
       if (T < q.at) continue;
       this.queue.splice(this.queue.indexOf(q), 1);
       const def = this.byId[q.id];
-      if (!def || this.live.some((l) => l.id === q.id)) continue;
+      if (!def || this.contextActive(q.id)) continue;
       if (def.when(c) > 0) this.spawn(def, { from: q.from, seed: q.seed });
     }
 
@@ -287,28 +315,65 @@ export class EventDirector {
   /* ─────────────── чтение ─────────────── */
 
   private kOf(l: LiveEvent) {
-    if (l.phase === 'omen') return { k: 0, p: 0, omen: (this.T - l.omenAt) / Math.max(0.01, l.start - l.omenAt) };
+    const out = this.progressScratch;
+    if (l.phase === 'omen') {
+      out.k = 0;
+      out.p = 0;
+      out.omen = (this.T - l.omenAt) / Math.max(0.01, l.start - l.omenAt);
+      return out;
+    }
     const dur = Math.max(0.01, l.end - l.start);
-    const p = Math.max(0, Math.min(1, (this.T - l.start) / dur));
+    out.p = Math.max(0, Math.min(1, (this.T - l.start) / dur));
     const rin = Math.min(0.2, 2 / dur);
     const rout = Math.min(0.25, 3 / dur);
-    return { k: ss(0, rin, p) * (1 - ss(1 - rout, 1, p)), p, omen: 1 };
+    out.k = ss(0, rin, out.p) * (1 - ss(1 - rout, 1, out.p));
+    out.omen = 1;
+    return out;
   }
 
-  /** Для сцены */
-  visible(): VisibleEvent[] {
-    return this.live.map((l) => {
+  /** Для сцены; при переданном массиве переиспользует и сам буфер, и его элементы. */
+  visible(out: VisibleEvent[] = []): VisibleEvent[] {
+    let i = 0;
+    for (const l of this.live) {
       const { k, p, omen } = this.kOf(l);
-      return { uid: l.uid, id: l.id, def: this.byId[l.id], k, p, omen, seed: l.seed, done: !!l.choice };
-    });
+      let item = out[i];
+      if (!item) {
+        item = { uid: 0, id: l.id, def: this.byId[l.id], k: 0, p: 0, omen: 1, seed: 0, done: false };
+        out.push(item);
+      }
+      item.uid = l.uid;
+      item.id = l.id;
+      item.def = this.byId[l.id];
+      item.k = k;
+      item.p = p;
+      item.omen = omen;
+      item.seed = l.seed;
+      item.done = !!l.choice;
+      i++;
+    }
+    out.length = i;
+    return out;
   }
 
-  /** Для интерфейса */
-  activeList(): ActiveInfo[] {
-    return this.live.map((l) => {
+  /** Для интерфейса; optional scratch buffer for synchronous renderers. */
+  activeList(out: ActiveInfo[] = []): ActiveInfo[] {
+    let i = 0;
+    for (const l of this.live) {
       const { k, p } = this.kOf(l);
-      return { live: l, def: this.byId[l.id], k, p, left: l.phase === 'omen' ? l.start - this.T : l.end - this.T };
-    });
+      let item = out[i];
+      if (!item) {
+        item = { live: l, def: this.byId[l.id], k, p, left: 0 };
+        out.push(item);
+      }
+      item.live = l;
+      item.def = this.byId[l.id];
+      item.k = k;
+      item.p = p;
+      item.left = l.phase === 'omen' ? l.start - this.T : l.end - this.T;
+      i++;
+    }
+    out.length = i;
+    return out;
   }
 
   intensity(id: string) {
@@ -330,14 +395,28 @@ export class EventDirector {
     return m;
   }
 
-  /** Добавки к атмосфере (передать в Atmosphere.mods) */
-  atmoMods(): AtmoMods {
-    const out: AtmoMods = {};
+  /** Добавки к атмосфере (передать в Atmosphere.mods); `out` позволяет переиспользовать буфер. */
+  atmoMods(out: AtmoMods = {}): AtmoMods {
+    out.fog = 0;
+    out.cover = 0;
+    out.dark = 0;
+    out.wind = 0;
+    out.precip = 0;
+    out.waves = 0;
+    out.aurora = 0;
+    out.ice = 0;
     for (const l of this.live) {
       const a = this.byId[l.id].atmo;
       if (!a) continue;
-      const { k } = this.kOf(l);
-      for (const [key, v] of Object.entries(a) as [keyof AtmoMods, number][]) out[key] = (out[key] ?? 0) + v * k;
+      const k = this.kOf(l).k;
+      if (a.fog !== undefined) out.fog += a.fog * k;
+      if (a.cover !== undefined) out.cover += a.cover * k;
+      if (a.dark !== undefined) out.dark += a.dark * k;
+      if (a.wind !== undefined) out.wind += a.wind * k;
+      if (a.precip !== undefined) out.precip += a.precip * k;
+      if (a.waves !== undefined) out.waves += a.waves * k;
+      if (a.aurora !== undefined) out.aurora += a.aurora * k;
+      if (a.ice !== undefined) out.ice += a.ice * k;
     }
     return out;
   }

@@ -1,7 +1,9 @@
 import type { EngineView } from "./frame";
 
 /** Shared pose for the two 2D fishermen and the rod overlaid on a 3D boat. */
-export function fishingRodPose(e: Pick<EngineView, "phase" | "power" | "castT" | "hooked">, t: number) {
+export interface RodPose { angle: number; bend: number }
+
+export function fishingRodPose(e: Pick<EngineView, "phase" | "power" | "castT" | "hooked">, t: number, out: RodPose = { angle: 0, bend: 0 }): RodPose {
   let angle = -0.85, bend = 0;
   switch (e.phase) {
     case "charging": angle -= e.power * 1.3; break;
@@ -16,5 +18,7 @@ export function fishingRodPose(e: Pick<EngineView, "phase" | "power" | "castT" |
     }
     case "caught": angle = -1.1; break;
   }
-  return { angle, bend };
+  out.angle = angle;
+  out.bend = bend;
+  return out;
 }

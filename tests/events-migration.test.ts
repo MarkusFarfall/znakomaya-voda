@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Engine, migrateSave, newSave } from "../src/game/engine";
 import { Atmosphere } from "../src/game/atmosphere";
-import { ctxFromAtmosphere, EventDirector } from "../src/game/events";
+import { ctxFromAtmosphere, EventDirector, type CtxInput } from "../src/game/events";
 import { GAME_EVENTS } from "../src/game/events/gameCatalog";
 import type { DirectorSave, LiveEvent } from "../src/game/events/types";
 import type { SaveData } from "../src/game/types";
@@ -87,4 +87,23 @@ test("event rolls now have long quiet intervals", () => {
   director.update(first.next, ctxFromAtmosphere(atmosphere, { loc: "bay" }));
   const next = director.save();
   assert.ok(next.next - next.T >= 520 && next.next - next.T <= 2_784);
+});
+
+test("event atmosphere inputs and render lists can reuse scratch objects safely", () => {
+  const atmosphere = new Atmosphere({ climate: "temperate", seed: 29 });
+  const input = {} as CtxInput;
+  const first = ctxFromAtmosphere(atmosphere, { loc: "bay" }, input);
+  const second = ctxFromAtmosphere(atmosphere, { loc: "reef", deep: true }, input);
+  assert.strictEqual(second, first);
+  assert.equal(second.loc, "reef");
+  assert.equal(second.deep, true);
+
+  const director = new EventDirector({ seed: 18, catalog: GAME_EVENTS, startT: 1_200 });
+  assert.equal(director.trigger("calm", { force: true, skipOmen: true }), true);
+  const visibleScratch: ReturnType<typeof director.visible> = [];
+  const activeScratch: ReturnType<typeof director.activeList> = [];
+  assert.strictEqual(director.visible(visibleScratch), visibleScratch);
+  assert.strictEqual(director.activeList(activeScratch), activeScratch);
+  assert.deepEqual(visibleScratch.map((event) => event.id), director.visible().map((event) => event.id));
+  assert.deepEqual(activeScratch.map((event) => event.def.id), director.activeList().map((event) => event.def.id));
 });

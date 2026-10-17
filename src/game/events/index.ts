@@ -6,33 +6,37 @@ export { EVENTS, TIER_INFO, effectChips } from './catalog';
 export { EventDirector, type CtxInput, type ActiveInfo, type DirectorOptions } from './director';
 
 /** Контекст событий из состояния атмосферы (+ данные игры, если есть) */
-export function ctxFromAtmosphere(atm: Atmosphere, extra: { loc?: string | null; deep?: boolean } = {}): CtxInput {
+export function ctxFromAtmosphere(
+  atm: Atmosphere,
+  extra: { loc?: string | null; deep?: boolean } = {},
+  out?: CtxInput,
+): CtxInput {
   const s = atm.state;
-  return {
-    day: s.day,
-    hour: s.hour,
-    season: s.season,
-    climate: atm.climate,
-    kind: s.kind,
-    weather: atm.weatherId,
-    daylight: s.daylight,
-    night: s.night,
-    golden: s.golden,
-    sunElev: s.sunElev,
-    temp: s.temp,
-    wind: s.wind,
-    fog: s.fog,
-    rain: s.rain,
-    snow: s.snow,
-    cover: s.cover,
-    dark: s.dark,
-    waves: s.waves,
-    moonPhase: s.moonPhase,
-    moonIllum: s.moonIllum,
-    starVis: s.starVis,
-    aurora: s.aurora,
-    wetness: s.wetness,
-    loc: extra.loc ?? null,
-    deep: extra.deep ?? false,
-  };
+  const ctx = out ?? {} as CtxInput;
+  ctx.day = s.day;
+  ctx.hour = s.hour;
+  ctx.season = s.season;
+  ctx.climate = atm.climate;
+  ctx.kind = s.kind;
+  ctx.weather = atm.weatherId;
+  ctx.daylight = s.daylight;
+  ctx.night = s.night;
+  ctx.golden = s.golden;
+  ctx.sunElev = s.sunElev;
+  ctx.temp = s.temp;
+  ctx.wind = s.wind;
+  ctx.fog = s.fog;
+  ctx.rain = s.rain;
+  ctx.snow = s.snow;
+  ctx.cover = s.cover;
+  ctx.dark = s.dark;
+  ctx.waves = s.waves;
+  ctx.moonPhase = s.moonPhase;
+  ctx.moonIllum = s.moonIllum;
+  ctx.starVis = s.starVis;
+  ctx.aurora = s.aurora;
+  ctx.wetness = s.wetness;
+  ctx.loc = extra.loc ?? null;
+  ctx.deep = extra.deep ?? false;
+  return ctx;
 }

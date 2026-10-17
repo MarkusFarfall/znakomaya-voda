@@ -8,7 +8,7 @@ import { BOATS, LOC_BY_ID, SEASONS, spotsOf } from "@/game/world";
 import { AccountBadge, type AccountState } from "./Account";
 import { Icon } from "./Icons";
 import { HarborGlyph, PORT_ACCENT } from "./PortIdentity";
-import { fmt } from "./Panels";
+import { fmt } from "./format";
 
 const LABELS: Record<Building, { name: string; sub: string }> = {
   market: { name: "Рынок", sub: "продать улов" },

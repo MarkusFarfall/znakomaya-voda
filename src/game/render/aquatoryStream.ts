@@ -12,26 +12,40 @@ interface TerrainChunk {
   land: LandRenderer;
   bed: SeabedRenderer;
 }
+interface CachedFrame extends Frame {
+  __source: Frame;
+  __offset: number;
+}
 export class AquatoryStream {
   private cache = new ChunkWindow<TerrainChunk>();
   private visible: number[] = [];
+  private frames = new Map<number, CachedFrame>();
   get residentIds() {
     return [...this.cache.chunks.keys()];
   }
   private frame(f: Frame, index: number): Frame {
     const offset = index * REGION_WIDTH;
-    return {
-      ...f,
-      W: REGION_WIDTH,
-      worldWidth: f.W,
-      chunkOffset: offset,
-      spot: waterRegions(f.loc.id)[index],
-      viewLeft: Math.max(0, (f.viewLeft ?? 0) - offset),
-      sunX: f.sunX - offset,
-      moonX: f.moonX - offset,
-      waveY: (x) => f.waveY(x + offset),
-      bedDepth: (x) => waterBedAt(f.loc.id, x + offset),
-    };
+    let local = this.frames.get(index);
+    if (!local) {
+      local = { ...f, __source: f, __offset: offset } as CachedFrame;
+      local.waveY = (x) => local!.__source.waveY(x + local!.__offset);
+      local.bedDepth = (x) => waterBedAt(local!.__source.loc.id, x + local!.__offset);
+      this.frames.set(index, local);
+    }
+    const waveY = local.waveY, bedDepth = local.bedDepth;
+    Object.assign(local, f);
+    local.waveY = waveY;
+    local.bedDepth = bedDepth;
+    local.__source = f;
+    local.__offset = offset;
+    local.W = REGION_WIDTH;
+    local.worldWidth = f.W;
+    local.chunkOffset = offset;
+    local.spot = waterRegions(f.loc.id)[index];
+    local.viewLeft = Math.max(0, (f.viewLeft ?? 0) - offset);
+    local.sunX = f.sunX - offset;
+    local.moonX = f.moonX - offset;
+    return local;
   }
   update(f: Frame, left: number, width: number, direction: number) {
     const plan = streamPlan(f.loc.id, left, width, direction);
@@ -54,10 +68,9 @@ export class AquatoryStream {
       const offset = id * REGION_WIDTH,
         local = this.frame(f, id);
       f.ctx.save();
-      const tr = f.ctx.getTransform(),
-        snap = (x: number) => (Math.round(x * tr.a + tr.e) - tr.e) / tr.a;
-      const left = snap(offset),
-        right = snap(offset + REGION_WIDTH);
+      const tr = f.ctx.getTransform();
+      const left = (Math.round(offset * tr.a + tr.e) - tr.e) / tr.a;
+      const right = (Math.round((offset + REGION_WIDTH) * tr.a + tr.e) - tr.e) / tr.a;
       f.ctx.beginPath();
       f.ctx.rect(left, -f.H * 8, right - left, f.H * 24);
       f.ctx.clip();

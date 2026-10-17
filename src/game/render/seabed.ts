@@ -30,6 +30,11 @@ export class SeabedRenderer {
   private pts: number[] = [];
   private decor: Decor[] = [];
   private far: { x: number; y: number; h: number; w: number; kind: string; seed: number }[] = [];
+  private backSlice: number[] = [];
+  private bedSlice: number[] = [];
+  private backPolygon: number[] = [];
+  private bedPolygon: number[] = [];
+  private readonly bedSurface = (x: number) => this.bedY(x);
   private step = 6;
   minY = 0;
   private W = 0;
@@ -46,10 +51,11 @@ export class SeabedRenderer {
     return profile[a * 2 + 1] + (profile[b * 2 + 1] - profile[a * 2 + 1]) * (i - a);
   }
 
-  private profileSlice(profile: number[], left: number, right: number) {
+  private profileSlice(profile: number[], left: number, right: number, points: number[]) {
     const x0 = Math.max(-2, Math.min(this.W + 2, left));
     const x1 = Math.max(x0, Math.min(this.W + 2, right));
-    const points = [x0, this.profileY(profile, x0)];
+    points.length = 0;
+    points.push(x0, this.profileY(profile, x0));
     const first = Math.max(1, Math.floor(x0 / this.step) + 1);
     const last = Math.min(profile.length / 2 - 1, Math.ceil(x1 / this.step) - 1);
     for (let i = first; i <= last; i++) {
@@ -123,12 +129,16 @@ export class SeabedRenderer {
     const bottom = Math.max(this.minY + 4000, cam + H + 100);
     // Surface-reaching kelp, roots and pier piles must not disappear because their roots are offscreen.
     if (this.minY - 400 * f.sc > cam + H) { this.drawFeatures(f); return; }
-    const backLine = this.profileSlice(this.back, left, right);
-    const bedLine = this.profileSlice(this.pts, left, right);
-    const backPoly = [...backLine, right, bottom, left, bottom];
-    const bedPoly = [...bedLine, right, bottom, left, bottom];
+    const backLine = this.profileSlice(this.back, left, right, this.backSlice);
+    const bedLine = this.profileSlice(this.pts, left, right, this.bedSlice);
+    const backPoly = this.backPolygon, bedPoly = this.bedPolygon;
+    backPoly.length = 0; bedPoly.length = 0;
+    for (const value of backLine) backPoly.push(value);
+    for (const value of bedLine) bedPoly.push(value);
+    backPoly.push(right, bottom, left, bottom);
+    bedPoly.push(right, bottom, left, bottom);
     const bedC = mix(f.loc.bed, "#708980", f.loc.maxDepth > 100 ? .28 : .08);
-    this.landscape.backdrop(f, x => this.bedY(x));
+    this.landscape.backdrop(f, this.bedSurface);
     // дальние силуэты
     const farC = mix(mix(bedC, f.loc.water.mid, 0.72), "#000000", 0.1);
     ctx.fillStyle = farC;
@@ -213,9 +223,9 @@ export class SeabedRenderer {
         ctx.stroke();
       }
     }
-    this.landscape.texture(f, x => this.bedY(x));
+    this.landscape.texture(f, this.bedSurface);
     ctx.restore();
-    this.landscape.structures(f, x => this.bedY(x));
+    this.landscape.structures(f, this.bedSurface);
     // каустика — тонкой полосой по поверхности мелкого дна
     const shallow = sY + f.depthPx(6 + f.clarity * 22);
     const ca = f.sunVis * (1 - f.cover * 0.65) * f.clarity;

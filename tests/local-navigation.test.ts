@@ -8,6 +8,7 @@ import { sanitizeSave } from '../src/lib/sanitize';
 import { projectFightFish } from '../src/game/render/fishingGeometry';
 import { FISH } from '../src/game/fish';
 import { LocalWake } from '../src/game/render/localWake';
+import { BOAT_SPECS } from '../src/game/render/boat';
 const nav = (x = .3, heading: 1 | -1 = 1) => new LocalNavigation({ spot: 'bay_shallows', x, heading });
 function tick(n: LocalNavigation, seconds: number, fps = 60, boat = BOATS[0]) { for (let i = 0; i < seconds * fps; i++) n.step(1 / fps, boat); }
 function engine() { const e = new Engine(); e.s.atPort = false; e.paused = false; return e; }
@@ -156,6 +157,23 @@ test('wake impulses remain in world coordinates after turning and fully decay', 
   const e=engine(),wake=new LocalWake(); e.navigation.velocity=34;
   const f={e,dt:.1,sc:1}; for(let i=0;i<8;i++)wake.update(f);
   const sample=Array.from({length:500},(_,i)=>wake.heightAt(450+i)); assert.ok(sample.some(x=>Math.abs(x)>.001));
+  // Compare against the pre-optimization formula after the exact same eight updates.
+  const oar=e.boat.style==='row'||e.boat.style==='kayak', interval=oar ? .38 : .09, strength=Math.min(1,34/(oar ? 28 : 80));
+  const center=e.navigation.x-e.navigation.heading*BOAT_SPECS[e.boat.style].half*28*(oar ? .78 : .88);
+  const referenceCrests:{x:number;age:number;strength:number}[]=[]; let clock=0;
+  for(let i=0;i<8;i++){
+    for(const crest of referenceCrests)crest.age+=.1;
+    clock+=.1;
+    if(34>1&&clock>interval){clock=0;referenceCrests.push({x:center,age:0,strength});}
+  }
+  for(let i=0;i<sample.length;i++){
+    const x=450+i; let expected=0;
+    for(const crest of referenceCrests.slice(-12)){
+      const dx=Math.abs(x-crest.x),radius=crest.age*23;
+      expected+=Math.sin((dx-radius)*.14)*Math.exp(-Math.pow((dx-radius)/15,2))*crest.strength*Math.exp(-crest.age*.9)*.55;
+    }
+    assert.ok(Math.abs(sample[i]-expected)<1e-12, `wake mismatch at x=${x}: ${sample[i]} vs ${expected}`);
+  }
   e.navigation.heading=-1; e.navigation.velocity=0;
   const unchanged=Array.from({length:500},(_,i)=>wake.heightAt(450+i)); assert.deepEqual(unchanged,sample);
   for(let i=0;i<60;i++)wake.update(f);
