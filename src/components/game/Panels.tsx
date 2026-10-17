@@ -24,8 +24,8 @@ export const fishLength = (f: FishDef, w: number) => Math.cbrt((w * 1000) / (LEN
 const fmtLen = (cm: number) => (cm >= 100 ? `${(cm / 100).toFixed(2)} м` : `${Math.round(cm)} см`);
 
 /** `above` поднимает окно выше титульной заставки (z-50) — нужно панелям, доступным до начала игры. */
-export function Modal({ label, title, onClose, children, tabs, right, wide = true, above = false }: { label?: string; title: string; onClose: () => void; children: ReactNode; tabs?: ReactNode; right?: ReactNode; wide?: boolean; above?: boolean }) {
-  return <GameDialog label={label} title={title} onClose={onClose} tabs={tabs} right={right} wide={wide} above={above}>{children}</GameDialog>;
+export function Modal({ label, title, onClose, children, tabs, right, wide = true, above = false, className, overlayClassName }: { label?: string; title: string; onClose: () => void; children: ReactNode; tabs?: ReactNode; right?: ReactNode; wide?: boolean; above?: boolean; className?: string; overlayClassName?: string }) {
+  return <GameDialog label={label} title={title} onClose={onClose} tabs={tabs} right={right} wide={wide} above={above} className={className} overlayClassName={overlayClassName}>{children}</GameDialog>;
 }
 
 function Row({ k, v, strong }: { k: string; v: ReactNode; strong?: boolean }) {

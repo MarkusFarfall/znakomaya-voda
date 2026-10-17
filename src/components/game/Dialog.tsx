@@ -51,8 +51,8 @@ export function useGameDialog(onClose?: () => void, active = true) {
 
 type TabProps = { className?: string; role?: string; id?: string; tabIndex?: number; "aria-selected"?: boolean; "aria-controls"?: string };
 
-export function GameDialog({ label, title, onClose, children, tabs, right, wide = true, above = false }: {
-  label?: string; title: string; onClose: () => void; children: ReactNode; tabs?: ReactNode; right?: ReactNode; wide?: boolean; above?: boolean;
+export function GameDialog({ label, title, onClose, children, tabs, right, wide = true, above = false, className, overlayClassName }: {
+  label?: string; title: string; onClose: () => void; children: ReactNode; tabs?: ReactNode; right?: ReactNode; wide?: boolean; above?: boolean; className?: string; overlayClassName?: string;
 }) {
   const ref = useGameDialog(onClose);
   const id = useId();
@@ -66,8 +66,8 @@ export function GameDialog({ label, title, onClose, children, tabs, right, wide 
     nav.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [activeKey]);
   return (
-    <div className={`zv-ui game-dialog-overlay ${above ? "game-dialog-above" : ""}`} onPointerDown={e => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} data-game-dialog tabIndex={-1} className={`sheet game-dialog ${wide ? "game-dialog-wide" : ""}`}>
+    <div className={`zv-ui game-dialog-overlay ${above ? "game-dialog-above" : ""} ${overlayClassName ?? ""}`} onPointerDown={e => { e.stopPropagation(); if (e.target === e.currentTarget) onClose(); }}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={`${id}-title`} data-game-dialog tabIndex={-1} className={`sheet game-dialog ${wide ? "game-dialog-wide" : ""} ${className ?? ""}`}>
         <header className="game-dialog-header">
           <div className="min-w-0">
             {label && <div className="label-brass game-dialog-eyebrow">{label}</div>}

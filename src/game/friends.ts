@@ -42,6 +42,25 @@ export interface FriendWhere {
   updatedAt: string | null;
 }
 
+/** Финальный барьер приватности перед выдачей снимка другу. */
+export function redactHiddenWhere(where: FriendWhere | null): FriendWhere | null {
+  if (!where?.hidden) return where;
+  return {
+    location: null,
+    locationName: null,
+    spotName: null,
+    port: null,
+    portName: null,
+    atPort: false,
+    weather: null,
+    weatherName: null,
+    boat: null,
+    gameDay: null,
+    hidden: true,
+    updatedAt: where.updatedAt,
+  };
+}
+
 export interface FriendSummary {
   userId: string;
   username: string;
@@ -101,6 +120,46 @@ export interface SearchResult {
   level: number;
   codexCount: number;
   relation: "none" | "self" | "friend" | "incoming" | "outgoing";
+}
+
+/** Показатели общей лиги друзей: все значения уже есть в публичных сводках. */
+export type FleetMetric = "level" | "codex" | "catches" | "achievements" | "playtime";
+export interface FleetRankable {
+  userId: string;
+  username: string;
+  level: number;
+  codexCount: number;
+  totalCaught: number;
+  achievements: number;
+  playSeconds: number;
+}
+export type RankedFleetMember<T extends FleetRankable = FleetRankable> = T & { rank: number; value: number };
+
+export function fleetMetricValue(member: FleetRankable, metric: FleetMetric): number {
+  const raw = metric === "level" ? member.level
+    : metric === "codex" ? member.codexCount
+      : metric === "catches" ? member.totalCaught
+        : metric === "achievements" ? member.achievements
+          : member.playSeconds;
+  return Number.isFinite(raw) ? Math.max(0, raw) : 0;
+}
+
+/** Stable, descending comparison board. Equal scores share the same competition rank. */
+export function rankFleet<T extends FleetRankable>(members: readonly T[], metric: FleetMetric): RankedFleetMember<T>[] {
+  const sorted = [...members].sort((a, b) =>
+    fleetMetricValue(b, metric) - fleetMetricValue(a, metric)
+    || b.level - a.level
+    || a.username.localeCompare(b.username, "ru")
+    || a.userId.localeCompare(b.userId),
+  );
+  let previousValue = Number.NaN;
+  let rank = 0;
+  return sorted.map((member, index) => {
+    const value = fleetMetricValue(member, metric);
+    if (index === 0 || value !== previousValue) rank = index + 1;
+    previousValue = value;
+    return { ...member, rank, value };
+  });
 }
 
 // ─────────── пары и идентификаторы ───────────

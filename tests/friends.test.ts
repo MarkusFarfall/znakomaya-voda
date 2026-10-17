@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   avatarHue, boatOf, dayLabel, initialsOf, isOnline, isValidUserId, lastSeenLabel, locOf, normalizeQuery,
-  pairOf, playTimeLabel, portOf, spotOf, weatherOf, whereLabel,
+  pairOf, playTimeLabel, portOf, rankFleet, fleetMetricValue, redactHiddenWhere, spotOf, weatherOf, whereLabel,
   FRIEND_LIMIT, INCOMING_LIMIT, ONLINE_WINDOW_MS, PENDING_OUT_LIMIT,
   type FriendWhere,
 } from "../src/game/friends";
@@ -146,9 +146,40 @@ test("подпись места: лодка, порт, скрытое место
   assert.equal(whereLabel({ ...base, hidden: true, atPort: true }), "скрыл своё местоположение");
 });
 
+test("приватность удаляет координаты, порт и детали скрытого снимка", () => {
+  const privateSnapshot: FriendWhere = {
+    location: "bay", locationName: "Секретная бухта", spotName: "Тайный якорь",
+    port: "home", portName: "Знакомая вода", atPort: true, weather: "storm",
+    weatherName: "Шторм", boat: 3, gameDay: 28, hidden: true,
+    updatedAt: "2026-10-01T15:00:00.000Z",
+  };
+  assert.deepEqual(redactHiddenWhere(privateSnapshot), {
+    location: null, locationName: null, spotName: null,
+    port: null, portName: null, atPort: false, weather: null,
+    weatherName: null, boat: null, gameDay: null, hidden: true,
+    updatedAt: privateSnapshot.updatedAt,
+  });
+  assert.equal(redactHiddenWhere(null), null);
+  const publicSnapshot = { ...privateSnapshot, hidden: false };
+  assert.equal(redactHiddenWhere(publicSnapshot), publicSnapshot);
+});
+
 test("предел входящих заявок есть и он больше исходящих", () => {
   // Без него аккаунт с десятком «пустышек» заваливал чужой список друзей.
   assert.ok(INCOMING_LIMIT >= PENDING_OUT_LIMIT);
   assert.ok(INCOMING_LIMIT <= 200, "список должен оставаться читаемым");
   assert.equal(typeof INCOMING_LIMIT, "number");
+});
+
+test("клубная лига сортирует экипаж по метрике и делит равное место", () => {
+  const crew = [
+    { userId: "b", username: "Борис", level: 8, codexCount: 20, totalCaught: 100, achievements: 4, playSeconds: 3_600 },
+    { userId: "a", username: "Ада", level: 10, codexCount: 20, totalCaught: 80, achievements: 6, playSeconds: 7_200 },
+    { userId: "c", username: "Саша", level: 7, codexCount: 12, totalCaught: 140, achievements: 4, playSeconds: 3_600 },
+  ];
+  const codex = rankFleet(crew, "codex");
+  assert.deepEqual(codex.map(({ username, rank }) => [username, rank]), [["Ада", 1], ["Борис", 1], ["Саша", 3]]);
+  assert.deepEqual(rankFleet(crew, "catches").map(({ username }) => username), ["Саша", "Борис", "Ада"]);
+  assert.deepEqual(rankFleet(crew, "level").map(({ username }) => username), ["Ада", "Борис", "Саша"]);
+  assert.equal(fleetMetricValue({ ...crew[0], playSeconds: -100 }, "playtime"), 0);
 });

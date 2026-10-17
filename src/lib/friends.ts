@@ -5,7 +5,7 @@ import { catches, friendships, players, saves, users } from "@/db/schema";
 import { isClean } from "@/lib/auth";
 import { PORT_BY_ID, SPOT_BY_ID, WEATHER_INFO } from "@/game/world";
 import {
-  FRIEND_LIMIT, INCOMING_LIMIT, PENDING_OUT_LIMIT, SEARCH_RESULTS, isValidUserId, locOf, normalizeQuery, pairOf,
+  FRIEND_LIMIT, INCOMING_LIMIT, PENDING_OUT_LIMIT, SEARCH_RESULTS, isValidUserId, locOf, normalizeQuery, pairOf, redactHiddenWhere,
   type FriendCatch, type FriendProfile, type FriendRequestRow, type FriendSummary, type FriendWhere,
   type FriendsOverview, type SearchResult,
 } from "@/game/friends";
@@ -63,20 +63,20 @@ function whereOf(r: Row): FriendWhere | null {
   // Скрывший местоположение должен выглядеть скрывшимся, даже если ещё ни разу не сохранялся:
   // иначе друг видел «ещё не выходил в море» вместо «скрыл местоположение».
   if (!r.location && !r.port && !hidden) return null;
-  return {
-    location: hidden ? null : (locOf(r.location)?.id as LocId | null) ?? null,
-    locationName: hidden ? null : locOf(r.location)?.name ?? null,
-    spotName: hidden ? null : spotName(r.spot),
-    port: hidden ? null : ((r.port as PortId | null) ?? null),
-    portName: hidden ? null : portName(r.port),
-    atPort: !hidden && !!r.atPort,
-    weather: hidden ? null : ((r.weather as WeatherId | null) ?? null),
-    weatherName: hidden ? null : weatherName(r.weather),
-    boat: hidden ? null : (typeof r.boat === "number" ? r.boat : null),
-    gameDay: hidden ? null : (typeof r.gameDay === "number" ? r.gameDay : null),
+  return redactHiddenWhere({
+    location: (locOf(r.location)?.id as LocId | null) ?? null,
+    locationName: locOf(r.location)?.name ?? null,
+    spotName: spotName(r.spot),
+    port: (r.port as PortId | null) ?? null,
+    portName: portName(r.port),
+    atPort: !!r.atPort,
+    weather: (r.weather as WeatherId | null) ?? null,
+    weatherName: weatherName(r.weather),
+    boat: typeof r.boat === "number" ? r.boat : null,
+    gameDay: typeof r.gameDay === "number" ? r.gameDay : null,
     hidden,
     updatedAt: iso(r.saveUpdatedAt),
-  };
+  });
 }
 
 // Названия берутся из справочников мира, а не из базы: в базе лежит только идентификатор.
