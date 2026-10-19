@@ -200,6 +200,17 @@
   .game-catch > .sheet > .plate canvas { max-height: 125px; width: auto !important; }
   .game-catch > .sheet > .catch-details { flex: 1; }
 }
+@media (max-width: 359px) and (max-height: 520px) {
+  .game-catch > .sheet > .plate {
+    height: clamp(122px, 26dvh, 150px);
+    min-height: clamp(122px, 26dvh, 150px);
+    padding-block: 8px;
+  }
+  .game-catch > .sheet > .plate canvas { max-height: 96px; }
+  .game-catch .catch-info { padding: 12px 16px; }
+  .game-catch .catch-info h3 { font-size: 28px; }
+  .game-catch .catch-info dl { margin-top: 10px; }
+}
 @media (max-width: 639px) {
   .zv-ui.game-travel-choice > .sheet { padding: 20px; }
   .friend-request { display: grid; grid-template-columns: 38px minmax(0,1fr) auto; }
