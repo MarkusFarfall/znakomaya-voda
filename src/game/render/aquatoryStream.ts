@@ -206,14 +206,25 @@ export class AquatoryStream {
     }
   }
 
-  rocks(): [number, number][] {
-    return this.visible.flatMap((id) => {
+  rocks(out: [number, number][] = []): [number, number][] {
+    let write = 0;
+    for (const id of this.visible) {
       const chunk = this.cache.chunks.get(id);
-      if (!chunk) return [];
-      return [...chunk.tiles.values()]
-        .flatMap((tile) => tile.land.seaRocks)
-        .slice(0, 4)
-        .map((rock) => [rock.x + id * REGION_WIDTH, rock.y - rock.h] as [number, number]);
-    });
+      if (!chunk) continue;
+      let added = 0;
+      for (const tile of chunk.tiles.values()) {
+        for (const rock of tile.land.seaRocks) {
+          if (added >= 4) break;
+          const point = out[write] ?? [0, 0];
+          point[0] = rock.x + id * REGION_WIDTH;
+          point[1] = rock.y - rock.h;
+          out[write++] = point;
+          added++;
+        }
+        if (added >= 4) break;
+      }
+    }
+    out.length = write;
+    return out;
   }
 }

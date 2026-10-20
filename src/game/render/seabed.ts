@@ -41,6 +41,8 @@ export class SeabedRenderer {
   private profileStart = 0;
   minY = 0;
   private W = 0;
+  /** Number of retained local seabed assets after building the current geometry window. */
+  get generatedAssetCount() { return this.decor.length + this.far.length + this.glowMotes.length; }
 
   bedY(x: number) {
     const i = clamp((x - this.profileStart) / this.step, 0, this.ys.length - 1);
@@ -76,13 +78,16 @@ export class SeabedRenderer {
     this.key = key;
     this.W = W;
     this.step = clamp(Math.round(W / 200), 2, 6);
+    const rangeLeft = Math.max(0, f.buildLeft ?? 0);
+    const rangeRight = Math.min(W, f.buildRight ?? W);
+    const edgeInset = f.chunkOffset !== undefined ? 100 * f.sc : 0;
+    const assetLeft = Math.max(edgeInset, rangeLeft - 120);
+    const assetRight = Math.min(W - edgeInset, rangeRight + 120);
     this.ys = [];
     this.back = [];
     this.pts = [];
-    const rangeLeft = Math.max(0, f.buildLeft ?? 0);
-    const rangeRight = Math.min(W, f.buildRight ?? W);
-    this.profileStart = Math.floor(rangeLeft / this.step) * this.step;
-    const profileEnd = Math.min(W + this.step, Math.ceil(rangeRight / this.step) * this.step);
+    this.profileStart = Math.floor(assetLeft / this.step) * this.step;
+    const profileEnd = Math.min(W + this.step, Math.ceil(assetRight / this.step) * this.step);
     for (let x = this.profileStart; x <= profileEnd; x += this.step) {
       const y = sY + f.depthPx(f.bedDepth?f.bedDepth(x):spot.maxDepth * bedFrac(spot, x / W));
       this.ys.push(y);
@@ -94,10 +99,15 @@ export class SeabedRenderer {
     const r = rng(spot.seed * 97);
     const list = HABITAT[f.loc.seabed] ?? HABITAT.sand;
     this.decor = [];
-    const n = Math.round(W / 20);
-    for (let i = 0; i < n; i++) {
-      const x = f.chunkOffset!==undefined?100*f.sc+r()*(W-200*f.sc):r()*W;
-      this.decor.push({ x, y: this.bedY(x), kind: list[Math.floor(r() * list.length)], s: 0.55 + r() * 0.9, c: CORAL_COLS[Math.floor(r() * CORAL_COLS.length)], seed: r() * 100 });
+    // Stable world-cell random streams let each microtile build only its local
+    // seabed decor instead of generating W/20 candidates and discarding most.
+    const firstDecorCell = Math.floor(assetLeft / 20);
+    const lastDecorCell = Math.floor(assetRight / 20);
+    for (let cell = firstDecorCell; cell <= lastDecorCell; cell++) {
+      const cellRandom = rng(spot.seed * 97 + 0x51f15e + cell * 0.731);
+      const x = (cell + cellRandom()) * 20;
+      if (x < assetLeft - 80 || x > assetRight + 80) continue;
+      this.decor.push({ x, y: this.bedY(x), kind: list[Math.floor(cellRandom() * list.length)], s: 0.55 + cellRandom() * 0.9, c: CORAL_COLS[Math.floor(cellRandom() * CORAL_COLS.length)], seed: cellRandom() * 100 });
     }
     // склон — гуще
     if (spot.profile === "drop" || spot.profile === "trench" || spot.profile === "seamount") {
@@ -118,9 +128,12 @@ export class SeabedRenderer {
     this.glowingDecor = this.decor.filter((d) => d.kind === "vent" || d.kind === "worms" || d.kind === "pen");
     this.glowMotes = [];
     if (feat === "trench" || feat === "vents" || feat === "twilight") {
-      const glowRandom = rng(3);
-      for (let i = 0; i < 40; i++) {
-        const x = f.chunkOffset !== undefined ? 100 * f.sc + glowRandom() * (W - 200 * f.sc) : glowRandom() * W;
+      const count = 40, cellWidth = (W - 2 * edgeInset) / count;
+      const first = Math.max(0, Math.floor((assetLeft - edgeInset) / cellWidth));
+      const last = Math.min(count - 1, Math.floor((assetRight - edgeInset) / cellWidth));
+      for (let cell = first; cell <= last; cell++) {
+        const glowRandom = rng(spot.seed * 43 + 3 + cell * 0.913);
+        const x = edgeInset + (cell + glowRandom()) * cellWidth;
         this.glowMotes.push({ x, yOffset: glowRandom() * 300 * f.sc, speed: 0.5 + glowRandom() });
       }
     }
@@ -128,10 +141,16 @@ export class SeabedRenderer {
     this.far = [];
     const fk: Record<string, string[]> = { sand: ["grass", "dune"], rock: ["pillar", "kelp"], kelp: ["kelp", "kelp", "pillar"], coral: ["bommie", "bommie", "fan"], mud: ["spire", "dune"], vents: ["spire", "chimney"], silt: ["grass", "dune", "dune"], granite: ["dune", "pillar"], kelpforest: ["kelp", "kelp", "kelp", "pillar"], roots: ["grass", "dune"], basalt: ["pillar", "spire", "chimney"], polar: ["dune", "spire"] };
     const kinds = fk[f.loc.seabed] ?? ["dune"];
-    for (let i = 0; i < Math.round(W / 55); i++) {
-      const x = f.chunkOffset!==undefined?100*f.sc+r()*(W-200*f.sc):r()*W;
+    const farCount = Math.round(W / 55);
+    const farCell = W / Math.max(1, farCount);
+    const firstFarCell = Math.max(0, Math.floor(assetLeft / farCell));
+    const lastFarCell = Math.min(farCount - 1, Math.floor(assetRight / farCell));
+    for (let cell = firstFarCell; cell <= lastFarCell; cell++) {
+      const cellRandom = rng(spot.seed * 131 + 0x2c9277 + cell * 1.173);
+      const x = (cell + cellRandom()) * farCell;
+      if (x < assetLeft - 50 || x > assetRight + 50) continue;
       const bi = clamp(Math.round((x - this.profileStart) / this.step) * 2 + 1, 1, this.back.length - 1);
-      this.far.push({ x, y: this.back[bi] + 6, h: (40 + r() * 110) * f.sc, w: (14 + r() * 40) * f.sc, kind: kinds[Math.floor(r() * kinds.length)], seed: r() * 100 });
+      this.far.push({ x, y: this.back[bi] + 6, h: (40 + cellRandom() * 110) * f.sc, w: (14 + cellRandom() * 40) * f.sc, kind: kinds[Math.floor(cellRandom() * kinds.length)], seed: cellRandom() * 100 });
     }
     // Preserve the region-seeded random sequence, but retain only camera-window assets.
     this.decor = this.decor.filter((d) => d.x + 80 >= rangeLeft && d.x - 80 <= rangeRight);

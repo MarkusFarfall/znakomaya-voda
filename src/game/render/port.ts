@@ -127,7 +127,8 @@ export class PortScene {
     const a = e.atmosphere.state, dockX = f.W * KITS[e.port.id].layout.dock;
     const fx: FxScene = {
       c: f.ctx, t: f.t, W: f.W, H: f.H, s: f.sc, q: f.quality,
-      horizon: f.hY, surface: f.waterY, seabed: f.H, visW: f.W, cam: 0,
+      horizon: f.hY, surface: f.waterY, seabed: f.H, visW: f.W,
+      viewLeft: 0, viewRight: f.W, cam: 0,
       windPx: a.wind * a.windDir * 26 * f.sc, sAt: f.waveY,
       glow: (x, y, r, col, alpha) => glow(f.ctx, x, y, r, rgbHex(col), alpha),
       sun: { x: f.W * clamp((a.sunAz - 45) / 270, 0, 1), y: f.hY - Math.sin(a.sunElev * Math.PI / 180) * f.H * 0.42 },

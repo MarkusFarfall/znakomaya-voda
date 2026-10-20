@@ -70,6 +70,7 @@ export class LandRenderer {
   floes: { x: number; y: number; w: number; h: number; v: number }[] = [];
   private mats: { x: number; y: number; w: number }[] = [];
   seaRocks: { x: number; y: number; w: number; h: number }[] = [];
+  private orphanHaze: number[] = [];
   private cliffBase: { x0: number; x1: number } | null = null;
 
   private foliage(f: Frame, c: string, x: number, kind: "pine" | "round") {
@@ -138,9 +139,11 @@ export class LandRenderer {
     this.floes = [];
     this.mats = [];
     this.seaRocks = [];
+    this.orphanHaze.length = 0;
     this.cliffBase = null;
     const r = rng(spot.seed * 31);
     const band = sY - hY;
+    const rangeLeft = f.buildLeft ?? 0, rangeRight = f.buildRight ?? W;
     const winter = f.atmo.snowCover > 0.18;
 
     switch (loc.land) {
@@ -149,8 +152,11 @@ export class LandRenderer {
         this.layers.push({ pts: far.pts, base: "#56766a", haze: 0.75, reflect: true, x0: W * 0.34, x1: W * 1.06 });
         const mid = this.ridge(f, W * 0.55, W * 1.05, H * 0.058, 5.3, { rough: 3.2, tr: false });
         this.layers.push({ pts: mid.pts, base: "#36533f", haze: 0.42, reflect: true, x0: W * 0.55, x1: W * 1.05 });
-        for (let x = W * 0.57; x < W * 1.02; x += 6) {
-          if (r() < 0.55 && (x < W * 0.67 || x > W * 0.82)) this.trees.push({ x, y: mid.at(x) + 2, h: 4 + r() * 5, kind: "round", haze: 0.42, c: r() < 0.5 ? "#2e4a36" : "#3a5a3e" });
+        const treeStart = Math.ceil(Math.max(W * 0.57, rangeLeft - 20) / 6) * 6;
+        const treeEnd = Math.min(W * 1.02, rangeRight + 20);
+        for (let x = treeStart; x < treeEnd; x += 6) {
+          const treeRandom = rng(spot.seed * 31 + 0x143a + Math.round(x / 6) * 0.37);
+          if (treeRandom() < 0.55 && (x < W * 0.67 || x > W * 0.82)) this.trees.push({ x, y: mid.at(x) + 2, h: 4 + treeRandom() * 5, kind: "round", haze: 0.42, c: treeRandom() < 0.5 ? "#2e4a36" : "#3a5a3e" });
         }
         const cols = ["#d8cfc0", "#c8b8a0", "#e0d8cc", "#b8a890"];
         for (let i = 0; i < 9; i++) {
@@ -167,7 +173,11 @@ export class LandRenderer {
         if (spot.feature === "sandbar") {
           const dune = this.ridge(f, -W * 0.02, W * 0.3, H * 0.028, 9.2, { rough: 2, tl: false });
           this.layers.push({ pts: dune.pts, base: "#cfb884", haze: 0.28, reflect: true, x0: -W * 0.02, x1: W * 0.3 });
-          for (let x = 0; x < W * 0.26; x += 7) if (r() < 0.6) this.trees.push({ x, y: dune.at(x) + 1, h: 3 + r() * 4, kind: "pine", haze: 0.28, c: "#7a8a4a" });
+          const firstTree = Math.ceil(Math.max(0, rangeLeft - 20) / 7) * 7;
+          for (let x = firstTree; x < Math.min(W * 0.26, rangeRight + 20); x += 7) {
+            const treeRandom = rng(spot.seed * 31 + 0x5271 + Math.round(x / 7) * 0.53);
+            if (treeRandom() < 0.6) this.trees.push({ x, y: dune.at(x) + 1, h: 3 + treeRandom() * 4, kind: "pine", haze: 0.28, c: "#7a8a4a" });
+          }
         }
         if (spot.feature === "ridge") {
           for (let i = 0; i < 5; i++) this.seaRocks.push({ x: W * (0.46 + i * 0.06 + r() * 0.02), y: hY + band * (0.25 + r() * 0.35), w: 10 + r() * 22, h: 5 + r() * 9 });
@@ -179,29 +189,50 @@ export class LandRenderer {
         this.layers.push({ pts: far.pts, base: "#5c6e80", haze: 0.8, reflect: true, x0: 0, x1: W * 0.52 });
         const cx0 = spot.feature === "wall" ? W * 0.5 : W * 0.62;
         const top = hY - H * (spot.feature === "wall" ? 0.24 : 0.2);
-        const pts: number[] = [cx0, hY + 2];
         const faceW = W * 0.07;
+        const cliffLeft = Math.max(cx0, rangeLeft);
+        const cliffRight = Math.min(W * 1.06, rangeRight);
+        const face: number[] = [cx0, hY + 2];
         for (let k = 1; k <= 14; k++) {
           const q = k / 14;
-          pts.push(cx0 + faceW * q + (hash1(k * 3.3 + spot.seed) - 0.5) * 10, hY - (hY - top) * sstep(0, 1, q) + (hash1(k * 7.1) - 0.5) * 8);
+          face.push(cx0 + faceW * q + (hash1(k * 3.3 + spot.seed) - 0.5) * 10, hY - (hY - top) * sstep(0, 1, q) + (hash1(k * 7.1) - 0.5) * 8);
         }
+        const faceEndX = face[face.length - 2];
+        const topAt = (x: number) => top + (fbm(x * 0.01, 4.4) - 0.5) * H * 0.04 + ((x - cx0) / W) * H * 0.02;
         const topLine: number[] = [];
-        for (let x = cx0 + faceW; x <= W * 1.06; x += 8) {
-          const y = top + (fbm(x * 0.01, 4.4) - 0.5) * H * 0.04 + ((x - cx0) / W) * H * 0.02;
-          pts.push(x, y);
-          topLine.push(x, y);
+        const topStart = Math.max(faceEndX, cliffLeft);
+        if (topStart <= cliffRight) {
+          topLine.push(topStart, topAt(topStart));
+          for (let x = Math.ceil(topStart / 8) * 8; x < cliffRight; x += 8) {
+            if (x > topStart) topLine.push(x, topAt(x));
+          }
+          if (cliffRight > topStart) topLine.push(cliffRight, topAt(cliffRight));
         }
-        pts.push(W * 1.06, hY + 2);
-        this.layers.push({ pts, base: "#57504a", haze: 0.2, reflect: true, x0: cx0, x1: W * 1.06 });
+        const pts: number[] = [cliffLeft, hY + 2];
+        if (cliffRight > cliffLeft) {
+          if (cliffLeft < faceEndX) {
+            const faceWindow = clipPolylineX(face, cliffLeft, Math.min(cliffRight, faceEndX));
+            pts.push(...faceWindow);
+          }
+          if (topLine.length) {
+            pts.push(...topLine);
+          }
+          pts.push(cliffRight, hY + 2);
+        }
+        this.layers.push({ pts, base: "#57504a", haze: 0.2, reflect: true, x0: cliffLeft, x1: cliffRight });
         const gl: number[] = [...topLine];
-        for (let i = topLine.length - 2; i >= 0; i -= 2) gl.push(topLine[i], topLine[i + 1] + 5 + hash1(i) * 4);
+        for (let i = topLine.length - 2; i >= 0; i -= 2) gl.push(topLine[i], topLine[i + 1] + 5 + hash1(i));
         this.grass = { pts: gl, haze: 0.2 };
         for (let j = 0; j < 7; j++) {
           const y0 = top + (hY - top) * (0.14 + j * 0.12);
           const q = 1 - (y0 - top) / (hY - top);
           const xs = cx0 + faceW * (1 - q) + 6;
-          const sp: number[] = [];
-          for (let x = xs; x <= W * 1.06; x += 16) sp.push(x, y0 + Math.sin(x * 0.03 + j) * 2.5 + (x - xs) * 0.02);
+          const x0 = Math.max(xs, rangeLeft), x1 = Math.min(W * 1.06, rangeRight);
+          if (x1 <= x0) continue;
+          const yAt = (x: number) => y0 + Math.sin(x * 0.03 + j) * 2.5 + (x - xs) * 0.02;
+          const sp: number[] = [x0, yAt(x0)];
+          for (let x = Math.ceil(x0 / 16) * 16; x < x1; x += 16) if (x > x0) sp.push(x, yAt(x));
+          if (x1 > x0) sp.push(x1, yAt(x1));
           this.strata.push({ pts: sp, haze: 0.2 });
         }
         const lx = W * (spot.feature === "wall" ? 0.7 : 0.82);
@@ -227,12 +258,15 @@ export class LandRenderer {
         this.layers.push({ pts: lw.pts, base: "#2e3c3c", haze: 0.3, reflect: true, snowY: nearSnow, x0: -W * 0.05, x1: L1 });
         this.layers.push({ pts: rw.pts, base: "#303e3e", haze: 0.3, reflect: true, snowY: nearSnow, x0: R0, x1: W * 1.05 });
         const forest = (at: (x: number) => number, x0: number, x1: number) => {
-          for (let x = x0; x < x1; x += 4) {
+          const first = Math.ceil(Math.max(x0, rangeLeft - 24) / 4) * 4;
+          const last = Math.min(x1, rangeRight + 24);
+          for (let x = first; x < last; x += 4) {
+            const treeRandom = rng(spot.seed * 31 + 0x72c9 + Math.round(x / 4) * 0.619);
             const ty = at(x);
             if (ty < nearSnow + 20) continue;
-            const depth = r() * Math.min(60, hY - ty - 4);
+            const depth = treeRandom() * Math.min(60, hY - ty - 4);
             if (depth < 0) continue;
-            this.trees.push({ x: x + r() * 3, y: ty + 6 + depth, h: 8 + r() * 10, kind: "pine", haze: 0.3, c: r() < 0.5 ? "#1a2a24" : "#223428" });
+            this.trees.push({ x: x + treeRandom() * 3, y: ty + 6 + depth, h: 8 + treeRandom() * 10, kind: "pine", haze: 0.3, c: treeRandom() < 0.5 ? "#1a2a24" : "#223428" });
           }
         };
         forest(lw.at, 0, L1 - 10);
@@ -297,7 +331,6 @@ export class LandRenderer {
     }
     // Store and render only the camera's stable geometry window. Ridge profiles are
     // generated directly in this interval; custom polygons are clipped exactly.
-    const rangeLeft = f.buildLeft ?? 0, rangeRight = f.buildRight ?? W;
     this.layers = this.layers.flatMap((layer) => {
       if (layer.x1 < rangeLeft || layer.x0 > rangeRight) return [];
       const pts = clipPolygonX(layer.pts, rangeLeft, rangeRight);
@@ -313,6 +346,12 @@ export class LandRenderer {
     this.floes = keep(this.floes, 30);
     this.mats = keep(this.mats, 50);
     this.seaRocks = keep(this.seaRocks, 40);
+    const addOrphanHaze = (haze: number) => {
+      if (this.layers.some((layer) => layer.haze === haze) || this.orphanHaze.includes(haze)) return;
+      this.orphanHaze.push(haze);
+    };
+    for (const house of this.houses) addOrphanHaze(house.haze);
+    for (const tree of this.trees) addOrphanHaze(tree.haze);
     if (this.lighthouse && (this.lighthouse.x < rangeLeft - 100 || this.lighthouse.x > rangeRight + 100)) this.lighthouse = null;
     if (this.waterfall && (this.waterfall.x < rangeLeft - 30 || this.waterfall.x > rangeRight + 30)) this.waterfall = null;
     this.extra.trimWindow(rangeLeft, rangeRight);
@@ -694,10 +733,8 @@ export class LandRenderer {
     const { ctx, hY, sY, W, t, night } = f;
     const view = horizontalRange(f, 60);
     const inView = (x: number, padding = 0) => x + padding >= view.left && x - padding <= view.right;
-    // объекты на воде (бунгало и т.п.), у которых нет своего слоя суши
-    const hz = new Set(this.layers.map((l) => l.haze));
-    const orphan = new Set([...this.houses, ...this.trees].map((o) => o.haze).filter((h) => !hz.has(h)));
-    orphan.forEach((h) => this.drawDetailsFor(f, h));
+    // Orphan detail haze is compiled with the geometry, not rebuilt per render pass.
+    for (const haze of this.orphanHaze) this.drawDetailsFor(f, haze);
     this.extra.drawSea(this, f);
     const band = sY - hY;
     const foam = hexA(mix("#ffffff", "#40506a", night * 0.7), 0.75);
@@ -835,6 +872,7 @@ export class LandRenderer {
   /** Олуши, пикирующие в воду во время «чаек» и над косяком */
   drawDivers(f: Frame) {
     const { ctx, e, W, H, hY, sY, night } = f;
+    const viewLeft = f.viewLeft ?? 0, viewRight = viewLeft + (f.viewWidth ?? W);
     const active = (hasActiveEvent(f, "gulls") || hasActiveEvent(f, "shoal")) && !e.isNight && f.loc.land !== "abyss";
     if (active && this.gannets.length < 4 && Math.random() < f.dt * 0.8)
       this.gannets.push({ x: W * (0.4 + Math.random() * 0.5), y: H * (0.08 + Math.random() * 0.1), t: 0, vx: (Math.random() - 0.5) * 30, phase: 0 });
@@ -844,12 +882,16 @@ export class LandRenderer {
       const x = g.x + g.vx * g.t;
       if (g.phase === 0) {
         const y = g.y + Math.sin(g.t * 2) * 6;
-        this.bird(ctx, x, y, Math.sin(g.t * 9) * 5, col, 1);
+        if (x >= viewLeft - 14 && x <= viewRight + 14) this.bird(ctx, x, y, Math.sin(g.t * 9) * 5, col, 1);
         if (g.t > 1.5 + Math.random() * 2) { g.phase = 1; g.t = 0; g.x = x; }
       } else if (g.phase === 1) {
         const k = Math.min(1, g.t / 0.7);
         const targetY = hY + (sY - hY) * 0.5;
         const y = g.y + (targetY - g.y) * k * k;
+        if (g.x < viewLeft - 4 || g.x > viewRight + 4) {
+          if (k >= 1) { g.phase = 2; g.t = 0; }
+          continue;
+        }
         ctx.save();
         ctx.translate(g.x, y);
         ctx.fillStyle = col;
@@ -863,6 +905,10 @@ export class LandRenderer {
       } else {
         const p = g.t / 0.8;
         const y = hY + (sY - hY) * 0.5;
+        if (g.x < viewLeft - 20 || g.x > viewRight + 20) {
+          if (p >= 1) g.phase = 3;
+          continue;
+        }
         ctx.fillStyle = `rgba(255,255,255,${0.8 * (1 - p)})`;
         for (let i = 0; i < 6; i++) {
           ctx.beginPath();
