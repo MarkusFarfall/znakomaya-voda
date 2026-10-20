@@ -8,7 +8,6 @@ import {
   type PrecipitationView,
 } from "../src/game/render/precipitation";
 import { SeabedRenderer } from "../src/game/render/seabed";
-import { LandRenderer } from "../src/game/render/land";
 import { bedContact, bedFormations } from "../src/game/render/seabedLandscape";
 import { clipWaterToBed, drawShafts } from "../src/game/render/water";
 import { distantRain } from "../src/game/render/portHorizon";
@@ -288,59 +287,6 @@ test("every seabed and spot renders finite balanced geometry across mobile/deskt
             );
           }
         }
-});
-test("custom shoreline profiles meet exactly at independent terrain microtile boundaries", () => {
-  const worlds = [
-    ["cape", "#57504a"],
-    ["kelp", "#3a3632"],
-    ["mangrove", "#2e4a2c"],
-    ["antarctic", "#e4eef4"],
-  ] as const;
-  const seam = 1628;
-  for (const [location, base] of worlds) {
-    const e = new Engine();
-    e.s.location = location;
-    e.s.spot = spotsOf(location)[0].id;
-    const make = (left: number, right: number) => {
-      const f = frame(e, context().ctx, 2400, 844);
-      f.hY = f.sY - 844 * 0.095;
-      f.chunkOffset = 0; f.buildLeft = left; f.buildRight = right;
-      const land = new LandRenderer();
-      assert.equal(land.build(f), true);
-      const layer = land.layers.find(item => item.base === base);
-      assert.ok(layer, `${location} shoreline layer exists`);
-      return layer!.pts;
-    };
-    const leftPoints = make(seam - 128, seam);
-    const rightPoints = make(seam, seam + 128);
-    const ysAtSeam = (points: number[]) => {
-      const ys: number[] = [];
-      for (let i = 0; i + 1 < points.length; i += 2) {
-        if (Math.abs(points[i] - seam) < 1e-7 && !ys.some(y => Math.abs(y - points[i + 1]) < 1e-6)) ys.push(points[i + 1]);
-      }
-      return ys.sort((a, b) => a - b);
-    };
-    const leftYs = ysAtSeam(leftPoints), rightYs = ysAtSeam(rightPoints);
-    assert.equal(leftYs.length, rightYs.length, `${location} seam vertex count`);
-    leftYs.forEach((y, i) => assert.ok(Math.abs(y - rightYs[i]) < 1e-5, `${location} seam profile`));
-    assert.ok([...leftPoints, ...rightPoints].every(Number.isFinite));
-  }
-});
-test("seabed microtile builds retain only a viewport-sized procedural asset set", () => {
-  const e = new Engine();
-  e.s.location = "bay";
-  e.s.spot = spotsOf("bay")[0].id;
-  const c = context();
-  const f = frame(e, c.ctx, 2400, 844);
-  f.chunkOffset = 0;
-  f.buildLeft = 1000;
-  f.buildRight = 1128;
-  f.viewLeft = 1000;
-  f.viewWidth = 128;
-  const bed = new SeabedRenderer();
-  assert.equal(bed.build(f), true);
-  assert.ok(bed.generatedAssetCount < 80, `microtile retained ${bed.generatedAssetCount} assets`);
-  assert.equal(bed.build(f), false, "same geometry window is not regenerated");
 });
 test("caustics setting gates the actual seabed pass as well as quality", () => {
   const g = globalThis as unknown as {

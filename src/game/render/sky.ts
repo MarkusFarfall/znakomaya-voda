@@ -69,7 +69,6 @@ interface Cloud {
   seed: number;
   layer: number;
   sprite: HTMLCanvasElement | null;
-  spriteKey: string;
 }
 export interface MilkyPoint { x: number; y: number; alpha: number; size: number }
 export interface MilkyHole { x: number; gradientY: number; radius: number; ellipseY: number; width: number; height: number }
@@ -138,9 +137,7 @@ export class SkyRenderer {
   private deckBlobs: DeckBlob[] = [];
   private deckHeight = 0;
   private tilePlan = { visible: [0], resident: [0] };
-  private residentTileIds = new Set<number>();
   private key = "";
-  private meteorRandom = rng(29);
   private meteors: [number, number, number][] = [];
   private gulls: [number, number, number, number][] = [];
 
@@ -149,9 +146,6 @@ export class SkyRenderer {
     this.W = W;
     this.H = H;
     this.key = "";
-    this.meteorRandom = rng(29);
-    this.meteors.length = 0;
-    this.residentTileIds.clear();
     const r = rng(11);
     const hy = H * 0.39;
     const tints = ["#ffffff", "#ffffff", "#dfe8ff", "#fff2dc", "#ffe0d0"];
@@ -185,17 +179,21 @@ export class SkyRenderer {
     this.clouds = Array.from({ length: 14 }, (_, i) => {
       const layer = i / 13;
       const w = (120 + r() * 200) * (0.6 + layer * 0.7) * clamp(W / 1280, 0.6, 1.4);
-      return { x: r() * W * 1.3 - W * 0.15, y: H * (0.04 + (1 - layer) * 0.22 + r() * 0.05), w, h: w * (0.3 + r() * 0.16), speed: 3 + layer * 9, seed: r() * 1000, layer, sprite: null, spriteKey: "" };
+      return { x: r() * W * 1.3 - W * 0.15, y: H * (0.04 + (1 - layer) * 0.22 + r() * 0.05), w, h: w * (0.3 + r() * 0.16), speed: 3 + layer * 9, seed: r() * 1000, layer, sprite: null };
     });
     this.gulls = Array.from({ length: 7 }, () => [r() * W, H * (0.1 + r() * 0.2), r() * 6.28, 0.7 + r() * 0.5]);
   }
 
   private rebuild(f: Frame, lit: string, shade: string) {
-    // Individual cloud canvases are rasterized lazily only when their world
-    // positions enter the viewport; discard stale-color rasters immediately.
     for (const c of this.clouds) {
-      c.sprite = null;
-      c.spriteKey = "";
+      const cw = Math.ceil(c.w * 1.3), ch = Math.ceil(c.h * 1.8);
+      const cv = c.sprite && c.sprite.width === cw && c.sprite.height === ch ? c.sprite : makeCanvas(cw, ch);
+      const g = ctx2d(cv);
+      g.clearRect(0, 0, cw, ch);
+      g.save(); g.translate(cw * .5, ch * .55); g.scale(1, Math.min(1.8, ch / cw * 3));
+      cloudBank(g, 0, 0, cw * .48, lit, shade, .85, c.seed);
+      g.restore();
+      c.sprite = cv;
     }
     // Generate the same continuous cloud-bank blobs in world coordinates;
     // rasterization is lazy and limited to resident tiles.
@@ -210,19 +208,6 @@ export class SkyRenderer {
       const color = r() < 0.5 ? shade : mix(shade, lit, 0.35);
       this.deckBlobs.push({ x, y, radius, color });
     }
-  }
-
-  private getCloudSprite(c: Cloud, lit: string, shade: string): HTMLCanvasElement {
-    const cw = Math.ceil(c.w * 1.3), ch = Math.ceil(c.h * 1.8);
-    const cv = c.sprite && c.sprite.width === cw && c.sprite.height === ch ? c.sprite : makeCanvas(cw, ch);
-    const g = ctx2d(cv);
-    g.clearRect(0, 0, cw, ch);
-    g.save(); g.translate(cw * .5, ch * .55); g.scale(1, Math.min(1.8, ch / cw * 3));
-    cloudBank(g, 0, 0, cw * .48, lit, shade, .85, c.seed);
-    g.restore();
-    c.sprite = cv;
-    c.spriteKey = this.key;
-    return cv;
   }
 
   private getMilkyTile(id: number): HTMLCanvasElement {
@@ -250,12 +235,10 @@ export class SkyRenderer {
     const { ctx, W, H, hY, t, e } = f;
     this.setup(W, H);
     const viewLeft = f.viewLeft ?? 0;
-    const viewRight = viewLeft + (f.viewWidth ?? W);
     this.tilePlan = skyTileWindow(W, viewLeft, f.viewWidth ?? W);
-    this.residentTileIds.clear();
-    for (const id of this.tilePlan.resident) this.residentTileIds.add(id);
-    for (const id of this.milkyTiles.keys()) if (!this.residentTileIds.has(id)) this.milkyTiles.delete(id);
-    for (const id of this.deckTiles.keys()) if (!this.residentTileIds.has(id)) this.deckTiles.delete(id);
+    const residents = new Set(this.tilePlan.resident);
+    for (const id of this.milkyTiles.keys()) if (!residents.has(id)) this.milkyTiles.delete(id);
+    for (const id of this.deckTiles.keys()) if (!residents.has(id)) this.deckTiles.delete(id);
     const abyssDark = f.loc.land === "abyss" ? 0.25 : 0;
 
     const g = ctx.createLinearGradient(0, 0, 0, hY);
@@ -282,7 +265,7 @@ export class SkyRenderer {
       for (const id of this.tilePlan.visible) ctx.drawImage(this.getMilkyTile(id), id * SKY_TILE_WIDTH, 0);
 
       for (const [x, y, r, p, c] of this.stars) {
-        if (y > hY - 4 || x + r < viewLeft || x > viewRight) continue;
+        if (y > hY - 4) continue;
         ctx.globalAlpha = starA * (0.45 + 0.55 * Math.sin(t * (1.5 + (p % 1) * 2) + p)) * clamp(1 - y / hY + 0.25, 0, 1);
         ctx.fillStyle = c;
         ctx.fillRect(x, y, r, r);
@@ -295,31 +278,25 @@ export class SkyRenderer {
       ctx.globalAlpha = 1;
     }
 
-    // Meteors are born in the visible window and rasterized only while their
-    // streak intersects it; off-screen particles still age and expire.
-    const meteorEvent = hasActiveEvent(f, "meteor");
-    if (meteorEvent && this.meteorRandom() < f.dt * 1.6) {
-      this.meteors.push([viewLeft + this.meteorRandom() * (f.viewWidth ?? W), this.meteorRandom() * H * 0.2, 0]);
+    // метеоры
+    if (hasActiveEvent(f, "meteor")) {
+      if (Math.random() < f.dt * 1.6) this.meteors.push([Math.random() * W, Math.random() * H * 0.2, 0]);
+      for (const m of this.meteors) {
+        m[2] += f.dt;
+        const k = m[2] / 0.9;
+        const x = m[0] + k * 280, y = m[1] + k * 140;
+        const gr = ctx.createLinearGradient(x, y, x - 110, y - 55);
+        gr.addColorStop(0, `rgba(255,255,235,${af(1 - k)})`);
+        gr.addColorStop(1, "rgba(255,255,255,0)");
+        ctx.strokeStyle = gr;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - 110, y - 55);
+        ctx.stroke();
+      }
+      this.meteors = this.meteors.filter((m) => m[2] < 0.9);
     }
-    let liveMeteors = 0;
-    for (const m of this.meteors) {
-      m[2] += f.dt;
-      if (m[2] >= 0.9) continue;
-      this.meteors[liveMeteors++] = m;
-      const k = m[2] / 0.9;
-      const x = m[0] + k * 280, y = m[1] + k * 140;
-      if (x + 2 < viewLeft || x - 110 > viewRight || y < 0 || y - 55 > hY) continue;
-      const gr = ctx.createLinearGradient(x, y, x - 110, y - 55);
-      gr.addColorStop(0, `rgba(255,255,235,${af(1 - k)})`);
-      gr.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.strokeStyle = gr;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.lineTo(x - 110, y - 55);
-      ctx.stroke();
-    }
-    this.meteors.length = liveMeteors;
 
     this.drawSun(f);
     this.drawMoon(f);
@@ -351,7 +328,6 @@ export class SkyRenderer {
       ctx.lineWidth = 2;
       for (let i = 0; i < 6; i++) {
         const x0 = ((i * 260 + t * 2) % (W + 400)) - 200, y0 = H * (0.05 + (i % 3) * 0.04);
-        if (x0 + 220 < viewLeft || x0 > viewRight) continue;
         ctx.beginPath();
         ctx.moveTo(x0, y0);
         ctx.bezierCurveTo(x0 + 60, y0 - 10, x0 + 140, y0 + 6, x0 + 220, y0 - 4);
@@ -364,20 +340,10 @@ export class SkyRenderer {
       c.x += (c.speed + f.atmo.wind * 1.5 * f.atmo.windDir) * f.dt * (0.5 + c.layer);
       if (c.x > W + 40) c.x = -c.w * 1.4;
       if (c.x < -c.w * 1.5) c.x = W + 30;
+      if (!c.sprite) continue;
       const big = wt === "storm" || wt === "gale" || wt === "rain" || wt === "downpour" || wt === "blizzard" ? 1.35 : 1;
-      const drawWidth = c.w * 1.3 * big;
-      if (c.x + drawWidth < viewLeft || c.x > viewRight) {
-        c.sprite = null;
-        c.spriteKey = "";
-        continue;
-      }
-      const sprite = c.sprite && c.spriteKey === this.key ? c.sprite : this.getCloudSprite(c, lit, shade);
       ctx.globalAlpha = wt === "fog" ? 0.55 : 0.95;
-      ctx.drawImage(sprite, c.x, c.y - c.h * (big - 1), sprite.width * big, sprite.height * big);
-    }
-    for (let i = n; i < this.clouds.length; i++) {
-      this.clouds[i].sprite = null;
-      this.clouds[i].spriteKey = "";
+      ctx.drawImage(c.sprite, c.x, c.y - c.h * (big - 1), c.sprite.width * big, c.sprite.height * big);
     }
     ctx.globalAlpha = 1;
 
@@ -416,9 +382,6 @@ export class SkyRenderer {
     }
     if (alpha <= 0.01) return;
     const cx = W - f.sunX + W * 0.05;
-    const viewLeft = f.viewLeft ?? 0;
-    const viewRight = viewLeft + (f.viewWidth ?? W);
-    if (cx + H * 0.42 < viewLeft || cx - H * 0.42 > viewRight) return;
     const cy = hY + H * 0.1;
     ctx.save();
     ctx.beginPath();
@@ -431,9 +394,7 @@ export class SkyRenderer {
 
   private drawSun(f: Frame) {
     const { ctx, hY, H } = f;
-    const viewLeft = f.viewLeft ?? 0;
-    const viewRight = viewLeft + (f.viewWidth ?? f.W);
-    if (f.sunElev < -1 || f.sunX + H * 0.45 < viewLeft || f.sunX - H * 0.45 > viewRight) return;
+    if (f.sunElev < -1) return;
     const low = 1 - clamp(f.sunElev / 18, 0, 1);
     const r = H * 0.028 * (1 + low * 0.25);
     const core = mix(rgbHex(f.atmo.palette.sun), "#ff8a3c", low * 0.6);
@@ -443,7 +404,7 @@ export class SkyRenderer {
     halo.addColorStop(0.12, hexA(mix(rgbHex(f.atmo.palette.sun), "#ff9050", low * 0.55), 0.22 * vis));
     halo.addColorStop(1, "rgba(255,180,120,0)");
     ctx.fillStyle = halo;
-    ctx.fillRect(viewLeft, 0, viewRight - viewLeft, hY);
+    ctx.fillRect(0, 0, f.W, hY);
     ctx.save();
     ctx.beginPath();
     ctx.rect(0, -50, f.W, hY + 50);
@@ -459,10 +420,7 @@ export class SkyRenderer {
   private drawMoon(f: Frame) {
     if (!f.moonUp) return;
     const { ctx, H } = f;
-    const viewLeft = f.viewLeft ?? 0;
-    const viewRight = viewLeft + (f.viewWidth ?? f.W);
     const mx = f.moonX, my = f.moonY, r = H * 0.022;
-    if (mx + r * 10 < viewLeft || mx - r * 10 > viewRight) return;
     const phase = f.atmo.moonPhase;
     const lit = f.atmo.moonIllum;
     const vis = f.moonVis;
@@ -505,8 +463,6 @@ export class SkyRenderer {
 
   private drawGulls(f: Frame) {
     const { ctx, e, W, t } = f;
-    const viewLeft = f.viewLeft ?? 0;
-    const viewRight = viewLeft + (f.viewWidth ?? W);
     const gullsEv = hasActiveEvent(f, "gulls");
     if (e.isNight || f.loc.land === "abyss" || f.atmo.wind > 18 || f.atmo.precip > 0.82) return;
     if (!gullsEv && f.loc.land === "open" && f.spot.feature !== "seamount") return;
@@ -520,7 +476,6 @@ export class SkyRenderer {
       if (gg[0] > W + 40) gg[0] = -40;
       const s = gg[3];
       const gx = gg[0], gy = gg[1] + Math.sin(t * 0.5 + i * 2) * 18;
-      if (gx + 12 * s < viewLeft || gx - 12 * s > viewRight) continue;
       const fl = Math.sin(gg[2]) * 6 * s;
       ctx.lineWidth = 1.7 * s;
       ctx.beginPath();

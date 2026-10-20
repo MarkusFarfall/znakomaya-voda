@@ -36,7 +36,6 @@ import {
 interface Ambient { f: FishDef; x: number; depth: number; dir: 1 | -1; speed: number; len: number; phase: number; known: boolean }
 interface Creature { kind: "jelly" | "turtle" | "crab"; x: number; y: number; vx: number; vy: number; s: number; phase: number; hue: string }
 interface Bubble { x: number; y: number; r: number; v: number }
-interface FleetEntry { presence: LiveFriendPresence; x: number; sx: number; boat: typeof BOATS[number]; speed: number }
 interface Spray { x: number; y: number; vx: number; vy: number; t: number }
 
 
@@ -79,7 +78,6 @@ export class Scene {
   private schools: School[] = [];
   private schoolT = 3;
   private sky = new SkyRenderer();
-  private fxRocksScratch: [number, number][] = [];
   private land = new LandRenderer();
   private life = new AmbientLife();
   private bed = new SeabedRenderer();
@@ -104,7 +102,6 @@ export class Scene {
   private sonarT = 0;
   private whaleX = -500;
   private friendPresence: { presence: LiveFriendPresence; receivedAt: number; ageAtReceiptMs: number }[] = [];
-  private readonly fleetScratch: FleetEntry[] = [];
   private boatSource: Frame | null = null;
   private boatX = 0;
   private boatTurnScale = 1;
@@ -138,20 +135,10 @@ export class Scene {
     const { ctx, W, H, sc, hY, sY, cam, t, atmo } = f;
     const mast: readonly [number, number] = [boatX - 15 * sc, f.waveY(boatX) - 30 * sc];
     const tip: readonly [number, number] = rodTip ?? [boatX + 70 * sc, f.waveY(boatX) - 50 * sc];
-    const rocks = this.fxRocksScratch;
-    if (this.voyage === null) this.stream.rocks(rocks);
-    else {
-      const seaRocks = this.land.seaRocks;
-      for (let i = 0; i < Math.min(8, seaRocks.length); i++) {
-        const rock = seaRocks[i], point = rocks[i] ?? [0, 0];
-        point[0] = rock.x; point[1] = rock.y - rock.h; rocks[i] = point;
-      }
-      rocks.length = Math.min(8, seaRocks.length);
-    }
+    const rocks = this.voyage===null?this.stream.rocks():this.land.seaRocks.slice(0,8).map(rock=>[rock.x,rock.y-rock.h] as [number,number]);
     return {
       c: ctx, t, W, H, s: sc, q: Math.max(0, Math.min(2, this.quality)) as 0 | 1 | 2,
-      horizon: hY, surface: sY, seabed: sY + f.depthPx(f.spot.maxDepth), visW: W,
-      viewLeft: f.viewLeft ?? 0, viewRight: (f.viewLeft ?? 0) + (f.viewWidth ?? W), cam,
+      horizon: hY, surface: sY, seabed: sY + f.depthPx(f.spot.maxDepth), visW: W, cam,
       windPx: atmo.wind * atmo.windDir * 26 * sc,
       sAt: f.waveY,
       glow: (x, y, r, col, a) => glow(ctx, x, y, r, rgbHex(col), a),
@@ -279,9 +266,6 @@ export class Scene {
     const screenX = (x: number) => (x - this.cameraX) * z;
     f.viewLeft=this.cameraX;f.viewWidth=view.width;
     if(this.voyage===null){f.bedDepth=x=>e.bedAt(x/W);this.stream.update(f,this.cameraX,view.width,e.navigation.heading);}
-    // FxScene includes visible rocks and derived boat anchors. Build it once per
-    // frame and share it across event layers instead of allocating per pass.
-    const eventScene = fxCalls.length ? this.fxScene(f, fxBoatX) : null;
 
     const shake = e.shake * 4;
     ctx.save();
@@ -293,13 +277,13 @@ export class Scene {
     // ───── НАД ВОДОЙ ─────
     if (cam < sY + 30) {
       this.sky.draw(f);
-      if (eventScene) drawEventFx(eventScene, "sky", fxCalls);
+      if (fxCalls.length) drawEventFx(this.fxScene(f, fxBoatX), "sky", fxCalls);
       this.life.update(f);
       this.life.drawSky(f);
       if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.land.drawAbove(cf));else this.land.drawAbove(f);
-      if (eventScene) drawEventFx(eventScene, "horizon", fxCalls);
+      if (fxCalls.length) drawEventFx(this.fxScene(f, fxBoatX), "horizon", fxCalls);
       drawSeaBand(f, () => { if (this.quality > 0 && this.gfx.refl) {if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.land.drawReflection(cf,seaSurfaceColor(f)));else this.land.drawReflection(f,seaSurfaceColor(f));} });
-      if (eventScene) drawEventFx(eventScene, "surface", fxCalls);
+      if (fxCalls.length) drawEventFx(this.fxScene(f, fxBoatX), "surface", fxCalls);
       if (this.voyage === null) this.stream.draw(f, (c, cf) => c.land.drawSea(cf));
       else this.land.drawSea(f);
       if (!this.voyage) this.life.drawSea(f);
@@ -310,7 +294,7 @@ export class Scene {
 
     // ───── ПОД ВОДОЙ ─────
     drawUnderwaterBody(f);
-    if (eventScene) drawEventFx(eventScene, "under", fxCalls);
+    if (fxCalls.length) drawEventFx(this.fxScene(f, fxBoatX), "under", fxCalls);
     if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.bed.draw(cf,this.gfx.caustics));else this.bed.draw(f,this.gfx.caustics);
     this.drawWhale(f);
     this.updateSchools(f);
@@ -398,13 +382,7 @@ export class Scene {
       this.drawLine(f, tip, bobX, hookY, fishPos);
     }
     this.drawSprays(f);
-    if (eventScene) {
-      eventScene.boatX = bx;
-      eventScene.rodTip = tip;
-      eventScene.mast = [bx - 15 * sc, waveY(bx) - 30 * sc];
-      eventScene.lantern = [bx - 20 * sc, waveY(bx) - 20 * sc];
-      drawEventFx(eventScene, "front", fxCalls);
-    }
+    if (fxCalls.length) drawEventFx(this.fxScene(f, bx, tip), "front", fxCalls);
 
     if (this.voyage === null && !e.navigationMode && (e.phase === "idle" || e.phase === "charging")) {
       const dy = sY + depthPx(Math.min(e.s.targetDepth, e.maxDepth));
@@ -453,35 +431,20 @@ export class Scene {
   private drawFriendFleet(f: Frame, screenX: (x: number) => number, screenW: number, z: number) {
     if (!this.friendPresence.length) return;
     const now = Date.now();
-    let visibleCount = 0;
-    for (const entry of this.friendPresence) {
+    const visible = this.friendPresence.flatMap((entry) => {
       const { presence } = entry;
-      if (presence.location !== f.loc.id) continue;
+      if (presence.location !== f.loc.id) return [];
       const ageMs = entry.ageAtReceiptMs + Math.max(0, now - entry.receivedAt);
-      if (ageMs >= FRIEND_PRESENCE_TTL_MS) continue;
+      if (ageMs >= FRIEND_PRESENCE_TTL_MS) return [];
       const age = Math.max(0, Math.min(2.5, ageMs / 1000));
       const x = clamp(presence.x + presence.velocity * age, 0, 1) * f.W;
       const sx = screenX(x);
-      if (sx < -90 || sx > screenW + 90) continue;
+      if (sx < -90 || sx > screenW + 90) return [];
       const boat = BOATS[presence.boat] ?? BOATS[0];
-      const speed = Math.abs(presence.velocity * f.W) / navigationSpeed(boat);
-      const item = this.fleetScratch[visibleCount] ?? { presence, x, sx, boat, speed };
-      item.presence = presence; item.x = x; item.sx = sx; item.boat = boat; item.speed = speed;
-      this.fleetScratch[visibleCount++] = item;
-    }
-    this.fleetScratch.length = visibleCount;
-    // Stable near-sorted insertion avoids allocating a mapped/sorted array every frame.
-    for (let i = 1; i < visibleCount; i++) {
-      const item = this.fleetScratch[i];
-      let j = i - 1;
-      while (j >= 0 && this.fleetScratch[j].x > item.x) {
-        this.fleetScratch[j + 1] = this.fleetScratch[j];
-        j--;
-      }
-      this.fleetScratch[j + 1] = item;
-    }
+      return [{ presence, x, sx, boat, speed: Math.abs(presence.velocity * f.W) / navigationSpeed(boat) }];
+    }).sort((a, b) => a.x - b.x);
 
-    for (const { presence, x, boat, speed } of this.fleetScratch) {
+    for (const { presence, x, sx, boat, speed } of visible) {
       drawFleetBoat(f, x, boat, presence.heading, speed, presence.activity);
       const { ctx } = f;
       const label = presence.username.slice(0, 24);
@@ -608,10 +571,6 @@ export class Scene {
     if (!hasActiveEvent(f, "whale")) return;
     this.whaleX += f.dt * 40;
     if (this.whaleX > W + 500) this.whaleX = -500;
-    const left = f.viewLeft ?? 0, right = left + (f.viewWidth ?? W);
-    // Keep the event's world-time progression, but don't build its bezier geometry
-    // while the whale is hundreds of pixels outside the camera.
-    if (this.whaleX + 330 * sc < left || this.whaleX - 330 * sc > right) return;
     const wy = sY + f.depthPx(Math.min(f.spot.maxDepth * 0.5, 40));
     ctx.save();
     ctx.translate(this.whaleX, wy);
@@ -663,8 +622,6 @@ export class Scene {
     for (const sch of this.schools) {
       sch.x += sch.dir * sch.speed * f.dt;
       sch.phase += f.dt;
-      const formationHalfWidth = 140 * sch.size;
-      if (sch.x + formationHalfWidth < left || sch.x - formationHalfWidth > right) continue;
       const cy = sY + f.depthPx(sch.depth);
       for (let i = 0; i < sch.n; i++) {
         const [ox, oy] = sch.offsets[i];
@@ -722,9 +679,6 @@ export class Scene {
         c.y += (c.vy * pulse * 3 + 2) * f.dt;
         c.x += c.vx * f.dt;
         if (c.y < sY + 10) c.vy = Math.abs(c.vy);
-        // Keep the swimmer's cheap motion current, but defer terrain sampling,
-        // path construction and gradients until it can affect the viewport.
-        if (c.x + 24 * c.s < left || c.x - 24 * c.s > right) continue;
         const floor=Math.min(this.bottomAt(f,c.x-16*c.s),this.bottomAt(f,c.x+16*c.s))-40*c.s;
         if(floor<sY+12*c.s)continue;
         if(c.y>floor){c.y=floor;c.vy=-Math.abs(c.vy);}
@@ -750,7 +704,6 @@ export class Scene {
         ctx.restore();
       } else if (c.kind === "turtle") {
         c.x += c.vx * f.dt;
-        if (c.x + 40 * c.s < left || c.x - 40 * c.s > right) continue;
         const floor=Math.min(this.bottomAt(f,c.x-35*c.s),this.bottomAt(f,c.x+35*c.s))-26*c.s;
         if(floor<sY+16*c.s)continue;
         c.y=Math.max(sY+16*c.s,Math.min(c.y,floor));
@@ -794,7 +747,6 @@ export class Scene {
         ctx.restore();
       } else {
         c.x += c.vx * f.dt * (Math.sin(c.phase * 1.5) > 0 ? 1 : 0.1);
-        if (c.x + 12 * c.s < left || c.x - 12 * c.s > right) continue;
         c.y = this.bottomAt(f,c.x) - 3 * c.s;
         ctx.save();
         ctx.translate(c.x, c.y);
@@ -869,7 +821,6 @@ export class Scene {
     for (const a of this.ambient) {
       a.x += a.dir * a.speed * f.dt;
       a.phase += f.dt * (3 + a.speed * 0.05);
-      if (a.x + a.len * 0.5 < left - 12 || a.x - a.len * 0.5 > right + 12) continue;
       let y = sY + f.depthPx(a.depth) + Math.sin(a.phase * 0.3) * 6;
       const by = this.bottomAt(f,a.x) - a.len * 0.3;
       if (y > by) y = by;
@@ -886,20 +837,18 @@ export class Scene {
 
   private glowPass(f: Frame) {
     const { ctx, sY, cam, H, e, t, W } = f;
-    const viewLeft = f.viewLeft ?? 0, viewRight = viewLeft + (f.viewWidth ?? W);
     for (const a of this.ambient) {
-      if (!a.f.glow || !a.known || a.x + a.len * 0.5 < viewLeft || a.x - a.len * 0.5 > viewRight) continue;
+      if (!a.f.glow || !a.known) continue;
       const y = Math.min(sY + f.depthPx(a.depth) + Math.sin(a.phase * 0.3) * 6, this.bottomAt(f,a.x) - a.len * 0.3);
       if (y < cam - 50 || y > cam + H + 50) continue;
       drawFishGlow(ctx, a.f, a.x, y, a.len, a.dir, a.phase, 1);
     }
     for (const c of this.creatures) {
-      if (c.kind === "jelly" && c.x + 24 * c.s >= viewLeft && c.x - 24 * c.s <= viewRight && (f.loc.id === "abyss" || e.isNight)) glow(ctx, c.x, c.y - 3, 5 * c.s, c.hue, 0.5 + Math.sin(c.phase * 2) * 0.3);
+      if (c.kind === "jelly" && (f.loc.id === "abyss" || e.isNight)) glow(ctx, c.x, c.y - 3, 5 * c.s, c.hue, 0.5 + Math.sin(c.phase * 2) * 0.3);
     }
     if (hasActiveEvent(f, "plankton")) {
       for (let i = 0; i < 70; i++) {
         const x = (i * 97.3 + Math.sin(t * 0.3 + i) * 30) % W;
-        if (x < viewLeft || x > viewRight) continue;
         const y = sY + 6 + ((i * 53.7) % 1) * 0 + ((i * 37) % 160) * f.sc + Math.sin(t + i) * 8;
         const a = 0.4 + Math.sin(t * 3 + i * 1.3) * 0.4;
         if (a > 0.1) glow(ctx, x, y, 1.3, "#60ffd8", a);
@@ -1172,13 +1121,11 @@ export class Scene {
 
   private drawBubbles(f: Frame) {
     const { ctx, sY, cam } = f;
-    const left = f.viewLeft ?? 0, right = left + (f.viewWidth ?? f.W);
     ctx.strokeStyle = "rgba(220,245,255,0.65)";
     ctx.lineWidth = 1;
     for (const b of this.bubbles) {
       b.y -= b.v * f.dt;
       b.x += Math.sin(b.y * 0.05) * 0.3;
-      if (b.x + b.r < left - 80 || b.x - b.r > right + 80) continue;
       ctx.beginPath();
       ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
       ctx.stroke();
@@ -1188,22 +1135,15 @@ export class Scene {
     let keepBubble = 0;
     for (let i = 0; i < this.bubbles.length; i++) {
       const bubble = this.bubbles[i];
-      if (bubble.y > sY && bubble.y > cam - 50 && bubble.x > left - 80 && bubble.x < right + 80) this.bubbles[keepBubble++] = bubble;
+      if (bubble.y > sY && bubble.y > cam - 50) this.bubbles[keepBubble++] = bubble;
     }
     this.bubbles.length = keepBubble;
     if (this.bubbles.length > 220) this.bubbles.splice(0, this.bubbles.length - 220);
   }
 
   private drawPrecipitation(f: Frame) {
-    const cameraLeft = f.viewLeft ?? 0;
-    const cameraRight = cameraLeft + (f.viewWidth ?? f.W);
-    const weatherGutter = 64;
     const o = {
-      // Weather simulation follows the camera, not the complete multi-region world.
-      // A narrow gutter lets moving drops enter naturally without a world-wide pool.
-      x0: Math.max(0, cameraLeft - weatherGutter),
-      x1: Math.min(f.W, cameraRight + weatherGutter),
-      top: -60, bottom: f.sY + f.amp + 6,
+      x0: 0, x1: f.W, top: -60, bottom: f.sY + f.amp + 6,
       floor: f.waveY, horizon: f.hY,
       wind: f.atmo.wind * f.atmo.windDir * 26 * f.sc, s: f.sc,
       q: clamp(Math.round(f.quality), 0, 2) as 0 | 1 | 2,

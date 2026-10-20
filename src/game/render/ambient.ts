@@ -113,24 +113,12 @@ export class AmbientLife {
         }
       }
     }
-    let keep = 0;
-    for (let i = 0; i < this.list.length; i++) {
-      const h = this.list[i];
-      h.t += dt;
-      if (h.t < h.dur) this.list[keep++] = h;
-    }
-    this.list.length = keep;
+    for (const h of this.list) h.t += dt;
+    this.list = this.list.filter((h) => h.t < h.dur);
   }
 
   private x(h: Happening) {
     return h.x0 + h.vx * h.t;
-  }
-
-  private inView(f: Frame, h: Happening) {
-    const left = f.viewLeft ?? 0;
-    const right = left + (f.viewWidth ?? f.W);
-    const x = this.x(h);
-    return x >= left - 500 && x <= right + 500;
   }
 
   private allowed(f: Frame, k: Kind) {
@@ -149,7 +137,6 @@ export class AmbientLife {
   /** В небе (за сушей) */
   drawSky(f: Frame) {
     for (const h of this.list) {
-      if (!this.inView(f, h)) continue;
       const k = h.t / h.dur;
       if (h.kind === "plane") this.plane(f, h, k);
       else if (h.kind === "birds") this.birds(f, h, k);
@@ -162,11 +149,8 @@ export class AmbientLife {
 
   /** На воде (полоса моря) */
   drawSea(f: Frame) {
-    // The list is tiny and order is purely visual; sorting it in place avoids a
-    // fresh array allocation on every animation frame.
-    this.list.sort((a, b) => a.p - b.p);
-    for (const h of this.list) {
-      if (!this.inView(f, h)) continue;
+    const sorted = [...this.list].sort((a, b) => a.p - b.p);
+    for (const h of sorted) {
       const k = h.t / h.dur;
       switch (h.kind) {
         case "cargo": this.cargo(f, h, k); break;

@@ -21,9 +21,6 @@ export interface FxScene {
   surface: number;
   seabed: number;
   visW: number;
-  /** World-space camera bounds used to avoid offscreen procedural work. */
-  viewLeft: number;
-  viewRight: number;
   cam: number;
   windPx: number;
   sAt(x: number): number;
@@ -443,7 +440,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       for (let i = 0; i < n; i++) {
         const x = h(i + 60) * S.W + Math.sin(t * 0.1 + i) * 30 * s;
         const y = S.surface + (0.06 + h(i + 61) * 0.75) * S.H + Math.sin(t * 0.3 + i) * 12 * s;
-        if (x < S.viewLeft - 40 || x > S.viewRight + 40 || y < S.cam - 40 || y > S.cam + S.H + 40) continue;
+        if (y < S.cam - 40 || y > S.cam + S.H + 40) continue;
         const r = (5 + h(i + 62) * 7) * s;
         const pulse = (Math.sin(t * 1.8 + i) + 1) / 2;
         const col: RGB = i % 3 ? [235, 150, 220] : [160, 200, 255];
@@ -469,7 +466,6 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const y = farY(S, pj) + 1;
         for (let i = 0; i < 5; i++) {
           const x = wrap(h(j * 7 + i) * (S.W + 200) + t * (8 + pj * 20) * s, S.W + 200) - 100;
-          if (x + (6 + pj * 50) * s < S.viewLeft || x > S.viewRight) continue;
           c.globalAlpha = a * (0.25 + 0.6 * Math.max(0, Math.sin(t * 2 + i + j * 1.3)));
           c.fillRect(x, y, (6 + pj * 50) * s, Math.max(0.8, pj * 1.8 * s));
         }
@@ -484,15 +480,11 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       c.lineWidth = 2.2 * s;
       c.globalAlpha = a * (0.45 + 0.25 * Math.sin(t * 3));
       c.beginPath();
-      const x0 = Math.max(0, Math.ceil(S.viewLeft / 10) * 10);
-      const x1 = Math.min(S.W, S.viewRight);
-      let first = true;
-      for (let x = x0; x <= x1; x += 10) {
+      for (let x = 0; x <= S.W; x += 10) {
         const y = S.sAt(x) + 1;
-        if (first) { c.moveTo(x, y); first = false; }
+        if (x === 0) c.moveTo(x, y);
         else c.lineTo(x, y);
       }
-      if (first && x0 <= x1) c.moveTo(x0, S.sAt(x0) + 1);
       c.stroke();
       c.fillStyle = 'rgb(160,255,240)';
       for (let i = 0; i < 40; i++) {
@@ -529,7 +521,6 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const range = S.H * 0.95;
       for (let i = 0; i < n; i++) {
         const x = h(i + 100) * S.W + Math.sin(t * 0.6 + i) * 8 * s;
-        if (x < S.viewLeft - 8 * s || x > S.viewRight + 8 * s) continue;
         const y = S.surface + range - wrap(t * (10 + h(i + 101) * 10) * s + h(i + 102) * range, range);
         if (y < S.cam - 10 || y > S.cam + S.H + 10) continue;
         c.globalAlpha = e.k * (0.5 + 0.4 * Math.sin(t * 3 + i));
@@ -560,8 +551,6 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const ang = 0.55 + (h(k2 + 3) - 0.5) * 0.35;
         const x = x0 + Math.cos(ang) * len * q * 2;
         const y = y0 + Math.sin(ang) * len * q * 2;
-        const tailX = x - Math.cos(ang) * len;
-        if (Math.max(x, tailX) < S.viewLeft || Math.min(x, tailX) > S.viewRight) continue;
         const g = c.createLinearGradient(x, y, x - Math.cos(ang) * len, y - Math.sin(ang) * len);
         g.addColorStop(0, `rgba(255,250,235,${e.k * dark * Math.sin(q * PI)})`);
         g.addColorStop(1, 'rgba(255,250,235,0)');
@@ -641,10 +630,8 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       c.fillRect(-20, -S.H, S.W + 40, S.horizon + S.H);
       c.fillStyle = '#fff8ea';
       for (let i = 0; i < 60; i++) {
-        const x = h(i + 3) * S.W;
-        if (x < S.viewLeft || x > S.viewRight) continue;
         c.globalAlpha = k * (0.4 + 0.5 * h(i + 7)) * (0.6 + 0.4 * Math.sin(t * 2 + i));
-        c.fillRect(x, h(i + 4) * S.horizon * 0.85, 1.3, 1.3);
+        c.fillRect(h(i + 3) * S.W, h(i + 4) * S.horizon * 0.85, 1.3, 1.3);
       }
       const { x, y } = S.sun;
       c.globalCompositeOperation = 'lighter';
@@ -917,19 +904,16 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       if (a < 0.02) return;
       const col = css(mix(S.pal.cloud, [12, 14, 18], 0.78), a * 0.9);
       c.fillStyle = col;
-      const from = Math.max(-20, S.viewLeft - 20);
-      const to = Math.min(S.W + 20, S.viewRight + 20);
       c.beginPath();
-      c.moveTo(from, S.horizon + 1);
-      for (let x = from; x <= to; x += 16) c.lineTo(x, S.horizon - S.H * (0.06 + 0.035 * Math.sin(x * 0.012 + t * 0.05) + 0.015 * Math.sin(x * 0.05)) * (0.4 + a * 0.6));
-      c.lineTo(to, S.horizon + 1);
+      c.moveTo(-20, S.horizon + 1);
+      for (let x = -20; x <= S.W + 20; x += 16) c.lineTo(x, S.horizon - S.H * (0.06 + 0.035 * Math.sin(x * 0.012 + t * 0.05) + 0.015 * Math.sin(x * 0.05)) * (0.4 + a * 0.6));
+      c.lineTo(S.W + 20, S.horizon + 1);
       c.fill();
       c.strokeStyle = css(mix(S.pal.cloud, [12, 14, 18], 0.6), a * 0.25);
       c.lineWidth = 1;
       c.beginPath();
       for (let i = 0; i < 40; i++) {
         const x = h(i + 200) * S.W;
-        if (x < S.viewLeft - 24 || x > S.viewRight + 24) continue;
         c.moveTo(x, S.horizon - S.H * 0.05);
         c.lineTo(x + S.windPx * 0.04, S.horizon);
       }
@@ -1288,7 +1272,6 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         if (y < S.cam - 30 || y > S.cam + S.H + 30) continue;
         const span = S.W + 300;
         const x = wrap(t * 22 * s * (0.6 + h(i + 601)) + h(i + 602) * span, span) - 150;
-        if (x < S.viewLeft - 90 * s || x - 78 * s > S.viewRight) continue;
         c.globalAlpha = e.k * 0.65;
         c.beginPath();
         for (let k = 0; k < 14; k++) {
@@ -1312,13 +1295,12 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       for (let i = 0; i < n; i++) {
         const y = S.cam - 20 + wrap(h(i + 700) * range + t * 820 * s * (0.8 + h(i + 701) * 0.4), range);
         const x = wrap(h(i + 702) * (S.W + 100) + t * S.windPx * 0.5, S.W + 100) - 50;
-        if (x < S.viewLeft - 2 * s || x > S.viewRight + 2 * s || y > S.sAt(x)) continue;
+        if (y > S.sAt(x)) continue;
         c.fillRect(x, y, 2 * s, 2.6 * s);
       }
       for (let i = 0; i < 30 * e.k; i++) {
         const ph = (t * 3 + h(i + 710)) % 1;
         const x = h(i + 711 + Math.floor(t * 3 + h(i + 710))) * S.W;
-        if (x < S.viewLeft || x > S.viewRight) continue;
         c.globalAlpha = 1 - ph;
         c.fillRect(x, S.sAt(x) - ph * 6 * s, 1.5 * s, 1.5 * s);
       }
@@ -1372,7 +1354,6 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const y = S.surface + h(i + 950) * S.H * 0.8;
         if (y < S.cam - 10 || y > S.cam + S.H + 10) continue;
         const x = wrap(t * (80 + h(i + 951) * 60) * s + h(i + 952) * S.W, S.W + 40) - 20;
-        if (x + 22 * s < S.viewLeft || x > S.viewRight) continue;
         c.globalAlpha = e.k * 0.22;
         c.fillRect(x, y, 22 * s, 1);
       }
