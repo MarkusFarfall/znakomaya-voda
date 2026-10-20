@@ -8,6 +8,9 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
+    "profile:rendering": "tsx scripts/profile-rendering.ts",
+    "test:sky-visual": "tsx scripts/test-sky-visual.ts",
+    "test:render-visual": "tsx scripts/test-render-visual.ts",
     "prices": "tsx scripts/check-prices.ts",
     "db:migrate": "node scripts/db-migrate.mjs"
   },

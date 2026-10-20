@@ -46,7 +46,7 @@ export class PrecipitationField {
     const near = this.random() < 0.28;
     const depth = near ? 1 : 0.08 + this.random() * 0.86;
     const size = (near ? 0.9 : 0.4) + this.random() * (near ? 0.5 : 0.35);
-    const padding = Math.min(450, Math.abs(this.wind) * 0.65 + 40);
+    const padding = Math.min(96, Math.abs(this.wind) * 0.15 + 24);
     const width = o.x1 - o.x0;
     const x = o.x0 - padding + this.random() * (width + padding * 2);
     const bottom = this.ground(o, x, depth);
@@ -58,12 +58,14 @@ export class PrecipitationField {
   step(o: PrecipitationView, dt: number) {
     dt = Number.isFinite(dt) ? clamp(dt, 0, 0.1) : 0;
     if (o.active === false) { this.drops.length = 0; this.impacts.length = 0; this.amount = 0; return; }
-    const key = `${o.x0}:${o.x1}:${o.top}:${o.bottom}:${o.s}`;
+    // Horizontal camera windows slide through world-space particles. Resetting on
+    // every camera step recreates the whole field and causes visible weather pops.
+    const key = `${o.top}:${o.bottom}:${o.s}`;
     if (key !== this.key) { this.key = key; this.drops.length = 0; this.impacts.length = 0; }
     this.elapsed += dt;
     this.amount += (clamp(o.intensity, 0, 1.5) - this.amount) * -Math.expm1(-dt * 2.5);
     this.wind += (clamp(o.wind, -900, 900) - this.wind) * -Math.expm1(-dt * 2);
-    const padding = Math.min(450, Math.abs(this.wind) * 0.65 + 40);
+    const padding = Math.min(96, Math.abs(this.wind) * 0.15 + 24);
     const area = Math.max(0.1, (o.x1 - o.x0 + padding * 2) / 1100 * (o.bottom - o.top) / 520);
     const count = Math.min(o.q === 0 ? 130 : o.q === 1 ? 280 : 480,
       Math.round((this.kind === "rain" ? 230 : 180) * area * this.amount * [0.45, 0.7, 1][o.q]));
@@ -84,7 +86,7 @@ export class PrecipitationField {
             this.impacts.push({ x: p.x, depth: p.depth, age: 0, size: p.size });
           }
           this.drops[i] = this.spawn(o, false);
-        } else if (p.x < o.x0 - 520 || p.x > o.x1 + 520) this.drops[i] = this.spawn(o, false);
+        } else if (p.x < o.x0 - padding || p.x > o.x1 + padding) this.drops[i] = this.spawn(o, false);
       }
     }
     for (let i = this.impacts.length - 1; i >= 0; i--) {

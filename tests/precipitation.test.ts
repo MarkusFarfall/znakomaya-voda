@@ -83,6 +83,20 @@ test("drawing preserves canvas state, cannot advance physics and clips in world 
   assert.ok(vertices.some(([x, y]) => Math.abs(y - view.floor(x)) < 0.001));
 });
 
+test("camera-window streaming keeps a viewport-sized pool and preserves overlapping drops", () => {
+  const field = new PrecipitationField("rain");
+  const narrow = { ...view, x0: 2400, x1: 3600 };
+  warm(field, narrow);
+  const before = field.snapshot().drops;
+  assert.ok(before.length > 80 && before.length < 400, `viewport pool unexpectedly large: ${before.length}`);
+  const phases = new Set(before.map(p => p.phase));
+  field.step({ ...narrow, x0: 2656, x1: 3856 }, 1 / 60);
+  const after = field.snapshot().drops;
+  const survivors = after.filter(p => phases.has(p.phase));
+  assert.ok(survivors.length > 50, `camera shift recreated too many drops: ${survivors.length}`);
+  assert.ok(after.every(p => p.x >= 2656 - 160 && p.x <= 3856 + 160));
+});
+
 test("camera/zoom changes need no particle resampling: view is world-space only", () => {
   const a = new PrecipitationField("rain"), b = new PrecipitationField("rain");
   warm(a); warm(b);

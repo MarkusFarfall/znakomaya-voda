@@ -10,6 +10,16 @@ interface Bird { x: number; y: number; s: number; seed: number }
 
 const TAU = Math.PI * 2;
 
+function clipClosedPathX(points:number[],left:number,right:number){
+  if(points.length<6||right<=left)return [];
+  let vs:[number,number][]=[];for(let i=0;i+1<points.length;i+=2)vs.push([points[i],points[i+1]]);
+  const edge=(src:[number,number][],x:number,greater:boolean)=>{const out:[number,number][]=[];if(!src.length)return out;let a=src[src.length-1],ia=greater?a[0]>=x:a[0]<=x;for(const b of src){const ib=greater?b[0]>=x:b[0]<=x;if(ia!==ib){const t=(x-a[0])/(b[0]-a[0]);out.push([x,a[1]+(b[1]-a[1])*t]);}if(ib)out.push(b);a=b;ia=ib;}return out;};
+  vs=edge(edge(vs,left,true),right,false);return vs.flatMap(([x,y])=>[x,y]);
+}
+function clipOpenPathX(points:number[],left:number,right:number){
+  const out:number[]=[];for(let i=0;i+3<points.length;i+=2){const x0=points[i],y0=points[i+1],x1=points[i+2],y1=points[i+3];if(x0===x1){if(x0>=left&&x0<=right)out.push(x0,y0,x1,y1);continue;}const lo=Math.max(0,Math.min(1,(left-x0)/(x1-x0))),hi=Math.max(0,Math.min(1,(right-x0)/(x1-x0))),a=Math.min(lo,hi),b=Math.max(lo,hi);if(Math.max(x0,x1)<left||Math.min(x0,x1)>right||a>b)continue;out.push(x0+(x1-x0)*a,y0+(y1-y0)*a,x0+(x1-x0)*b,y0+(y1-y0)*b);}return out;
+}
+
 /** Сезонный цвет камыша */
 function reedColors(season: number): [string, string] {
   switch (season) {
@@ -49,8 +59,20 @@ export class ExtraLand {
     this.islands=away(this.islands);this.reeds=away(this.reeds);this.huts=away(this.huts);this.stacks=away(this.stacks);
     this.mangroves=away(this.mangroves);this.sandbars=away(this.sandbars);this.cypress=away(this.cypress);this.bergs=away(this.bergs);
   }
+  trimWindow(left:number,right:number){
+    const keep=<T extends {x:number}>(items:T[],pad=0)=>items.filter(o=>o.x+pad>=left&&o.x-pad<=right);
+    this.islands=keep(this.islands,180);this.reeds=keep(this.reeds,100);this.huts=keep(this.huts,80);
+    this.buoys=keep(this.buoys,40);this.otters=keep(this.otters,30);this.stacks=keep(this.stacks,40);
+    this.bergs=keep(this.bergs,80);this.mats=keep(this.mats,60);this.sandbars=keep(this.sandbars,100);
+    this.mangroves=keep(this.mangroves,100);this.cypress=keep(this.cypress,40);this.egrets=keep(this.egrets,30);
+    this.poplars=this.poplars.filter(x=>x>=left-40&&x<=right+40);
+    this.far=clipClosedPathX(this.far,left,right);
+    if(this.cone&&(this.cone.x1<left||this.cone.x0>right))this.cone=null;
+    if(this.cliff){this.cliff.pts=clipClosedPathX(this.cliff.pts,left,right);if(this.cliff.top.length>2)this.cliff.top=clipOpenPathX(this.cliff.top,left,right);}
+  }
   build(L: LandRenderer, f: Frame) {
     const { W, H, hY, sY, spot, loc } = f;
+    const rangeLeft = f.buildLeft ?? 0, rangeRight = f.buildRight ?? W;
     const key = `${spot.id}|${W}|${H}|${f.e.season}|${f.atmo.snowCover>0.18}`;
     if (key === this.key) return;
     this.key = key;
@@ -123,20 +145,32 @@ export class ExtraLand {
         this.far = far.pts;
         const x0 = feat === "canyon" ? W * 0.7 : W * 0.56;
         const topY = hY - H * (feat === "otters" ? 0.13 : 0.17);
-        const pts: number[] = [x0, hY + 2];
-        const top: number[] = [];
-        for (let k = 0; k <= 10; k++) pts.push(x0 + k * W * 0.006 + (hash1(k * 5.1 + spot.seed) - 0.5) * 8, hY - (hY - topY) * (k / 10) + (hash1(k * 2.7) - 0.5) * 10);
-        for (let x = x0 + W * 0.06; x <= W * 1.06; x += 7) {
-          const y = topY + (fbm(x * 0.012, 7.3) - 0.5) * H * 0.05 + Math.sin(x * 0.05) * 3;
-          pts.push(x, y);
-          top.push(x, y);
+        const cliffLeft = Math.max(x0, rangeLeft), cliffRight = Math.min(W * 1.06, rangeRight);
+        const face: number[] = [x0, hY + 2];
+        for (let k = 0; k <= 10; k++) face.push(x0 + k * W * 0.006 + (hash1(k * 5.1 + spot.seed) - 0.5) * 8, hY - (hY - topY) * (k / 10) + (hash1(k * 2.7) - 0.5) * 10);
+        const faceEnd = face[face.length - 2];
+        const topAt = (x: number) => topY + (fbm(x * 0.012, 7.3) - 0.5) * H * 0.05 + Math.sin(x * 0.05) * 3;
+        const topStart = Math.max(faceEnd, cliffLeft), top: number[] = [];
+        if (topStart <= cliffRight) {
+          top.push(topStart, topAt(topStart));
+          const firstTop = x0 + W * 0.06 + Math.max(0, Math.ceil((topStart - (x0 + W * 0.06)) / 7)) * 7;
+          for (let x = firstTop; x < cliffRight; x += 7) if (x > topStart) top.push(x, topAt(x));
+          if (cliffRight > topStart) top.push(cliffRight, topAt(cliffRight));
         }
-        pts.push(W * 1.06, hY + 2);
+        const pts: number[] = [cliffLeft, hY + 2];
+        if (cliffRight > cliffLeft) {
+          if (cliffLeft < faceEnd) pts.push(...clipOpenPathX(face, cliffLeft, Math.min(cliffRight, faceEnd)));
+          pts.push(...top, cliffRight, hY + 2);
+        }
         this.cliff = { pts, top };
-        L.layers.push({ pts, base: "#3a3632", haze: 0.3, reflect: true, hidden: true, x0, x1: W * 1.06 });
+        L.layers.push({ pts, base: "#3a3632", haze: 0.3, reflect: true, hidden: true, x0: cliffLeft, x1: cliffRight });
+        const totalTop = Math.max(0, Math.floor((W * 1.06 - (x0 + W * 0.06)) / 7) + 1);
         for (let i = 0; i < 5; i++) {
-          const ti = Math.floor(r() * (top.length / 2 - 2)) * 2;
-          this.cypress.push({ x: top[ti], p: top[ti + 1], w: (26 + r() * 30) * f.sc, h: (18 + r() * 16) * f.sc, seed: r() * 100 });
+          const ti = Math.floor(r() * Math.max(1, totalTop));
+          const x = x0 + W * 0.06 + ti * 7;
+          const p = topAt(x);
+          if (x >= rangeLeft - 40 && x <= rangeRight + 40) this.cypress.push({ x, p, w: (26 + r() * 30) * f.sc, h: (18 + r() * 16) * f.sc, seed: r() * 100 });
+          else { r(); r(); r(); }
         }
         const nStacks = feat === "otters" ? 2 : 3;
         for (let i = 0; i < nStacks; i++) this.stacks.push({ x: W * (0.36 + i * 0.1 + r() * 0.04), p: 0.12 + r() * 0.3, w: 12 + r() * 16, h: 26 + r() * 40, seed: r() * 100 });
@@ -146,10 +180,12 @@ export class ExtraLand {
         break;
       }
       case "mangrove": {
-        const pts: number[] = [-W * 0.05, hY + 2];
-        for (let x = -W * 0.05; x <= W * 1.05; x += 6) pts.push(x, hY - H * 0.022 - (fbm(x * 0.02, 3.3) * H * 0.028));
-        pts.push(W * 1.05, hY + 2);
-        L.layers.push({ pts, base: "#2e4a2c", haze: 0.55, reflect: true, hidden: true, x0: -W * 0.05, x1: W * 1.05 });
+        const x0 = Math.max(-W * 0.05, rangeLeft), x1 = Math.min(W * 1.05, rangeRight);
+        const shoreY = (x: number) => hY - H * 0.022 - fbm(x * 0.02, 3.3) * H * 0.028;
+        const pts: number[] = [x0, hY + 2, x0, shoreY(x0)];
+        for (let x = -W * 0.05 + Math.max(0, Math.ceil((x0 + W * 0.05) / 6)) * 6; x < x1; x += 6) if (x > x0) pts.push(x, shoreY(x));
+        if (x1 > x0) pts.push(x1, shoreY(x1), x1, hY + 2);
+        L.layers.push({ pts, base: "#2e4a2c", haze: 0.55, reflect: true, hidden: true, x0, x1 });
         this.far = pts;
         const both = feat === "creek";
         const nLeft = feat === "flats" ? 1 : 3;
@@ -194,11 +230,19 @@ export class ExtraLand {
         this.far = mt.pts;
         const near = feat === "iceedge";
         const sx0 = near ? W * 0.3 : W * 0.5, sh = H * (near ? 0.11 : 0.045);
-        const pts: number[] = [sx0, hY + 2, sx0 + 4, hY - sh];
-        for (let x = sx0 + 10; x <= W * 1.06; x += 12) pts.push(x, hY - sh + (hash1(x * 0.13) - 0.5) * 2);
-        pts.push(W * 1.06, hY + 2);
+        const cliffLeft = Math.max(sx0, rangeLeft), cliffRight = Math.min(W * 1.06, rangeRight);
+        const iceTop = (x: number) => x <= sx0 + 4 ? hY - sh : hY - sh + (hash1(x * 0.13) - 0.5) * 2;
+        const pts: number[] = [cliffLeft, hY + 2];
+        if (cliffRight > cliffLeft) {
+          if (cliffLeft <= sx0 + 4) pts.push(sx0 + 4, hY - sh);
+          else pts.push(cliffLeft, iceTop(cliffLeft));
+          const firstIce = sx0 + 10 + Math.max(0, Math.ceil((cliffLeft - (sx0 + 10)) / 12)) * 12;
+          for (let x = firstIce; x < cliffRight; x += 12) if (x > cliffLeft) pts.push(x, iceTop(x));
+          if (cliffRight > sx0 + 4) pts.push(cliffRight, iceTop(cliffRight));
+          pts.push(cliffRight, hY + 2);
+        }
         this.cliff = { pts, top: [sx0, sh] };
-        L.layers.push({ pts, base: "#e4eef4", haze: 0.3, reflect: true, hidden: true, x0: sx0, x1: W * 1.06 });
+        L.layers.push({ pts, base: "#e4eef4", haze: 0.3, reflect: true, hidden: true, x0: cliffLeft, x1: cliffRight });
         const nb = feat === "icebergs" ? 7 : feat === "polynya" ? 2 : 3;
         for (let i = 0; i < nb; i++) {
           const p = 0.1 + r() * 0.75;
@@ -654,6 +698,7 @@ export class ExtraLand {
 
   private drawKelpCliffs(L: LandRenderer, f: Frame) {
     const { ctx, hY, H, W, t, night, e } = f;
+    const view = horizontalRange(f, 24);
     if (!this.cliff) return;
     const c = L.colorOf(f, "#3a3632", 0.3);
     const g = ctx.createLinearGradient(0, hY - H * 0.2, 0, hY);
@@ -679,6 +724,7 @@ export class ExtraLand {
     ctx.lineWidth = 1;
     for (let k = 0; k < 9; k++) {
       const x = tp[0] + (W - tp[0]) * (k / 9) + 10;
+      if (x < view.left - 20 || x > view.right + 20) continue;
       const y0 = hY - H * 0.14 + hash1(k) * 10;
       ctx.beginPath();
       ctx.moveTo(x, y0);
@@ -688,8 +734,9 @@ export class ExtraLand {
     ctx.restore();
     // кипарисы
     for (const cy of this.cypress) this.drawCypress(L, f, cy);
-    // прибой у подножия
-    for (let x = p[0]; x < W; x += 12) {
+    // прибой у подножия — samples stay anchored to world grid, but only the view is evaluated.
+    const foamStart = p[0] + Math.max(0, Math.ceil((view.left - p[0]) / 12)) * 12;
+    for (let x = foamStart; x < Math.min(W, view.right); x += 12) {
       const q = (Math.sin(t * 1.3 + x * 0.04) + 1) / 2;
       ctx.fillStyle = hexA("#ffffff", (0.3 + q * 0.4) * (1 - night * 0.6));
       ctx.fillRect(x, hY + 1 + q * 2, 9 + q * 6, 1.6);
@@ -699,6 +746,7 @@ export class ExtraLand {
     const fc = mix(mix("#dfe4e6", f.hor, 0.35), "#0e1620", night * 0.85);
     for (let k = 0; k < 7; k++) {
       const x = ((t * (5 + k * 2) + k * 260) % (W + 800)) - 400;
+      if (x + 340 < view.left || x - 340 > view.right) continue;
       const y = hY - H * 0.03 + (k % 3) * H * 0.018;
       ctx.save();
       ctx.translate(x, y);
@@ -949,6 +997,7 @@ export class ExtraLand {
 
   private drawVolcano(L: LandRenderer, f: Frame) {
     const { ctx, hY, H, W, t, night, e } = f;
+    const view = horizontalRange(f, 24);
     const c = this.cone;
     if (!c) return;
     const feat = f.spot.feature;
@@ -1034,12 +1083,16 @@ export class ExtraLand {
       this.plumeT = erupt ? 0.08 : 0.28;
       this.plumes.push({ x: c.xp + (Math.random() - 0.5) * c.cw, y: c.top, r: 4 + Math.random() * 4, t: 0, vx: 4 + f.wind * 22, vy: -(10 + Math.random() * 8) * (erupt ? 1.8 : 1), kind: erupt && Math.random() < 0.5 ? "ash" : "steam" });
     }
-    for (const p of this.plumes) {
+    let plumeWrite = 0;
+    for (let i = 0; i < this.plumes.length; i++) {
+      const p = this.plumes[i];
       p.t += f.dt;
       p.x += p.vx * f.dt * (1 + p.t * 0.2);
       p.y += p.vy * f.dt;
       p.vy *= 0.995;
       p.r += f.dt * 5;
+      if (p.t < 16 && p.x < W + 200) this.plumes[plumeWrite++] = p;
+      if (p.x + p.r < view.left || p.x - p.r > view.right) continue;
       const life = clamp(1 - p.t / 16, 0, 1);
       const col = p.kind === "ash" ? mix("#5a5652", "#0a0c10", night * 0.7) : mix(mix("#e6e4e0", f.hor, 0.25), "#1a1e28", night * 0.8);
       const pg = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
@@ -1056,11 +1109,16 @@ export class ExtraLand {
         ctx.fill();
       }
     }
-    this.plumes = this.plumes.filter((p) => p.t < 16 && p.x < W + 200);
-    // чёрный пляж и прибой
+    this.plumes.length = plumeWrite;
+    // чёрный пляж и прибой, sampled only over the view.
+    const beachLeft = feat === "blacksand" ? 0 : c.x0;
+    const beachRight = feat === "blacksand" ? W : c.x1;
+    const visibleBeachLeft = Math.max(beachLeft, view.left);
+    const visibleBeachRight = Math.min(beachRight, view.right);
     ctx.fillStyle = L.colorOf(f, "#1e1a18", 0.3);
-    ctx.fillRect(feat === "blacksand" ? -10 : c.x0, hY - 2, feat === "blacksand" ? W + 20 : c.x1 - c.x0, 3);
-    for (let x = feat === "blacksand" ? 0 : c.x0; x < (feat === "blacksand" ? W : c.x1); x += 11) {
+    ctx.fillRect(visibleBeachLeft, hY - 2, Math.max(0, visibleBeachRight - visibleBeachLeft), 3);
+    const beachStart = beachLeft + Math.max(0, Math.ceil((view.left - beachLeft) / 11)) * 11;
+    for (let x = beachStart; x < visibleBeachRight; x += 11) {
       const q = (Math.sin(t * 1.3 + x * 0.05) + 1) / 2;
       ctx.fillStyle = hexA("#ffffff", (0.3 + q * 0.45) * (1 - night * 0.6));
       ctx.fillRect(x, hY + 1 + q * 1.5, 8 + q * 5, 1.4);
@@ -1070,12 +1128,14 @@ export class ExtraLand {
   private drawSteam(f: Frame) {
     const { ctx, hY, t, night } = f;
     if (f.spot.feature !== "lava") return;
+    const view = horizontalRange(f, 40);
+    const sourceVisible = this.lavaX >= view.left - 20 && this.lavaX <= view.right + 20;
     this.steamT -= f.dt;
-    if (this.steamT <= 0) {
+    if (sourceVisible && this.steamT <= 0) {
       this.steamT = 0.12;
       this.plumes.push({ x: this.lavaX + (Math.random() - 0.5) * 16, y: hY, r: 3, t: 0, vx: 3 + f.wind * 14, vy: -14 - Math.random() * 10, kind: "steam" });
     }
-    if (night > 0.2) glow(ctx, this.lavaX, hY - 1, 6, "#ff6a20", 0.6 + Math.sin(t * 4) * 0.2);
+    if (sourceVisible && night > 0.2) glow(ctx, this.lavaX, hY - 1, 6, "#ff6a20", 0.6 + Math.sin(t * 4) * 0.2);
   }
 
   private drawCalderaRing(L: LandRenderer, f: Frame) {
@@ -1114,6 +1174,7 @@ export class ExtraLand {
 
   private drawShelf(L: LandRenderer, f: Frame) {
     const { ctx, hY, W, t, night } = f;
+    const view = horizontalRange(f, 24);
     if (!this.cliff) return;
     const [sx0, sh] = this.cliff.top;
     const face = L.colorOf(f, "#e8f2f8", 0.3), deep = L.colorOf(f, "#8ab8d0", 0.3);
@@ -1130,18 +1191,21 @@ export class ExtraLand {
     ctx.fill();
     ctx.save();ctx.clip();
     // вертикальные трещины и тени
-    for (let x = sx0 + 8; x < W; x += 9) {
+    const crackStart = sx0 + 8 + Math.max(0, Math.ceil((view.left - (sx0 + 8)) / 9)) * 9;
+    for (let x = crackStart; x < Math.min(W, view.right); x += 9) {
       const hsh = hash1(x * 0.37);
       if (hsh < 0.45) continue;
       ctx.fillStyle = hexA(L.colorOf(f, "#6a9ab8", 0.3), 0.18 + hsh * 0.2);
       ctx.fillRect(x, hY - sh + 3, 1 + hsh * 3, sh * (0.5 + hsh * 0.5));
     }
+    const visibleStart = Math.max(sx0, view.left), visibleEnd = Math.min(W, view.right);
     ctx.fillStyle = hexA("#ffffff", 0.6 * (1 - night * 0.7));
-    ctx.fillRect(sx0 + 4, hY - sh - 1, W - sx0, 2);
+    ctx.fillRect(Math.max(sx0 + 4, view.left), hY - sh - 1, Math.max(0, visibleEnd - Math.max(sx0 + 4, view.left)), 2);
     // волноприбойная ниша
     ctx.fillStyle = hexA(L.colorOf(f, "#3a7aa0", 0.3), 0.45);
-    ctx.fillRect(sx0, hY - 5, W - sx0, 5);
-    for (let x = sx0; x < W; x += 14) {
+    ctx.fillRect(visibleStart, hY - 5, Math.max(0, visibleEnd - visibleStart), 5);
+    const waveStart = sx0 + Math.max(0, Math.ceil((view.left - sx0) / 14)) * 14;
+    for (let x = waveStart; x < visibleEnd; x += 14) {
       const q = (Math.sin(t * 1.1 + x * 0.05) + 1) / 2;
       ctx.fillStyle = hexA("#ffffff", (0.3 + q * 0.3) * (1 - night * 0.6));
       ctx.fillRect(x, hY + q * 1.5, 10, 1.3);

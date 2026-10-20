@@ -104,7 +104,7 @@ export default function Game() {
       w.__zv = engine;
       w.__zvAudio = GameAudio;
       // Срез состояния звука — для поддержки и автотестов.
-      w.__zvSound = () => ({ ...audioRef.current.debug(), audioFails: audioFails.current, frameFails: frameFails.current, streamedRegions: sceneRef.current.streamedRegions });
+      w.__zvSound = () => ({ ...audioRef.current.debug(), audioFails: audioFails.current, frameFails: frameFails.current, streamedRegions: sceneRef.current.streamedRegions, streamBuildTrace: sceneRef.current.streamBuildTrace, streamBuiltWindows: sceneRef.current.streamBuiltWindows, streamView: { left: sceneRef.current.cameraX, width: sceneRef.current.viewWidth } });
     }
     const vis = () => {
       const hidden = document.visibilityState === "hidden";
