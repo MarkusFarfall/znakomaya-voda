@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { horizontalGridRange, horizontalRange, overlapsHorizontal } from "../src/game/render/frame";
-import { pixelAlignedChunkClip } from "../src/game/render/aquatoryStream";
+import { geometryTileRange, pixelAlignedChunkClip } from "../src/game/render/aquatoryStream";
 
 test("renderer view windows are local to each streamed chunk and honor safe overdraw padding", () => {
   const current = horizontalRange({ W: 2400, viewLeft: 1800, viewWidth: 390 }, 40);
@@ -11,6 +11,13 @@ test("renderer view windows are local to each streamed chunk and honor safe over
 
   const nextChunk = horizontalRange({ W: 2400, viewLeft: 0, viewWidth: 390 }, 40);
   assert.deepEqual(nextChunk, { left: -40, right: 430 });
+});
+
+test("terrain geometry uses fixed microtiles and requests only cells intersecting the camera", () => {
+  assert.deepEqual(geometryTileRange(180, 1460), { first: 1, last: 11 });
+  assert.deepEqual(geometryTileRange(1824, 2400), { first: 14, last: 18 });
+  assert.equal(geometryTileRange(2400, 2400), null);
+  assert.deepEqual(geometryTileRange(0, 2400), { first: 0, last: 18 });
 });
 
 test("streamed chunk clips remain pixel-aligned under scale and camera translation", () => {

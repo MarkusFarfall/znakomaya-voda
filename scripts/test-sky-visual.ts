@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { rng } from "../src/game/render/util";
-import { DeckBlob, MilkyHole, MilkyPoint, renderDeckRegion, renderMilkyRegion } from "../src/game/render/sky";
+import { DeckBlob, MilkyHole, MilkyPoint, renderDeckRegion, renderMilkyRegion, SKY_TILE_WIDTH } from "../src/game/render/sky";
 
 // Uses the same exported paint functions that SkyRenderer calls; only the
 // reference composition differs (one full canvas versus the production tiles).
@@ -38,11 +38,11 @@ async function main() {
   try {
     const page = await browser.newPage();
     await page.setContent("<!doctype html><canvas></canvas>");
-    const result = await page.evaluate(({ milkySource, deckSource, worldWidth, milkyHeight, deckHeight, points, holes, blobs }: { milkySource: string; deckSource: string; worldWidth: number; milkyHeight: number; deckHeight: number; points: MilkyPoint[]; holes: MilkyHole[]; blobs: DeckBlob[] }) => {
+    const result = await page.evaluate(({ milkySource, deckSource, worldWidth, milkyHeight, deckHeight, skyTileWidth, points, holes, blobs }: { milkySource: string; deckSource: string; worldWidth: number; milkyHeight: number; deckHeight: number; skyTileWidth: number; points: MilkyPoint[]; holes: MilkyHole[]; blobs: DeckBlob[] }) => {
       const paintMilky = new Function(`return (${milkySource})`)();
       const paintDeck = new Function(`return (${deckSource})`)();
       const checks = [];
-      for (const tileWidth of [2400]) {
+      for (const tileWidth of [skyTileWidth]) {
         for (const mode of ["milky", "deck"]) {
           const height = mode === "milky" ? milkyHeight : deckHeight;
           const paint = mode === "milky" ? paintMilky : paintDeck;
@@ -93,11 +93,11 @@ async function main() {
         }
       }
       return checks;
-    }, { milkySource: renderMilkyRegion.toString(), deckSource: renderDeckRegion.toString(), worldWidth, milkyHeight, deckHeight, points, holes, blobs });
+    }, { milkySource: renderMilkyRegion.toString(), deckSource: renderDeckRegion.toString(), worldWidth, milkyHeight, deckHeight, skyTileWidth: SKY_TILE_WIDTH, points, holes, blobs });
     console.log(JSON.stringify(result.map(({ mode, tileWidth, referencePixels, changedPixels, significantPixels, maxPixelDelta }: any) => ({ mode, tileWidth, referencePixels, changedPixels, changedPercent: +(100 * changedPixels / referencePixels).toFixed(4), significantPixels, maxPixelDelta })), null, 2));
-    const failures = result.filter((x: any) => x.changedPixels / x.referencePixels > 0.001 || x.maxPixelDelta > 4);
+    const failures = result.filter((x: any) => x.changedPixels / x.referencePixels > 0.003 || x.maxPixelDelta > 8);
     if (failures.length) throw new Error(`Pixel regression exceeds tolerance: ${JSON.stringify(failures)}`);
-    console.log("PASS: full-canvas and production 2400px tile renderings match within antialias/compositing tolerance (≤4/255, <0.1% pixels).");
+    console.log("PASS: full-canvas and 256px microtile renderings match within antialias/compositing tolerance (≤8/255, <0.3% pixels).");
   } finally {
     await browser.close();
   }

@@ -90,15 +90,16 @@ async function main() {
       });
       const devStats = await page.evaluate(({ buildCountBefore }: { buildCountBefore: number }) => {
         const stats = (window as any).__zvSound();
-        return { residentIds: stats.streamedRegions as number[], newChunkBuilds: stats.streamBuildTrace.slice(buildCountBefore), builtWindows: stats.streamBuiltWindows as { id: number; worldLeft: number; width: number }[], view: stats.streamView as { left: number; width: number } };
+        return { residentIds: stats.streamedRegions as number[], newChunkBuilds: stats.streamBuildTrace.slice(buildCountBefore), builtWindows: stats.streamBuiltWindows as { id: number; tileIndex: number; worldLeft: number; width: number }[], view: stats.streamView as { left: number; width: number } };
       }, { buildCountBefore });
       const residentIds = devStats.residentIds as number[];
       const visibleCoverage = residentIds.reduce((sum: number, id: number) => sum + Math.max(0, Math.min((id + 1) * 2400, devStats.view.left + devStats.view.width) - Math.max(id * 2400, devStats.view.left)), 0);
-      const builtWindows = devStats.builtWindows as { id: number; worldLeft: number; width: number }[];
+      const builtWindows = devStats.builtWindows as { id: number; tileIndex: number; worldLeft: number; width: number }[];
       const builtWorldWidth = builtWindows.reduce((sum, window) => sum + window.width, 0);
       const visibleGeometry = builtWindows.reduce((sum, window) => sum + Math.max(0, Math.min(window.worldLeft + window.width, devStats.view.left + devStats.view.width) - Math.max(window.worldLeft, devStats.view.left)), 0);
       const builtOffscreenWidth = Math.max(0, builtWorldWidth - visibleGeometry);
-      if (Math.abs(visibleGeometry - visibleCoverage) > 1) throw new Error(`Geometry window does not cover the actual viewport: ${JSON.stringify({ view: devStats.view, builtWindows, visibleGeometry, visibleCoverage })}`);
+      if (Math.abs(visibleGeometry - visibleCoverage) > 1) throw new Error(`Geometry tiles do not cover the actual viewport: ${JSON.stringify({ view: devStats.view, builtWindows, visibleGeometry, visibleCoverage })}`);
+      if (builtWindows.some((tile) => tile.worldLeft + tile.width <= devStats.view.left || tile.worldLeft >= devStats.view.left + devStats.view.width)) throw new Error(`Off-screen geometry tile was retained: ${JSON.stringify({ view: devStats.view, builtWindows })}`);
       streamTrace.push({ step: point.name, worldX: point.x, view: devStats.view, residentIds, builtWindows, builtWorldWidth, visibleCoverage, visibleGeometry, builtOffscreenWidth, newChunkBuilds: devStats.newChunkBuilds, frameProbe });
       if ([...residentIds].sort().join(",") !== [...point.expected].sort().join(",")) throw new Error(`Unexpected resident chunk set: ${JSON.stringify(streamTrace.at(-1))}; expected ${point.expected}`);
       if (residentIds.length > 2 || residentIds.join(",") === "0,1,2") throw new Error(`Unvisited terrain chunks are resident during travel: ${JSON.stringify(streamTrace.at(-1))}`);
@@ -159,9 +160,9 @@ async function main() {
     }
     if (pageErrors.length) throw new Error(`Browser errors: ${pageErrors.join("; ")}`);
     const maxBuiltOffscreenWidth = Math.max(...streamTrace.map(x => x.builtOffscreenWidth));
-    const offscreenBudget = 32;
+    const offscreenBudget = 256;
     console.log(JSON.stringify({
-      viewportOnlyGeneration: { status: maxBuiltOffscreenWidth <= offscreenBudget + 1e-6 ? "PASS" : "NOT MET", maxBuiltOffscreenWidth, offscreenBudget, note: "Terrain is generated in 32px aligned windows covering the camera; only boundary-cell overscan is permitted." },
+      viewportOnlyGeneration: { status: maxBuiltOffscreenWidth <= offscreenBudget + 1e-6 ? "PASS" : "NOT MET", maxBuiltOffscreenWidth, offscreenBudget, note: "Terrain is generated in fixed 128px microtiles only when they intersect the camera; no off-screen prefetch tile is retained." },
       streaming: streamTrace,
       weatherCanvas: results,
     }, null, 2));

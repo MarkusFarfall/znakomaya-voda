@@ -4,26 +4,17 @@ import { findActiveEvent, hasActiveEvent, type Frame } from "./frame";
 import { drawRainbow as drawRainbowFx } from "./weatherFx";
 import { clamp, ctx2d, glow, hexA, makeCanvas, mix, rng, smooth, af, rgbHex } from "./util";
 
-/** Background surfaces follow the same world regions as streamed terrain. */
-export const SKY_TILE_WIDTH = 2400;
-const SKY_PREFETCH = 900;
+/** Small background microtiles; only tiles intersecting the viewport are rasterized. */
+export const SKY_TILE_WIDTH = 256;
 
-export function skyTileWindow(worldWidth: number, left: number, width: number, direction: number, tileWidth = SKY_TILE_WIDTH, prefetch = SKY_PREFETCH) {
+export function skyTileWindow(worldWidth: number, left: number, width: number, tileWidth = SKY_TILE_WIDTH) {
   const count = Math.max(1, Math.ceil(worldWidth / tileWidth));
   const lo = clamp(left, 0, Math.max(0, worldWidth - 0.001));
   const hi = clamp(left + Math.max(1, width) - 0.001, lo, Math.max(0, worldWidth - 0.001));
   const first = clamp(Math.floor(lo / tileWidth), 0, count - 1);
   const last = clamp(Math.floor(hi / tileWidth), first, count - 1);
   const visible = Array.from({ length: last - first + 1 }, (_, i) => first + i);
-  const resident = [...visible];
-  if (direction >= 0) {
-    const ahead = last + 1;
-    if (ahead < count && (ahead * tileWidth - (left + width)) <= prefetch) resident.push(ahead);
-  } else {
-    const ahead = first - 1;
-    if (ahead >= 0 && (left - (ahead + 1) * tileWidth) <= prefetch) resident.push(ahead);
-  }
-  return { visible, resident };
+  return { visible, resident: visible };
 }
 
 // [час, зенит, середина, горизонт]
@@ -62,6 +53,13 @@ export const WEATHER_TINT: Record<WeatherId, [string, number]> = {
 };
 export const CLOUD_COVER: Record<WeatherId, number> = { clear: 0.22, cloudy: 0.75, rain: 1, storm: 1, fog: 0.4, snow: 0.95 };
 
+/** Avoid rerasterizing sky backplates for imperceptible sub-frame color changes. */
+function colorCacheKey(color: string) {
+  const value = color.replace("#", "");
+  if (!/^[0-9a-f]{6}$/i.test(value)) return color;
+  return [0, 2, 4].map((i) => Math.floor(parseInt(value.slice(i, i + 2), 16) / 8)).join(":");
+}
+
 interface Cloud {
   x: number;
   y: number;
@@ -87,12 +85,20 @@ export function renderMilkyRegion(ctx: CanvasRenderingContext2D, worldWidth: num
   band.addColorStop(1, "rgba(160,170,255,0)");
   ctx.fillStyle = band;
   ctx.fillRect(-worldWidth * 0.9, -height * 0.18, worldWidth * 1.8, height * 0.36);
+  const tileLeft = worldLeft, tileRight = worldLeft + ctx.canvas.width;
+  const cos = Math.cos(-0.42), sin = Math.sin(-0.42), centerX = worldWidth * 0.55;
   for (const p of points) {
+    const projectedX = centerX + p.x * cos - p.y * sin;
+    const extent = p.size * (Math.abs(cos) + Math.abs(sin)) + 2;
+    if (projectedX + extent < tileLeft || projectedX - extent > tileRight) continue;
     ctx.fillStyle = `rgba(255,255,255,${p.alpha})`;
     ctx.fillRect(p.x, p.y, p.size, p.size);
   }
   ctx.globalCompositeOperation = "destination-out";
   for (const h of holes) {
+    const projectedX = centerX + h.x * cos - h.ellipseY * sin;
+    const extent = h.radius + h.width + h.height + 4;
+    if (projectedX + extent < tileLeft || projectedX - extent > tileRight) continue;
     const dg = ctx.createRadialGradient(h.x, h.gradientY, 0, h.x, 0, h.radius);
     dg.addColorStop(0, "rgba(0,0,0,0.5)");
     dg.addColorStop(1, "rgba(0,0,0,0)");
@@ -131,7 +137,6 @@ export class SkyRenderer {
   private deckBlobs: DeckBlob[] = [];
   private deckHeight = 0;
   private tilePlan = { visible: [0], resident: [0] };
-  private previousViewLeft: number | null = null;
   private key = "";
   private meteors: [number, number, number][] = [];
   private gulls: [number, number, number, number][] = [];
@@ -230,9 +235,7 @@ export class SkyRenderer {
     const { ctx, W, H, hY, t, e } = f;
     this.setup(W, H);
     const viewLeft = f.viewLeft ?? 0;
-    const direction = this.previousViewLeft === null ? 0 : Math.sign(viewLeft - this.previousViewLeft);
-    this.previousViewLeft = viewLeft;
-    this.tilePlan = skyTileWindow(W, viewLeft, f.viewWidth ?? W, direction);
+    this.tilePlan = skyTileWindow(W, viewLeft, f.viewWidth ?? W);
     const residents = new Set(this.tilePlan.resident);
     for (const id of this.milkyTiles.keys()) if (!residents.has(id)) this.milkyTiles.delete(id);
     for (const id of this.deckTiles.keys()) if (!residents.has(id)) this.deckTiles.delete(id);
@@ -260,7 +263,6 @@ export class SkyRenderer {
     if (starA > 0.02) {
       ctx.globalAlpha = starA * 0.9;
       for (const id of this.tilePlan.visible) ctx.drawImage(this.getMilkyTile(id), id * SKY_TILE_WIDTH, 0);
-      for (const id of this.tilePlan.resident) if (!this.tilePlan.visible.includes(id)) this.getMilkyTile(id);
 
       for (const [x, y, r, p, c] of this.stars) {
         if (y > hY - 4) continue;
@@ -310,7 +312,7 @@ export class SkyRenderer {
     lit = mix(lit, "#1c2232", f.night * 0.88);
     let shade = mix(lit, f.top, 0.4);
     shade = mix(shade, f.golden > 0.1 ? "#7a5a80" : "#46505e", 0.3 + f.golden * 0.2);
-    const key = `${lit}|${shade}|${W}|${H}|${f.sunX < W / 2}`;
+    const key = `${colorCacheKey(lit)}|${colorCacheKey(shade)}|${W}|${H}|${f.sunX < W / 2}`;
     if (key !== this.key) {
       this.key = key;
       this.rebuild(f, lit, shade);
@@ -318,7 +320,6 @@ export class SkyRenderer {
     if (f.cover > 0.7 && f.quality > 0) {
       ctx.globalAlpha = clamp((f.cover - 0.7) * 3.3, 0, 1) * (wt === "fog" ? 0.5 : 1);
       for (const id of this.tilePlan.visible) ctx.drawImage(this.getDeckTile(id), id * SKY_TILE_WIDTH, 0);
-      for (const id of this.tilePlan.resident) if (!this.tilePlan.visible.includes(id)) this.getDeckTile(id);
       ctx.globalAlpha = 1;
     }
     // перистые
