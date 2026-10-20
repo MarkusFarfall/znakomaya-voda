@@ -17,6 +17,44 @@ interface Tree { x: number; y: number; h: number; kind: "pine" | "round"; haze: 
 interface House { x: number; y: number; w: number; h: number; lit: boolean; haze: number; church?: boolean; c: string }
 interface LightSrc { x: number; y: number; c: string; night: boolean }
 
+/** Clip a closed polygon to a vertical world-space interval without changing its visible fill. */
+function clipPolylineX(points: number[], left: number, right: number) {
+  const out: number[] = [];
+  for (let i = 0; i + 3 < points.length; i += 2) {
+    const x0 = points[i], y0 = points[i + 1], x1 = points[i + 2], y1 = points[i + 3];
+    if (x0 === x1) { if (x0 >= left && x0 <= right) out.push(x0, y0, x1, y1); continue; }
+    const lo = Math.max(0, Math.min(1, (left - x0) / (x1 - x0)));
+    const hi = Math.max(0, Math.min(1, (right - x0) / (x1 - x0)));
+    const t0 = Math.min(lo, hi), t1 = Math.max(lo, hi);
+    if (Math.max(x0, x1) < left || Math.min(x0, x1) > right || t0 > t1) continue;
+    out.push(x0 + (x1 - x0) * t0, y0 + (y1 - y0) * t0, x0 + (x1 - x0) * t1, y0 + (y1 - y0) * t1);
+  }
+  return out;
+}
+
+function clipPolygonX(points: number[], left: number, right: number) {
+  if (points.length < 6 || right <= left) return [];
+  let vertices: [number, number][] = [];
+  for (let i = 0; i + 1 < points.length; i += 2) vertices.push([points[i], points[i + 1]]);
+  const clip = (input: [number, number][], edge: number, keepGreater: boolean) => {
+    const output: [number, number][] = [];
+    if (!input.length) return output;
+    let a = input[input.length - 1], insideA = keepGreater ? a[0] >= edge : a[0] <= edge;
+    for (const b of input) {
+      const insideB = keepGreater ? b[0] >= edge : b[0] <= edge;
+      if (insideA !== insideB) {
+        const t = (edge - a[0]) / (b[0] - a[0]);
+        output.push([edge, a[1] + (b[1] - a[1]) * t]);
+      }
+      if (insideB) output.push(b);
+      a = b; insideA = insideB;
+    }
+    return output;
+  };
+  vertices = clip(clip(vertices, left, true), right, false);
+  return vertices.flatMap(([x, y]) => [x, y]);
+}
+
 export class LandRenderer {
   private key = "";
   readonly extra = new ExtraLand();
@@ -59,30 +97,34 @@ export class LandRenderer {
     const { hY } = f;
     const baseY = o.base ?? hY + 2;
     const sharp = o.sharp ?? 1, rough = o.rough ?? 3;
-    const pts: number[] = [x0, baseY];
-    const hs: number[] = [];
     const step = 5;
-    for (let x = x0; x <= x1 + 0.1; x += step) {
+    const sample = (x: number) => {
       const k = (x - x0) / (x1 - x0);
       let v = Math.pow(fbm(k * rough + seed, seed, 5), sharp) * 1.35;
       const taper = (o.tl === false ? 1 : sstep(0, 0.16, k)) * (o.tr === false ? 1 : sstep(0, 0.16, 1 - k));
       v = clamp(v * taper, 0, 1.2);
-      const y = baseY - 2 - v * hMax;
-      pts.push(x, y);
-      hs.push(y);
-    }
-    pts.push(x1, baseY);
-    const at = (x: number) => {
-      const i = clamp(Math.round((x - x0) / step), 0, hs.length - 1);
-      return hs[i];
+      return baseY - 2 - v * hMax;
     };
+    const left = clamp(f.buildLeft ?? 0, x0, x1);
+    const right = clamp(f.buildRight ?? f.W, x0, x1);
+    const pts: number[] = right <= left ? [] : [left, baseY, left, sample(left)];
+    if (right > left) {
+      const first = Math.ceil((left - x0) / step);
+      const last = Math.floor((right - x0) / step);
+      for (let i = first; i <= last; i++) {
+        const x = x0 + i * step;
+        if (x > left && x < right) pts.push(x, sample(x));
+      }
+      pts.push(right, sample(right), right, baseY);
+    }
+    const at = (x: number) => sample(x0 + clamp(Math.round((x - x0) / step), 0, Math.ceil((x1 - x0) / step)) * step);
     return { pts, at };
   }
 
-  build(f: Frame) {
+  build(f: Frame): boolean {
     const { W, H, hY, sY, spot, loc, e } = f;
-    const key = `${spot.id}|${W}|${H}|${e.season}|${f.atmo.snowCover > 0.18}`;
-    if (key === this.key) return;
+    const key = `${spot.id}|${W}|${H}|${f.buildLeft ?? 0}|${f.buildRight ?? W}|${e.season}|${f.atmo.snowCover > 0.18}`;
+    if (key === this.key) return false;
     this.key = key;
     this.layers = [];
     this.trees = [];
@@ -253,6 +295,28 @@ export class LandRenderer {
       const blanket = 0.45 + f.atmo.snowCover * 0.55;
       for (const L of this.layers) if (L.base !== "#cdbb8c" && L.base !== "#cfb884") L.snowY = hY - H * (loc.land === "cliffs" ? 0.06 : 0.02) * blanket;
     }
+    // Store and render only the camera's stable geometry window. Ridge profiles are
+    // generated directly in this interval; custom polygons are clipped exactly.
+    const rangeLeft = f.buildLeft ?? 0, rangeRight = f.buildRight ?? W;
+    this.layers = this.layers.flatMap((layer) => {
+      if (layer.x1 < rangeLeft || layer.x0 > rangeRight) return [];
+      const pts = clipPolygonX(layer.pts, rangeLeft, rangeRight);
+      return pts.length >= 6 ? [{ ...layer, pts, x0: Math.max(layer.x0, rangeLeft), x1: Math.min(layer.x1, rangeRight) }] : [];
+    });
+    this.strata = this.strata.map((layer) => ({ ...layer, pts: clipPolylineX(layer.pts, rangeLeft, rangeRight) })).filter((layer) => layer.pts.length >= 4);
+    if (this.grass) this.grass.pts = clipPolygonX(this.grass.pts, rangeLeft, rangeRight);
+    const keep = <T extends { x: number }>(items: T[], radius = 0) => items.filter((o) => o.x + radius >= rangeLeft && o.x - radius <= rangeRight);
+    this.trees = keep(this.trees, 20);
+    this.houses = keep(this.houses, 30);
+    this.lights = keep(this.lights, 20);
+    this.palms = keep(this.palms, 30);
+    this.floes = keep(this.floes, 30);
+    this.mats = keep(this.mats, 50);
+    this.seaRocks = keep(this.seaRocks, 40);
+    if (this.lighthouse && (this.lighthouse.x < rangeLeft - 100 || this.lighthouse.x > rangeRight + 100)) this.lighthouse = null;
+    if (this.waterfall && (this.waterfall.x < rangeLeft - 30 || this.waterfall.x > rangeRight + 30)) this.waterfall = null;
+    this.extra.trimWindow(rangeLeft, rangeRight);
+    return true;
   }
 
   drawAbove(f: Frame) {

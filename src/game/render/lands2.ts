@@ -10,6 +10,16 @@ interface Bird { x: number; y: number; s: number; seed: number }
 
 const TAU = Math.PI * 2;
 
+function clipClosedPathX(points:number[],left:number,right:number){
+  if(points.length<6||right<=left)return [];
+  let vs:[number,number][]=[];for(let i=0;i+1<points.length;i+=2)vs.push([points[i],points[i+1]]);
+  const edge=(src:[number,number][],x:number,greater:boolean)=>{const out:[number,number][]=[];if(!src.length)return out;let a=src[src.length-1],ia=greater?a[0]>=x:a[0]<=x;for(const b of src){const ib=greater?b[0]>=x:b[0]<=x;if(ia!==ib){const t=(x-a[0])/(b[0]-a[0]);out.push([x,a[1]+(b[1]-a[1])*t]);}if(ib)out.push(b);a=b;ia=ib;}return out;};
+  vs=edge(edge(vs,left,true),right,false);return vs.flatMap(([x,y])=>[x,y]);
+}
+function clipOpenPathX(points:number[],left:number,right:number){
+  const out:number[]=[];for(let i=0;i+3<points.length;i+=2){const x0=points[i],y0=points[i+1],x1=points[i+2],y1=points[i+3];if(x0===x1){if(x0>=left&&x0<=right)out.push(x0,y0,x1,y1);continue;}const lo=Math.max(0,Math.min(1,(left-x0)/(x1-x0))),hi=Math.max(0,Math.min(1,(right-x0)/(x1-x0))),a=Math.min(lo,hi),b=Math.max(lo,hi);if(Math.max(x0,x1)<left||Math.min(x0,x1)>right||a>b)continue;out.push(x0+(x1-x0)*a,y0+(y1-y0)*a,x0+(x1-x0)*b,y0+(y1-y0)*b);}return out;
+}
+
 /** Сезонный цвет камыша */
 function reedColors(season: number): [string, string] {
   switch (season) {
@@ -48,6 +58,17 @@ export class ExtraLand {
     const away=<T extends {x:number}>(items:T[])=>items.filter(o=>shoreEnvelope(f,o.x)>.9);
     this.islands=away(this.islands);this.reeds=away(this.reeds);this.huts=away(this.huts);this.stacks=away(this.stacks);
     this.mangroves=away(this.mangroves);this.sandbars=away(this.sandbars);this.cypress=away(this.cypress);this.bergs=away(this.bergs);
+  }
+  trimWindow(left:number,right:number){
+    const keep=<T extends {x:number}>(items:T[],pad=0)=>items.filter(o=>o.x+pad>=left&&o.x-pad<=right);
+    this.islands=keep(this.islands,180);this.reeds=keep(this.reeds,100);this.huts=keep(this.huts,80);
+    this.buoys=keep(this.buoys,40);this.otters=keep(this.otters,30);this.stacks=keep(this.stacks,40);
+    this.bergs=keep(this.bergs,80);this.mats=keep(this.mats,60);this.sandbars=keep(this.sandbars,100);
+    this.mangroves=keep(this.mangroves,100);this.cypress=keep(this.cypress,40);this.egrets=keep(this.egrets,30);
+    this.poplars=this.poplars.filter(x=>x>=left-40&&x<=right+40);
+    this.far=clipClosedPathX(this.far,left,right);
+    if(this.cone&&(this.cone.x1<left||this.cone.x0>right))this.cone=null;
+    if(this.cliff){this.cliff.pts=clipClosedPathX(this.cliff.pts,left,right);this.cliff.top=clipOpenPathX(this.cliff.top,left,right);}
   }
   build(L: LandRenderer, f: Frame) {
     const { W, H, hY, sY, spot, loc } = f;

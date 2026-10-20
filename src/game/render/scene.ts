@@ -51,6 +51,8 @@ export class Scene {
   private readonly activeEventScratch: ActiveEvent[] = [];
   private readonly activeEventIds = new Set<string>();
   get streamedRegions(){return this.stream.residentIds;}
+  get streamBuildTrace(){return this.stream.buildTrace;}
+  get streamBuiltWindows(){return this.stream.builtWindows;}
   private bottomAt(f:Frame,x:number){return f.bedDepth?f.sY+f.depthPx(f.bedDepth(x)):this.bed.bedY(x);}
   camY = 0;
   cameraX = 0;
@@ -282,9 +284,11 @@ export class Scene {
       if (fxCalls.length) drawEventFx(this.fxScene(f, fxBoatX), "horizon", fxCalls);
       drawSeaBand(f, () => { if (this.quality > 0 && this.gfx.refl) {if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.land.drawReflection(cf,seaSurfaceColor(f)));else this.land.drawReflection(f,seaSurfaceColor(f));} });
       if (fxCalls.length) drawEventFx(this.fxScene(f, fxBoatX), "surface", fxCalls);
-      if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.land.drawSea(cf));else this.land.drawSea(f);
+      if (this.voyage === null) this.stream.draw(f, (c, cf) => c.land.drawSea(cf));
+      else this.land.drawSea(f);
       if (!this.voyage) this.life.drawSea(f);
-      if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.land.drawDivers(cf));else this.land.drawDivers(f);
+      if (this.voyage === null) this.stream.draw(f, (c, cf) => c.land.drawDivers(cf));
+      else this.land.drawDivers(f);
       this.drawSurfaceEvents(f);
     }
 

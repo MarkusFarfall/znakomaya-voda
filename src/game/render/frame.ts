@@ -19,6 +19,9 @@ export interface Frame {
   /** Camera bounds in the coordinate system used by the current renderer/chunk. */
   viewLeft?: number;
   viewWidth?: number;
+  /** Stable, world-local horizontal geometry window (aligned to procedural cells). */
+  buildLeft?: number;
+  buildRight?: number;
   chunkOffset?: number;
   bedDepth?: (x:number)=>number;
   ctx: CanvasRenderingContext2D;

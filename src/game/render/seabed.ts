@@ -38,17 +38,18 @@ export class SeabedRenderer {
   private bedPolygon: number[] = [];
   private readonly bedSurface = (x: number) => this.bedY(x);
   private step = 6;
+  private profileStart = 0;
   minY = 0;
   private W = 0;
 
   bedY(x: number) {
-    const i = clamp(x / this.step, 0, this.ys.length - 1);
+    const i = clamp((x - this.profileStart) / this.step, 0, this.ys.length - 1);
     const a = Math.floor(i), b = Math.min(this.ys.length - 1, a + 1);
     return this.ys[a] + (this.ys[b] - this.ys[a]) * (i - a);
   }
 
   private profileY(profile: number[], x: number) {
-    const i = clamp(x / this.step, 0, profile.length / 2 - 1);
+    const i = clamp((x - this.profileStart) / this.step, 0, profile.length / 2 - 1);
     const a = Math.floor(i), b = Math.min(profile.length / 2 - 1, a + 1);
     return profile[a * 2 + 1] + (profile[b * 2 + 1] - profile[a * 2 + 1]) * (i - a);
   }
@@ -58,34 +59,37 @@ export class SeabedRenderer {
     const x1 = Math.max(x0, Math.min(this.W + 2, right));
     points.length = 0;
     points.push(x0, this.profileY(profile, x0));
-    const first = Math.max(1, Math.floor(x0 / this.step) + 1);
-    const last = Math.min(profile.length / 2 - 1, Math.ceil(x1 / this.step) - 1);
+    const first = Math.max(1, Math.floor((x0 - this.profileStart) / this.step) + 1);
+    const last = Math.min(profile.length / 2 - 1, Math.ceil((x1 - this.profileStart) / this.step) - 1);
     for (let i = first; i <= last; i++) {
-      const x = i * this.step;
+      const x = this.profileStart + i * this.step;
       if (x > x0 && x < x1) points.push(x, profile[i * 2 + 1]);
     }
     points.push(x1, this.profileY(profile, x1));
     return points;
   }
 
-  build(f: Frame) {
+  build(f: Frame): boolean {
     const { W, H, spot, sY } = f;
-    const key = `${spot.id}|${W}|${H}`;
-    if (key === this.key) return;
+    const key = `${spot.id}|${W}|${H}|${f.buildLeft ?? 0}|${f.buildRight ?? W}`;
+    if (key === this.key) return false;
     this.key = key;
     this.W = W;
     this.step = clamp(Math.round(W / 200), 2, 6);
     this.ys = [];
     this.back = [];
     this.pts = [];
-    for (let x = 0; x <= W + this.step; x += this.step) {
+    const rangeLeft = Math.max(0, f.buildLeft ?? 0);
+    const rangeRight = Math.min(W, f.buildRight ?? W);
+    this.profileStart = Math.floor(rangeLeft / this.step) * this.step;
+    const profileEnd = Math.min(W + this.step, Math.ceil(rangeRight / this.step) * this.step);
+    for (let x = this.profileStart; x <= profileEnd; x += this.step) {
       const y = sY + f.depthPx(f.bedDepth?f.bedDepth(x):spot.maxDepth * bedFrac(spot, x / W));
       this.ys.push(y);
       this.pts.push(x, y);
       const yb = sY + f.depthPx((f.bedDepth?f.bedDepth(x):spot.maxDepth * bedFrac(spot, clamp((x / W) * 0.8 + 0.12, 0, 1))) * 0.86) - 14 * f.sc;
       this.back.push(x, yb);
     }
-    if(f.chunkOffset!==undefined){this.pts[0]=-2;this.back[0]=-2;}
     this.minY = Math.min(...this.ys);
     const r = rng(spot.seed * 97);
     const list = HABITAT[f.loc.seabed] ?? HABITAT.sand;
@@ -126,9 +130,15 @@ export class SeabedRenderer {
     const kinds = fk[f.loc.seabed] ?? ["dune"];
     for (let i = 0; i < Math.round(W / 55); i++) {
       const x = f.chunkOffset!==undefined?100*f.sc+r()*(W-200*f.sc):r()*W;
-      const bi = clamp(Math.round(x / this.step) * 2 + 1, 1, this.back.length - 1);
+      const bi = clamp(Math.round((x - this.profileStart) / this.step) * 2 + 1, 1, this.back.length - 1);
       this.far.push({ x, y: this.back[bi] + 6, h: (40 + r() * 110) * f.sc, w: (14 + r() * 40) * f.sc, kind: kinds[Math.floor(r() * kinds.length)], seed: r() * 100 });
     }
+    // Preserve the region-seeded random sequence, but retain only camera-window assets.
+    this.decor = this.decor.filter((d) => d.x + 80 >= rangeLeft && d.x - 80 <= rangeRight);
+    this.glowingDecor = this.decor.filter((d) => d.kind === "vent" || d.kind === "worms" || d.kind === "pen");
+    this.far = this.far.filter((o) => o.x + o.w >= rangeLeft && o.x - o.w <= rangeRight);
+    this.glowMotes = this.glowMotes.filter((o) => o.x >= rangeLeft && o.x <= rangeRight);
+    return true;
   }
 
   draw(f: Frame, causticsEnabled = true) {
