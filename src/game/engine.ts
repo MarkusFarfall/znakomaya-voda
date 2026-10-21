@@ -308,7 +308,7 @@ export class Engine {
   private atmosphereInstance: Atmosphere | null = null;
   private eventDirectorInstance: EventDirector | null = null;
   private readonly eventInfoScratch: ActiveInfo[] = [];
-  private readonly eventCtxExtra = { loc: null as string | null, deep: false };
+  private readonly eventCtxExtra = { loc: null as string | null, deep: false, feature: null as string | null, localDepth: 0 };
   private readonly eventCtxInput = {} as CtxInput;
   private readonly eventMods: AtmoMods = {};
   private lastEventCheckpoint = -1;
@@ -439,6 +439,10 @@ export class Engine {
     atm.update(Math.max(0, dt));
     this.eventCtxExtra.loc = this.s.location;
     this.eventCtxExtra.deep = this.loc.maxDepth > 100;
+    // События подстраиваются под точку, где реально стоит игрок, а не под акваторию целиком.
+    const here = this.spot;
+    this.eventCtxExtra.feature = here.feature ?? null;
+    this.eventCtxExtra.localDepth = this.s.atPort ? 0 : this.bedAt(this.navigation.nx);
     director.update(T, ctxFromAtmosphere(atm, this.eventCtxExtra, this.eventCtxInput));
     atm.mods = director.atmoMods(this.eventMods);
     // Применить эффекты текущего кадра сразу, не продвигая игровые часы повторно.

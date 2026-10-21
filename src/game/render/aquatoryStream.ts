@@ -54,11 +54,27 @@ export class AquatoryStream {
       land: new LandRenderer(),
       bed: new SeabedRenderer(),
     }));
+    // Сборка «по кадру игрока», не больше одной структуры за кадр. Раньше при
+    // пересечении границы региона в одном кадре строились земля и дно сразу
+    // у всех резидентных чанков — это давало заметный рывок.
     for (const id of plan.resident) {
-      const c = this.cache.chunks.get(id)!,
-        local = this.frame(f, id);
-      c.land.build(local);
-      c.bed.build(local);
+      const c = this.cache.chunks.get(id)!;
+      if (c.land.built && c.bed.built) continue;
+      const local = this.frame(f, id);
+      // Сначала силуэт земли (он виден и в тумане), потом дно: порядок важен,
+      // чтобы первым появился горизонт, а не пустая вода.
+      if (!c.land.built) c.land.build(local);
+      else c.bed.build(local);
+      break;
+    }
+    // Уже показанные чанки дособираются сразу: их видно, и «дырка» недопустима.
+    for (const id of this.visible) {
+      const c = this.cache.chunks.get(id)!;
+      if (!c.land.built || !c.bed.built) {
+        const local = this.frame(f, id);
+        if (!c.land.built) c.land.build(local);
+        if (!c.bed.built) c.bed.build(local);
+      }
     }
   }
   draw(f: Frame, draw: (chunk: TerrainChunk, local: Frame) => void) {

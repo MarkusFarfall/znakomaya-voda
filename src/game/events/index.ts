@@ -8,7 +8,7 @@ export { EventDirector, type CtxInput, type ActiveInfo, type DirectorOptions } f
 /** Контекст событий из состояния атмосферы (+ данные игры, если есть) */
 export function ctxFromAtmosphere(
   atm: Atmosphere,
-  extra: { loc?: string | null; deep?: boolean } = {},
+  extra: { loc?: string | null; deep?: boolean; feature?: string | null; localDepth?: number } = {},
   out?: CtxInput,
 ): CtxInput {
   const s = atm.state;
@@ -38,5 +38,7 @@ export function ctxFromAtmosphere(
   ctx.wetness = s.wetness;
   ctx.loc = extra.loc ?? null;
   ctx.deep = extra.deep ?? false;
+  ctx.feature = extra.feature ?? null;
+  ctx.localDepth = extra.localDepth ?? 0;
   return ctx;
 }

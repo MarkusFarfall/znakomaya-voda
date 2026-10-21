@@ -119,6 +119,9 @@ export class Scene {
     });
   }
 
+  /** Ширина экрана в CSS-пикселях. Отдельно от W: W — это ширина мира (7200). */
+  private screenW = 0;
+
   private init(W: number, H: number) {
     if (W === this.W && H === this.H && this.initQuality === this.quality) return;
     this.W = W;
@@ -153,6 +156,7 @@ export class Scene {
 
   render(ctx: CanvasRenderingContext2D, e: Engine, W: number, H: number, dt: number) {
     const screenW = W;
+    this.screenW = screenW;
     if (this.voyage === null) W = waterWidth(e.s.location);
     this.init(W, H);
     this.t += dt;
@@ -1074,7 +1078,9 @@ export class Scene {
     ctx.save();
     ctx.translate(x, y);
     if (tilt) ctx.rotate(tilt);
-    if (this.W < 820) ctx.scale(1.2, 1.2);
+    // Увеличение поплавка на узком экране: раньше здесь сравнивалась ширина мира (7200),
+    // поэтому ветка не срабатывала никогда.
+    if (this.screenW < 820) ctx.scale(1.2, 1.2);
     // тело ~4.5px в ширину: поплавок заметно меньше борта судна
     ctx.fillStyle = "#f4f4f0";
     ctx.beginPath();
@@ -1156,8 +1162,11 @@ export class Scene {
       q: clamp(Math.round(f.quality), 0, 2) as 0 | 1 | 2,
       color: f.atmo.palette.cloud,
     };
+    // Дождь и снег — частицы над водой; в кадре их держит только видимое окно.
+    // Снежинки не должны тянуться до дна: их пол это поверхность, а не дно.
     const rain = { ...o, active: this.gfx.precip && f.atmo.rain > 0.001, intensity: this.gfx.precip ? f.atmo.rain : 0 };
-    const snow = { ...o, active: this.gfx.precip && f.atmo.snow > 0.001, intensity: this.gfx.precip ? f.atmo.snow : 0 };
+    const snowFloor = (x: number) => Math.min(f.waveY(x), o.bottom);
+    const snow = { ...o, floor: snowFloor, active: this.gfx.precip && f.atmo.snow > 0.001, intensity: this.gfx.precip ? f.atmo.snow : 0 };
     this.rain.step(rain, f.dt); this.snowfall.step(snow, f.dt);
     if (this.gfx.precip) {
       this.rain.draw(f.ctx, rain); this.snowfall.draw(f.ctx, snow);

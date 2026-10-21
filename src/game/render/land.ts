@@ -32,6 +32,8 @@ function polygonPath(pts: number[], close = true): Path2D | null {
 }
 
 export class LandRenderer {
+  /** Собран ли чанк: ключ меняется при смене сезона/ширины и сбрасывает кэш. */
+  get built() { return this.key !== ""; }
   private key = "";
   readonly extra = new ExtraLand();
   layers: Layer[] = [];

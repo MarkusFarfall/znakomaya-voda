@@ -45,6 +45,10 @@ export interface EventCtx {
   loc: string | null;
   /** глубокая акватория (maxDepth > 100 м) */
   deep: boolean;
+  /** Особенность региона, где сейчас стоит лодка (причал, впадина, водопад…). */
+  feature?: string | null;
+  /** Глубина под лодкой, метры. Событие может требовать мелководья или глубины. */
+  localDepth?: number;
   /** сколько раз событие уже встречалось */
   seen(id: string): number;
   active(id: string): boolean;

@@ -11,6 +11,7 @@ import test from "node:test";
 import { Atmosphere } from "../src/game/atmosphere";
 import { FX_TABLE, type FxScene, type Layer } from "../src/game/render/eventFx";
 import type { FxId, FxSpec, VisibleEvent } from "../src/game/events/types";
+import { ctxFromAtmosphere } from "../src/game/events";
 
 const LAYERS: Layer[] = ["sky", "horizon", "under", "surface", "front"];
 const H = 720;
@@ -130,4 +131,18 @@ test("movable effects appear inside the strict viewport at some point in their c
     }
     assert.ok(seen, `${id} никогда не попадает в кадр`);
   }
+});
+
+test("event context carries the player's actual spot, not the whole aquatory", () => {
+  const atm = new Atmosphere({ climate: "ocean", seed: 11 });
+  // Акватория «Бездна» целиком глубокая, но контекст обязан отражать точку под лодкой.
+  const ctx = ctxFromAtmosphere(atm, { loc: "abyss", deep: true, feature: "sandbar", localDepth: 9 });
+  assert.equal(ctx.loc, "abyss");
+  assert.equal(ctx.deep, true);
+  assert.equal(ctx.feature, "sandbar");
+  assert.equal(ctx.localDepth, 9);
+  // Без географических данных контекст не врёт: пусто, а не «где-то в акватории».
+  const bare = ctxFromAtmosphere(atm, { loc: "bay" });
+  assert.equal(bare.feature, null);
+  assert.equal(bare.localDepth, 0);
 });

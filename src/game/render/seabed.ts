@@ -23,6 +23,8 @@ const HABITAT: Record<string, string[]> = {
 const CORAL_COLS = ["#d98a98", "#dca26a", "#a78bb6", "#70b6ab", "#d4c080", "#cf7c78", "#779fbe"];
 
 export class SeabedRenderer {
+  /** Собран ли чанк: ключ меняется при смене сезона/ширины и сбрасывает кэш. */
+  get built() { return this.key !== ""; }
   private key = "";
   private landscape = new SeabedLandscape();
   private ys: number[] = [];
