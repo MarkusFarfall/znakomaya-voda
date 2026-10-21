@@ -20,7 +20,7 @@ import { AmbientLife } from "./ambient";
 import { SeabedRenderer } from "./seabed";
 import { SkyRenderer } from "./sky";
 import { drawBolt, drawIce, drawLeaves, makeBolt, type Bolt } from "./weatherFx";
-import { drawEventFx, EventFxBuffer, type FxScene } from "./eventFx";
+import { drawEventFx, EventFxBuffer, EVENT_FX_MOTION_SCALE, type FxScene } from "./eventFx";
 import { clamp, glow, hexA, mix, rng, smooth, af, rgbHex, FONTS, roundRect } from "./util";
 import {
   drawDepthOverlay,
@@ -34,8 +34,6 @@ import {
   seaSurfaceColor,
   type Ring,
 } from "./water";
-
-const EVENT_FX_MOTION_SCALE = 0.42;
 
 interface Ambient { f: FishDef; x: number; depth: number; dir: 1 | -1; speed: number; len: number; phase: number; known: boolean }
 interface Creature { kind: "jelly" | "turtle" | "crab"; x: number; y: number; vx: number; vy: number; s: number; phase: number; hue: string }

@@ -310,6 +310,32 @@ export function drawDepthOverlay(f: Frame) {
 export interface Ring { x: number; t: number; s: number }
 
 /**
+ * Гребень поверхности — ОДИН путь на кадр.
+ * Свечение (до судна) и обводка (после судна) обязаны сэмплировать одну и ту же
+ * волну, иначе на стыке появляется смещённая линия; кроме того, строить путь
+ * дважды — это лишние сотни `lineTo` на кадр.
+ */
+let crestKey = "";
+let crestPath: Path2D | null = null;
+let crestDepth = 0;
+function surfaceCrest(f: Frame, depth: number): Path2D | null {
+  if (typeof Path2D === "undefined") return null;
+  const key = `${f.W}:${f.t}:${f.amp}:${f.sc}:${f.spot.seed}:${depth}`;
+  if (crestPath && crestKey === key) return crestPath;
+  const r = horizontalGridRange(f, 5, 5);
+  const p = new Path2D();
+  // Один непрерывный подпуть: гребень слева направо, затем стенки вниз.
+  p.moveTo(r.first, f.sY + depth);
+  for (let x = r.first; x <= r.last; x += 5) p.lineTo(x, f.waveY(x));
+  p.lineTo(r.last, f.sY + depth);
+  p.closePath();
+  crestKey = key;
+  crestPath = p;
+  crestDepth = depth;
+  return p;
+}
+
+/**
  * Подводное свечение у поверхности (светлая полоса под гребнем волны).
  * Рисуется ДО судна: раньше эта заливка ложилась поверх корпуса и разрезала
  * его прямой светлой полосой — подводная часть выглядела отдельным клином.
@@ -322,15 +348,20 @@ export function drawSurfaceGlow(f: Frame) {
   const sl = ctx.createLinearGradient(0, sY - f.amp, 0, sY + depth);
   sl.addColorStop(0, hexA(slc, 0.75 - night * 0.35));
   sl.addColorStop(1, hexA(slc, 0));
-  // Гребень строится одним подпутём: заливка и обводка сэмплируют одну волну.
-  const outlineRange = horizontalGridRange(f, 5, 5);
-  const surfaceFill = new Path2D();
-  surfaceFill.moveTo(outlineRange.first, sY + depth);
-  for (let x = outlineRange.first; x <= outlineRange.last; x += 5) surfaceFill.lineTo(x, f.waveY(x));
-  surfaceFill.lineTo(outlineRange.last, sY + depth);
-  surfaceFill.closePath();
+  const shape = surfaceCrest(f, depth);
   ctx.fillStyle = sl;
-  ctx.fill(surfaceFill);
+  if (shape) {
+    ctx.fill(shape);
+    return;
+  }
+  // Без Path2D (старые движки) — тот же силуэт напрямую в контексте.
+  const r = horizontalGridRange(f, 5, 5);
+  ctx.beginPath();
+  ctx.moveTo(r.first, sY + depth);
+  for (let x = r.first; x <= r.last; x += 5) ctx.lineTo(x, f.waveY(x));
+  ctx.lineTo(r.last, sY + depth);
+  ctx.closePath();
+  ctx.fill();
 }
 
 /** Блики на поверхности: мировые штрихи по ветру (тоже свет, а не объём — до судна). */
@@ -365,17 +396,28 @@ export function drawSurfaceStreaks(f: Frame) {
 /** Передний слой воды: гребень, барашки и круги от дождя (поверх судна) */
 export function drawSurfaceFront(f: Frame, rings: Ring[]) {
   const { ctx, sY, night, t } = f;
-  const outlineRange = horizontalGridRange(f, 5, 5);
-  const wave = new Path2D();
-  for (let x = outlineRange.first; x <= outlineRange.last; x += 5) {
-    const y = f.waveY(x);
-    if (x === outlineRange.first) wave.moveTo(x, y);
-    else wave.lineTo(x, y);
-  }
   const plankton = hasActiveEvent(f, "plankton");
   ctx.strokeStyle = plankton ? "rgba(110,255,225,0.85)" : `rgba(${night > 0.5 ? "170,190,210" : "255,255,255"},${af(0.12 + 0.43 * (1 - night))})`;
   ctx.lineWidth = 1.6;
-  ctx.stroke(wave);
+  // Тот же путь, что заливал свечение, — обводим только гребень.
+  const shape = surfaceCrest(f, 80 * f.sc);
+  if (shape) {
+    const r = horizontalGridRange(f, 5, 5);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(r.first - 4, sY - f.amp - 6, r.last - r.first + 8, f.amp * 2 + 12);
+    ctx.clip();
+    ctx.stroke(shape);
+    ctx.restore();
+  } else {
+    const outlineRange = horizontalGridRange(f, 5, 5);
+    for (let x = outlineRange.first; x <= outlineRange.last; x += 5) {
+      const y = f.waveY(x);
+      if (x === outlineRange.first) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
   // гребни
   if (f.amp > 5) {
     ctx.fillStyle = `rgba(255,255,255,${0.35 + 0.2 * (1 - night)})`;

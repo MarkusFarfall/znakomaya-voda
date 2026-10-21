@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { Atmosphere } from "../src/game/atmosphere";
-import { FX_TABLE, type FxScene, type Layer } from "../src/game/render/eventFx";
+import { EVENT_FX_MOTION_SCALE, FX_TABLE, type FxScene, type Layer } from "../src/game/render/eventFx";
 import type { FxId, FxSpec, VisibleEvent } from "../src/game/events/types";
 import { ctxFromAtmosphere } from "../src/game/events";
 
@@ -156,4 +156,44 @@ test("event context carries the player's actual spot, not the whole aquatory", (
   const bare = ctxFromAtmosphere(atm, { loc: "bay" });
   assert.equal(bare.feature, null);
   assert.equal(bare.localDepth, 0);
+});
+
+test("background effects drift at a believable pace instead of racing across the viewport", () => {
+  // Дрейф элементов события идёт по «сценическим» часам (`t` уже умножен на
+  // EVENT_FX_MOTION_SCALE`). Проверяем именно фоновые явления: парусники,
+  // буревестники, течение, свечение и призрачный корабль. Прыжки рыб и плавники
+  // сюда не входят — у них своя, живая анимация.
+  const ids: FxId[] = ["sails", "petrels", "current", "bioglow", "ghostship", "waterspout"];
+  // Порог — уже в «экранных» px/с, то есть с учётом EVENT_FX_MOTION_SCALE.
+  const MAX_MEDIAN = 26;
+  const MAX_P95 = 42;
+  for (const id of ids) {
+    for (const layer of LAYERS) {
+      const draw = FX_TABLE[id]?.[layer];
+      if (!draw) continue;
+      const spec: FxSpec = { id };
+      const read = (t: number) => {
+        const r = recorder();
+        draw(scene(r.ctx, X0, t * EVENT_FX_MOTION_SCALE), { e: event(id, 424242), spec, age: 3.2 });
+        return r.xs.filter((v) => v > X0 - PAD && v < X0 + VIEW_W + PAD);
+      };
+      const a = read(5);
+      const b = read(6);
+      if (!a.length || a.length !== b.length) continue;
+      const d: number[] = [];
+      for (let i = 0; i < a.length; i++) {
+        const dd = Math.abs(b[i] - a[i]) / EVENT_FX_MOTION_SCALE;
+        // перескок через wrap — не скорость, а телепорт на другой край
+        if (dd < VIEW_W / 2) d.push(dd);
+      }
+      if (d.length < 4) continue;
+      d.sort((x, y) => x - y);
+      const med = d[Math.floor(d.length / 2)] * EVENT_FX_MOTION_SCALE;
+      const p95 = d[Math.floor(d.length * 0.95)] * EVENT_FX_MOTION_SCALE;
+      assert.ok(
+        med <= MAX_MEDIAN && p95 <= MAX_P95,
+        `${id}/${layer}: ${med.toFixed(0)} px/с по медиане, ${p95.toFixed(0)} px/с по p95`,
+      );
+    }
+  }
 });

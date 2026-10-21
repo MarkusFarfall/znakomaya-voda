@@ -10,12 +10,14 @@ function rnd(seed: number) {
 }
 
 /**
- * Кучевой банк.
+ * Кучевой банк — ОДИН непрерывный силуэт и одна заливка.
  *
- * Форма собирается из куполов в ОДИН путь и заливается вертикальным градиентом
- * (свет сверху, тень снизу), а светлые «лбы» куполов добавляются радиальными
- * градиентами внутри того же клипа. Края спрайта размываются один раз при
- * пересборке (`filter: blur`), поэтому на кадре нет ни колец, ни жёсткой кромки.
+ * Почему так: перекрывающиеся круги/радиальные градиенты дают «бублики» и кольца,
+ * а отдельная прямоугольная подушка в основании читается как брикет с обрезанными
+ * краями. Поэтому купола собираются в один путь (nonzero: пересечения не дают
+ * швов), основание — плавная дуга, а свет и тень идут одним вертикальным
+ * градиентом сверху вниз. Тень у днища добавляется поверх уже залитого силуэта
+ * через `source-atop`, так что за его границы ничего не выходит.
  *
  * width — ПОЛНАЯ ширина облака (силуэт гарантированно укладывается в ±width/2).
  */
@@ -31,59 +33,55 @@ export function cloudBank(
 ) {
   const W2 = Math.max(1, width) * 0.5;
   const rand = rnd(seed + 7);
-  const h = W2 * (0.5 + rand() * 0.12);
-  const n = 6 + Math.floor(rand() * 3);
-  const step = (W2 * 2) / (n - 1);
-  const baseY = h * 0.15;
+  const h = W2 * (0.46 + rand() * 0.1);
+  const n = 7 + Math.floor(rand() * 3);
 
-  const puffs: [number, number, number][] = [];
+  // Веса куполов: в середине крупнее, к краям мельче — узнаваемый кучевой профиль.
+  const ws: number[] = [];
+  let sum = 0;
   for (let i = 0; i < n; i++) {
-    const u = i / (n - 1);
-    // Профиль: купола в середине крупнее, к краям мельче — узнаваемый кучевой силуэт.
-    const bell = 0.3 + 0.7 * Math.sin(Math.PI * Math.pow(u, 0.9));
-    const r = step * (0.42 + bell * 0.62) * (0.8 + rand() * 0.45);
-    const cx = -W2 + u * W2 * 2 + (rand() - 0.5) * step * 0.35;
-    const cy = baseY - r * (0.25 + rand() * 0.7);
-    // Крайние купола держим внутри поля, иначе кромка спрайта срежет силуэт.
-    puffs.push([Math.max(-W2 + r * 0.85, Math.min(W2 - r * 0.85, cx)), cy, r]);
+    const u = (i + 0.5) / n;
+    const w = 0.75 + 0.55 * Math.sin(Math.PI * Math.pow(u, 0.8)) * (0.75 + rand() * 0.5);
+    ws.push(w);
+    sum += w;
   }
 
   ctx.save();
   ctx.translate(x, y);
-  const top = baseY - h * 2.0;
-
-  const body = new Path2D();
-  for (const [cx, cy, r] of puffs) {
-    body.moveTo(cx + r, cy);
-    body.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.beginPath();
+  let cx = -W2;
+  for (let i = 0; i < n; i++) {
+    const w = (ws[i] / sum) * W2 * 2;
+    const u = (i + 0.5) / n;
+    const bell = Math.sin(Math.PI * Math.pow(u, 0.75));
+    const r = w * (0.62 + 0.3 * rand());
+    const cy = -r * 0.12 - bell * h * (0.35 + 0.35 * rand());
+    const ox = cx + w * 0.5 + (rand() - 0.5) * w * 0.12;
+    ctx.moveTo(ox + r, cy);
+    ctx.arc(ox, cy, r, 0, Math.PI * 2);
+    cx += w;
   }
-  const g = ctx.createLinearGradient(0, top, 0, baseY + h * 0.3);
-  g.addColorStop(0, hexA(lit, opacity * 0.7));
-  g.addColorStop(0.35, hexA(lit, opacity));
-  g.addColorStop(0.72, hexA(shade, opacity * 0.98));
-  g.addColorStop(1, hexA(shade, 0));
+  // Днище: плоская волнистая дуга, связывающая крайние купола.
+  ctx.moveTo(-W2 * 1.02, h * 0.02);
+  ctx.bezierCurveTo(-W2 * 0.4, h * 0.13, W2 * 0.4, h * 0.13, W2 * 1.02, h * 0.02);
+  ctx.bezierCurveTo(W2 * 0.5, -h * 0.02, -W2 * 0.5, -h * 0.02, -W2 * 1.02, h * 0.02);
+  ctx.closePath();
+
+  const g = ctx.createLinearGradient(0, -h * 1.55, 0, h * 0.16);
+  g.addColorStop(0, hexA(lit, opacity));
+  g.addColorStop(0.42, hexA(lit, opacity * 0.97));
+  g.addColorStop(0.78, hexA(shade, opacity * 0.86));
+  g.addColorStop(1, hexA(shade, opacity * 0.3));
   ctx.fillStyle = g;
-  ctx.fill(body);
+  ctx.fill();
 
-  ctx.save();
-  ctx.clip(body);
-  // Освещённые «лбы» куполов.
-  for (const [cx, cy, r] of puffs) {
-    const rg = ctx.createRadialGradient(cx, cy - r * 0.45, 0, cx, cy - r * 0.45, r * 0.95);
-    rg.addColorStop(0, hexA(lit, opacity * 0.5));
-    rg.addColorStop(1, hexA(lit, 0));
-    ctx.fillStyle = rg;
-    ctx.beginPath();
-    ctx.arc(cx, cy - r * 0.45, r * 0.95, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // Тень в основании.
-  const under = ctx.createLinearGradient(0, baseY - h * 0.6, 0, baseY + h * 0.3);
-  under.addColorStop(0, hexA(shade, 0));
-  under.addColorStop(1, hexA(shade, opacity * 0.5));
+  // Тень у днища — только внутри силуэта.
+  ctx.globalCompositeOperation = "source-atop";
+  const under = ctx.createLinearGradient(0, h * 0.02, 0, -h * 0.7);
+  under.addColorStop(0, hexA(shade, opacity * 0.32));
+  under.addColorStop(1, hexA(shade, 0));
   ctx.fillStyle = under;
-  ctx.fill(body);
-  ctx.restore();
-
+  ctx.fillRect(-W2 * 1.1, -h * 0.7, W2 * 2.2, h * 0.72);
+  ctx.globalCompositeOperation = "source-over";
   ctx.restore();
 }

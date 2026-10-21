@@ -11,6 +11,13 @@ import type { ActiveInfo, EventDirector } from '../events';
 /** `horizon` рисуется до непрозрачной полосы моря; плавающие FX должны быть в `surface`. */
 export type Layer = 'sky' | 'horizon' | 'under' | 'surface' | 'front';
 
+/**
+ * Общий множитель темпа анимации событий. Событие живёт по игровым минутам,
+ * а дрейф его элементов — представление: без замедления фоновые явления
+ * проносились через кадр «на световой скорости».
+ */
+export const EVENT_FX_MOTION_SCALE = 0.42;
+
 export interface FxScene {
   c: CanvasRenderingContext2D;
   /** Slowed presentation clock; event lifetime/age is tracked separately and unchanged. */
@@ -1047,7 +1054,10 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       // силуэт сливался с берегом и не читался.
       const p = trader ? 0.62 : 0.5;
       const z = zAt(S, p) * (trader ? 1.5 : 1.3);
-      const x = anchor(S, e, 0.58, 0.82) + Math.sin(t * 0.05) * 30 * z;
+      // Лодка соперника не встаёт на игрока: держим её левее, у своего места.
+      const x = trader
+        ? anchor(S, e, 0.58, 0.82) + Math.sin(t * 0.05) * 30 * z
+        : S.viewX0 + S.visW * (0.3 + sd(e) * 0.12) + Math.sin(t * 0.05) * 20 * z;
       const y = farY(S, p) + Math.sin(t * 1.3) * 1.2 * z;
       c.globalAlpha = e.k;
       const hullCol = css(mix([100, 70, 44], S.pal.land1, 0.5 - S.A.daylight * 0.3));
