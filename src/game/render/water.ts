@@ -43,13 +43,25 @@ export function getCaustics(): HTMLCanvasElement {
 export function tileCaustics(ctx: CanvasRenderingContext2D, x0: number, y0: number, w: number, h: number, t: number, scale: number, alpha = 1) {
   const tile = getCaustics();
   const S = 128 * scale;
+  // Сетка тайлов выровнена по мировым координатам: тот же каустический узор можно
+  // залить одним повтором вместо сотни drawImage. Раскладка и фазы — те же.
+  const usePattern = typeof DOMMatrix !== "undefined" && typeof ctx.createPattern === "function";
   for (let layer = 0; layer < 2; layer++) {
     const ox = ((layer ? -t * 9 : t * 7) % S + S) % S;
     const oy = ((layer ? t * 4 : -t * 3) % S + S) % S;
     ctx.globalAlpha = (layer ? 0.55 : 0.7) * alpha;
-    for (let y = y0 - oy - (layer ? S * 0.37 : 0); y < y0 + h; y += S) {
-      for (let x = Math.floor(x0/S)*S - ox - (layer ? S * 0.5 : 0); x < x0 + w; x += S) {
-        ctx.drawImage(tile, x, y, S, S);
+    const shiftX = ox + (layer ? S * 0.5 : 0);
+    const shiftY = oy + (layer ? S * 0.37 : 0);
+    const pattern = usePattern ? ctx.createPattern(tile, "repeat") : null;
+    if (pattern) {
+      pattern.setTransform(new DOMMatrix().translate(-shiftX, -shiftY).scale(S / tile.width, S / tile.height));
+      ctx.fillStyle = pattern;
+      ctx.fillRect(x0, y0, w, h);
+    } else {
+      for (let y = y0 - oy - (layer ? S * 0.37 : 0); y < y0 + h; y += S) {
+        for (let x = Math.floor(x0/S)*S - ox - (layer ? S * 0.5 : 0); x < x0 + w; x += S) {
+          ctx.drawImage(tile, x, y, S, S);
+        }
       }
     }
   }
@@ -135,14 +147,25 @@ export function drawSeaBand(f: Frame, reflect: () => void) {
     cg.addColorStop(1, hexA(col, 0));
     ctx.fillStyle = cg;
     ctx.fillRect(gx - band * 3, hY, band * 6, band + 4);
+    // Дорожка света — те же 90 бликов, но сгруппированы по квантованной яркости:
+    // у каждого блика своя пульсация, поэтому заливок столько же, сколько ступеней.
+    const sparks = new Map<number, number[]>();
     for (let i = 0; i < 90; i++) {
       const p = ((i * 0.618) % 1);
       const y = hY + band * p * p;
       const spread = 8 + p * 150 * (sun ? 1 - clamp(f.sunElev / 60, 0, 1) * 0.5 : 0.7);
       const x = gx + Math.sin(i * 12.9898 + Math.floor(t * 4 + i * 0.37) * 3.1) * spread;
       const a = ga * 0.55 * (0.25 + 0.75 * Math.abs(Math.sin(t * 5 + i * 1.7)));
-      ctx.fillStyle = hexA(col, a);
-      ctx.fillRect(x, y, 2 + p * 9, 0.6 + p * 1.1);
+      const key = Math.round(a * 100);
+      const list = sparks.get(key);
+      if (list) list.push(x, y, 2 + p * 9, 0.6 + p * 1.1);
+      else sparks.set(key, [x, y, 2 + p * 9, 0.6 + p * 1.1]);
+    }
+    for (const [key, list] of sparks) {
+      ctx.beginPath();
+      for (let j = 0; j < list.length; j += 4) ctx.rect(list[j], list[j + 1], list[j + 2], list[j + 3]);
+      ctx.fillStyle = hexA(col, key / 100);
+      ctx.fill();
     }
     ctx.restore();
   }
