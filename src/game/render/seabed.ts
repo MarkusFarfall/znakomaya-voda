@@ -750,15 +750,19 @@ export class SeabedRenderer {
         }
         ctx.stroke();
         ctx.fillStyle = "#7c8c32";
+        // Все листья водоросли — один путь. moveTo в стартовую точку эллипса
+        // обязателен: иначе ellipse() соединит листья линией от текущей точки.
+        const leaf = (cx: number, cy: number, rx: number, ry: number, rot: number) => {
+          ctx.moveTo(cx + rx * Math.cos(rot), cy + rx * Math.sin(rot));
+          ctx.ellipse(cx, cy, rx, ry, rot, 0, Math.PI * 2);
+        };
+        ctx.beginPath();
         pts.forEach(([lx, ly], k) => {
           if (k % 2) return;
-          ctx.beginPath();
-          ctx.ellipse(lx + 8 * s, ly, 11 * s, 3.5 * s, 0.5 + Math.sin(t + k) * 0.25, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.ellipse(lx - 7 * s, ly - 6 * s, 9 * s, 3 * s, -0.5 + Math.sin(t + k) * 0.25, 0, Math.PI * 2);
-          ctx.fill();
+          leaf(lx + 8 * s, ly, 11 * s, 3.5 * s, 0.5 + Math.sin(t + k) * 0.25);
+          leaf(lx - 7 * s, ly - 6 * s, 9 * s, 3 * s, -0.5 + Math.sin(t + k) * 0.25);
         });
+        ctx.fill();
         ctx.fillStyle = "#b0a040";
         ctx.beginPath();
         ctx.arc(pts[11][0], pts[11][1], 3 * s, 0, Math.PI * 2);
@@ -772,12 +776,12 @@ export class SeabedRenderer {
         ctx.fill();
         ctx.strokeStyle = "rgba(150,110,90,0.6)";
         ctx.lineWidth = 0.7;
+        ctx.beginPath();
         for (let i = -2; i <= 2; i++) {
-          ctx.beginPath();
           ctx.moveTo(0, -1);
           ctx.lineTo(i * 2 * s, -4.5 * s);
-          ctx.stroke();
         }
+        ctx.stroke();
         break;
       case "star":
         ctx.fillStyle = "#e8703c";
@@ -791,21 +795,23 @@ export class SeabedRenderer {
       case "brittle":
         ctx.strokeStyle = "#c89078";
         ctx.lineWidth = 1.2;
+        ctx.beginPath();
         for (let i = 0; i < 5; i++) {
           const a = (i / 5) * Math.PI * 2 + d.seed;
-          ctx.beginPath();
           ctx.moveTo(0, -2);
           ctx.quadraticCurveTo(Math.cos(a) * 6 * s, -2 + Math.sin(a) * 2 * s, Math.cos(a + 0.4) * 11 * s, -2 + Math.sin(a + 0.4) * 3 * s);
-          ctx.stroke();
         }
+        ctx.stroke();
         break;
       case "pebbles":
         ctx.fillStyle = "#9a8a70";
+        ctx.beginPath();
         for (let i = 0; i < 5; i++) {
-          ctx.beginPath();
-          ctx.ellipse((i - 2) * 5 * s, -1, 2.5 * s, 1.5 * s, 0, 0, Math.PI * 2);
-          ctx.fill();
+          const cx = (i - 2) * 5 * s;
+          ctx.moveTo(cx + 2.5 * s, -1);
+          ctx.ellipse(cx, -1, 2.5 * s, 1.5 * s, 0, 0, Math.PI * 2);
         }
+        ctx.fill();
         break;
       case "rock":
       case "boulder": {
@@ -831,13 +837,13 @@ export class SeabedRenderer {
       case "urchin":
         ctx.strokeStyle = "#3a1a3a";
         ctx.lineWidth = 1;
+        ctx.beginPath();
         for (let i = 0; i < 16; i++) {
           const a = Math.PI + (i / 15) * Math.PI;
-          ctx.beginPath();
           ctx.moveTo(0, -4 * s);
           ctx.lineTo(Math.cos(a) * 11 * s, -4 * s + Math.sin(a) * 11 * s);
-          ctx.stroke();
         }
+        ctx.stroke();
         ctx.fillStyle = "#5a2a5a";
         ctx.beginPath();
         ctx.arc(0, -3 * s, 4.5 * s, Math.PI, 0);
