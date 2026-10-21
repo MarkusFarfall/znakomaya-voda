@@ -46,12 +46,22 @@ export class SeabedLandscape {
     [];
   /** Полосы-слои дна статичны внутри чанка: путь строится один раз. */
   private bandPaths: (Path2D | null | undefined)[] = [];
+  /** Зёрна осадка тоже статичны: копим их в несколько путей по цвету и прозрачности. */
+  private grainPaths: Map<string, Path2D> | null = null;
+  /** Дальние гребни не зависят от камеры: путь строится один раз на чанк. */
+  private ridgePaths: (Path2D | null)[] | null = null;
+  private ridgeCam = NaN;
+  private grainStride = 0;
 
   private prepare(f: Frame) {
     const key = `${f.spot.id}|${f.W}|${f.H}|${f.sc}`;
     if (key === this.key) return;
     this.key = key;
     this.bandPaths = [];
+    this.grainPaths = null;
+    this.ridgePaths = null;
+    this.ridgeCam = NaN;
+    this.grainStride = 0;
     this.formations = bedFormations(f.W, f.sc, f.spot.seed).filter(o=>f.chunkOffset===undefined || (o.x-o.width*.6>4 && o.x+o.width*.6<f.W-4));
     const random = rng(f.spot.seed * 43 + 19);
     this.grains = Array.from(
@@ -70,12 +80,34 @@ export class SeabedLandscape {
     const { ctx, W, H, sc } = f;
     const view = horizontalRange(f, 10);
     const gridStart = -10;
-    const x0 = Math.max(gridStart, gridStart + Math.floor((view.left - gridStart) / 10) * 10);
-    const x1 = Math.min(W + 10, view.right + 10);
     ctx.save();
     ctx.beginPath();
     ctx.rect(view.left, f.sY + 1, Math.max(0, view.right - view.left), Math.max(1, f.cam + H - f.sY));
     ctx.clip();
+    // Дальние гребни не зависят от камеры по геометрии: контур строится один раз
+    // на чанк (по-прежнему с шагом 10 по мировой сетке), а в кадре только заливается.
+    if (!this.ridgePaths || this.ridgeCam !== f.cam) {
+      // Низ контура привязан к камере (в кадре он за пределами экрана), поэтому
+      // при погружении контур пересобирается — иначе заливка оборвалась бы.
+      this.ridgeCam = f.cam;
+      const build = (layer: number) => {
+        if (typeof Path2D === "undefined") return null;
+        const p = new Path2D();
+        p.moveTo(gridStart, f.cam + H + 10);
+        for (let x = gridStart; x <= W + 10; x += 10) {
+          const q = clamp(x / W, 0, 1),
+            remap = q * 0.72 + 0.1 + layer * 0.06;
+          const ridge =
+            (f.bedDepth ? f.sY + f.depthPx(f.bedDepth(x)) : bed(remap * W)) -
+            (50 + (1 - layer) * 65 + Math.sin(f.chunkOffset !== undefined ? (x + f.chunkOffset) * 0.0033 + layer : q * 8 + f.spot.seed + layer) * 25) * sc;
+          p.lineTo(x, Math.max(f.sY + 20 * sc, ridge));
+        }
+        p.lineTo(W + 10, f.cam + H + 10);
+        p.closePath();
+        return p;
+      };
+      this.ridgePaths = [build(0), build(1)];
+    }
     // Two distant ridgelines fade into the habitat's water; they never replace the real floor.
     for (const layer of [0, 1]) {
       const col = mix(f.loc.bed, f.loc.water.mid, layer === 0 ? 0.83 : 0.68);
@@ -84,20 +116,25 @@ export class SeabedLandscape {
       g.addColorStop(0.45, hexA(col, 0.48));
       g.addColorStop(1, hexA(col, 0.15));
       ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.moveTo(x0, f.cam + H + 10);
-      for (let x = x0; x <= x1; x += 10) {
-        const q = clamp(x / W, 0, 1),
-          remap = q * 0.72 + 0.1 + layer * 0.06;
-        const ridge =
-          (f.bedDepth?f.sY+f.depthPx(f.bedDepth(x)):bed(remap * W)) -
-          (50 + (1 - layer) * 65 + Math.sin(f.chunkOffset!==undefined?(x+f.chunkOffset)*.0033+layer:q * 8 + f.spot.seed + layer) * 25) *
-            sc;
-        ctx.lineTo(x, Math.max(f.sY + 20 * sc, ridge));
+      const path = this.ridgePaths[layer];
+      if (path) ctx.fill(path);
+      else {
+        const x0 = Math.max(gridStart, gridStart + Math.floor((view.left - gridStart) / 10) * 10);
+        const x1 = Math.min(W + 10, view.right + 10);
+        ctx.beginPath();
+        ctx.moveTo(x0, f.cam + H + 10);
+        for (let x = x0; x <= x1; x += 10) {
+          const q = clamp(x / W, 0, 1),
+            remap = q * 0.72 + 0.1 + layer * 0.06;
+          const ridge =
+            (f.bedDepth ? f.sY + f.depthPx(f.bedDepth(x)) : bed(remap * W)) -
+            (50 + (1 - layer) * 65 + Math.sin(f.chunkOffset !== undefined ? (x + f.chunkOffset) * 0.0033 + layer : q * 8 + f.spot.seed + layer) * 25) * sc;
+          ctx.lineTo(x, Math.max(f.sY + 20 * sc, ridge));
+        }
+        ctx.lineTo(x1, f.cam + H + 10);
+        ctx.closePath();
+        ctx.fill();
       }
-      ctx.lineTo(x1, f.cam + H + 10);
-      ctx.closePath();
-      ctx.fill();
     }
     ctx.restore();
   }
@@ -196,27 +233,52 @@ export class SeabedLandscape {
       ctx.fillRect(o.x - r, y + 35 * sc - r, r * 2, r * 2);
     }
     if (f.quality > 0) {
+      // Зёрна не двигаются: собираем их в пути по цвету и квантованной прозрачности
+      // и заливаем пачкой. Одна заливка на десятки крупинок вместо крупинки на кадр.
+      // Шаг квантования 0.01 по альфе — на глаз то же зерно, но в 15 раз меньше вызовов.
       const stride = f.quality === 1 ? 3 : 1;
-      for (let i = 0; i < this.grains.length; i += stride) {
-        const p = this.grains[i];
-        if (p.x < view.left || p.x > view.right) continue;
-        const y = bed(p.x) + p.offset;
-        if (y < f.cam - 5 || y > f.cam + H + 5) continue;
-        ctx.fillStyle = hexA(
-          p.shade > 0.5 ? "#d8cead" : "#12272c",
-          (0.06 + p.shade * 0.15) * (1 - p.offset / (H * 0.65)),
-        );
-        ctx.beginPath();
-        ctx.ellipse(
-          p.x,
-          y,
-          p.r * sc * (soft ? 1.8 : 1),
-          p.r * sc * 0.55,
-          soft ? -0.08 : p.shade,
-          0,
-          Math.PI * 2,
-        );
-        ctx.fill();
+      const canPath = typeof Path2D !== "undefined";
+      const cache = canPath ? (this.grainPaths ?? (this.grainPaths = new Map())) : null;
+      if (cache && this.grainStride !== stride) {
+        // Другой уровень качества — другая выборка, пути пересобираются.
+        this.grainStride = stride;
+        cache.clear();
+        for (let i = 0; i < this.grains.length; i += stride) {
+          const p = this.grains[i];
+          const y = bed(p.x) + p.offset;
+          const alpha = (0.06 + p.shade * 0.15) * (1 - p.offset / (H * 0.65));
+          const col = p.shade > 0.5 ? "#d8cead" : "#12272c";
+          const k = `${col}|${Math.round(alpha * 100)}`;
+          let path = cache.get(k);
+          if (!path) { path = new Path2D(); cache.set(k, path); }
+          const rx = p.r * sc * (soft ? 1.8 : 1),
+            ry = p.r * sc * 0.55,
+            rot = soft ? -0.08 : p.shade;
+          // Без moveTo эллипсы в одном пути соединяются линиями.
+          path.moveTo(p.x + rx * Math.cos(rot), y + rx * Math.sin(rot));
+          path.ellipse(p.x, y, rx, ry, rot, 0, Math.PI * 2);
+        }
+      }
+      if (cache && cache.size) {
+        for (const [k, path] of cache) {
+          const sep = k.lastIndexOf("|");
+          ctx.fillStyle = hexA(k.slice(0, sep), Number(k.slice(sep + 1)) / 100);
+          ctx.fill(path);
+        }
+      } else {
+        for (let i = 0; i < this.grains.length; i += stride) {
+          const p = this.grains[i];
+          if (p.x < view.left || p.x > view.right) continue;
+          const y = bed(p.x) + p.offset;
+          if (y < f.cam - 5 || y > f.cam + H + 5) continue;
+          ctx.fillStyle = hexA(
+            p.shade > 0.5 ? "#d8cead" : "#12272c",
+            (0.06 + p.shade * 0.15) * (1 - p.offset / (H * 0.65)),
+          );
+          ctx.beginPath();
+          ctx.ellipse(p.x, y, p.r * sc * (soft ? 1.8 : 1), p.r * sc * 0.55, soft ? -0.08 : p.shade, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
     }
     if (soft) {

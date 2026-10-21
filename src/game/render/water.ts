@@ -82,21 +82,36 @@ export function drawSeaBand(f: Frame, reflect: () => void) {
   const darkC = mix(water, "#000000", 0.35);
   const rows = f.quality > 0 ? 34 : 14;
   const rippleView = horizontalRange(f, 40);
+  // Блики ряби — сотни мелких прямоугольников в двух оттенках. Копим их в пути
+  // по оттенку и квантованной прозрачности (шаг 0.02) и заливаем пачкой:
+  // позиции и порядок штрихов те же, вызовов заливки в разы меньше.
+  const buckets = new Map<number, number[]>();
   for (let i = 0; i < rows; i++) {
     const p = i / rows;
     const y = hY + band * p * p;
     const th = 0.5 + p * 1.8;
     const dashes = 10 + Math.floor(p * 8);
     const spd = (8 + p * 30) * (0.5 + f.wind);
-    const dS = hexA(darkC, 0.25 * (0.5 + p)), lS = hexA(lightC, 0.18 * (0.5 + p));
     for (let k = 0; k < dashes; k++) {
       const seed = i * 31.7 + k * 7.3;
       const len = (6 + (seed % 5) * 4) * (0.4 + p * 2);
       const x = (((seed * 97) % W) + t * spd + Math.sin(t * 0.8 + seed) * 6) % (W + 60) - 30;
       if (x + len < rippleView.left || x > rippleView.right) continue;
-      ctx.fillStyle = k % 3 === 0 ? dS : lS;
-      ctx.fillRect(x, y, len, th);
+      const dark = k % 3 === 0;
+      const alpha = (dark ? 0.25 : 0.18) * (0.5 + p);
+      const key = (dark ? 0 : 1) * 1000 + Math.round(alpha * 50);
+      const list = buckets.get(key);
+      if (list) list.push(x, y, len, th);
+      else buckets.set(key, [x, y, len, th]);
     }
+  }
+  for (const [key, list] of buckets) {
+    const dark = key < 1000,
+      alpha = (key % 1000) / 50;
+    ctx.beginPath();
+    for (let j = 0; j < list.length; j += 4) ctx.rect(list[j], list[j + 1], list[j + 2], list[j + 3]);
+    ctx.fillStyle = hexA(dark ? darkC : lightC, alpha);
+    ctx.fill();
   }
   if (f.fogK > 0.3) {
     const fg = ctx.createLinearGradient(0, hY - 20, 0, hY + band * 0.8);
@@ -280,15 +295,22 @@ export function drawSurfaceFront(f: Frame, rings: Ring[]) {
   const sl = ctx.createLinearGradient(0, sY - f.amp, 0, sY + depth);
   sl.addColorStop(0, hexA(slc, 0.75 - night * 0.35));
   sl.addColorStop(1, hexA(slc, 0));
-  const fillRange = horizontalGridRange(f, 8, 8);
-  const lastWorldFillSample = Math.floor(W / 8) * 8;
-  ctx.beginPath();
-  ctx.moveTo(fillRange.first, sY + depth);
-  for (let x = fillRange.first; x <= fillRange.last; x += 8) ctx.lineTo(x, f.waveY(x));
-  ctx.lineTo(fillRange.last >= lastWorldFillSample ? W : fillRange.last, sY + depth);
-  ctx.closePath();
+  // Гребень поверхности строится один раз на кадр и служит и заливке, и обводке.
+  // Раньше заливка и обводка сэмплировали волну независимо (шаг 8 и 5).
+  const outlineRange = horizontalGridRange(f, 5, 5);
+  const wave = new Path2D();
+  for (let x = outlineRange.first; x <= outlineRange.last; x += 5) {
+    const y = f.waveY(x);
+    if (x === outlineRange.first) wave.moveTo(x, y);
+    else wave.lineTo(x, y);
+  }
+  const surfaceFill = new Path2D();
+  surfaceFill.moveTo(outlineRange.first, sY + depth);
+  surfaceFill.addPath(wave);
+  surfaceFill.lineTo(outlineRange.last, sY + depth);
+  surfaceFill.closePath();
   ctx.fillStyle = sl;
-  ctx.fill();
+  ctx.fill(surfaceFill);
 
   // World-anchored specular streaks make wind direction and swell legible without a GPU shader.
   const streaks = Math.min(120, Math.max(22, Math.round(W / 110)));
@@ -316,16 +338,9 @@ export function drawSurfaceFront(f: Frame, rings: Ring[]) {
   ctx.restore();
 
   const plankton = hasActiveEvent(f, "plankton");
-  const outlineRange = horizontalGridRange(f, 5, 5);
-  ctx.beginPath();
-  for (let x = outlineRange.first; x <= outlineRange.last; x += 5) {
-    const y = f.waveY(x);
-    if (x === outlineRange.first) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
   ctx.strokeStyle = plankton ? "rgba(110,255,225,0.85)" : `rgba(${night > 0.5 ? "170,190,210" : "255,255,255"},${af(0.12 + 0.43 * (1 - night))})`;
   ctx.lineWidth = 1.6;
-  ctx.stroke();
+  ctx.stroke(wave);
   // гребни
   if (f.amp > 5) {
     ctx.fillStyle = `rgba(255,255,255,${0.35 + 0.2 * (1 - night)})`;
