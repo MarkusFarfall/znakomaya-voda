@@ -131,6 +131,19 @@ export class SeabedRenderer {
     }
   }
 
+  /** Кэш путей силуэта дна: геометрия чанка статична, камера меняется — ключ по окну и низу. */
+  private bedPaths: { key: string; back: Path2D | null; bed: Path2D | null; line: Path2D | null } | null = null;
+  /** Осадочные полосы и каустическая кромка — тоже статичная геометрия чанка. */
+  private strataPaths: { key: string; layers: (Path2D | null)[]; caustic: Path2D | null } | null = null;
+  private static pathOf(pts: number[], close = true): Path2D | null {
+    if (typeof Path2D === "undefined") return null;
+    const p = new Path2D();
+    p.moveTo(pts[0], pts[1]);
+    for (let i = 2; i < pts.length; i += 2) p.lineTo(pts[i], pts[i + 1]);
+    if (close) p.closePath();
+    return p;
+  }
+
   draw(f: Frame, causticsEnabled = true) {
     this.build(f);
     const { ctx, W, sY, cam, H, t } = f;
@@ -140,14 +153,37 @@ export class SeabedRenderer {
     const bottom = Math.max(this.minY + 4000, cam + H + 100);
     // Surface-reaching kelp, roots and pier piles must not disappear because their roots are offscreen.
     if (this.minY - 400 * f.sc > cam + H) { this.drawFeatures(f); return; }
-    const backLine = this.profileSlice(this.back, left, right, this.backSlice);
-    const bedLine = this.profileSlice(this.pts, left, right, this.bedSlice);
+    const stepQ = this.step || 2;
+    const sliceLeft = Math.max(-2, Math.floor(left / stepQ) * stepQ - stepQ);
+    const sliceRight = Math.min(W + 2, Math.ceil(right / stepQ) * stepQ + stepQ);
+    const backLine = this.profileSlice(this.back, sliceLeft, sliceRight, this.backSlice);
+    const bedLine = this.profileSlice(this.pts, sliceLeft, sliceRight, this.bedSlice);
     const backPoly = this.backPolygon, bedPoly = this.bedPolygon;
     backPoly.length = 0; bedPoly.length = 0;
     for (const value of backLine) backPoly.push(value);
     for (const value of bedLine) bedPoly.push(value);
-    backPoly.push(right, bottom, left, bottom);
-    bedPoly.push(right, bottom, left, bottom);
+    backPoly.push(sliceRight, bottom, sliceLeft, bottom);
+    bedPoly.push(sliceRight, bottom, sliceLeft, bottom);
+    // Силуэт дна не пересобирается, пока окно и камера стоят: это сотни lineTo каждый кадр.
+    // Ключ квантуется по шагу профиля: при движении камеры силуэт не пересобирается
+    // каждый кадр, а запас по краям всё равно перекрывает видимую область.
+    const q = this.step || 2;
+    const ql = Math.floor(left / q) * q, qr = Math.ceil(right / q) * q, qb = Math.ceil(bottom / 64) * 64;
+    const pathKey = `${ql}|${qr}|${qb}`;
+    if (this.bedPaths?.key !== pathKey) {
+      this.bedPaths = {
+        key: pathKey,
+        back: SeabedRenderer.pathOf(backPoly),
+        bed: SeabedRenderer.pathOf(bedPoly),
+        line: SeabedRenderer.pathOf(bedLine, false),
+      };
+      this.strataPaths = null;
+    }
+    const paths = this.bedPaths!;
+    const fillPath = (pts: number[], path: Path2D | null) => {
+      if (path) ctx.fill(path);
+      else { tracePoly(ctx, pts); ctx.fill(); }
+    };
     const bedC = mix(f.loc.bed, "#708980", f.loc.maxDepth > 100 ? .28 : .08);
     this.landscape.backdrop(f, this.bedSurface);
     // дальние силуэты
@@ -193,36 +229,53 @@ export class SeabedRenderer {
       ctx.restore();
     }
     // дальний слой
-    tracePoly(ctx, backPoly);
     ctx.fillStyle = mix(mix(bedC, f.loc.water.mid, 0.55), "#000000", 0.15);
-    ctx.fill();
+    fillPath(backPoly, paths.back);
     // основной
-    tracePoly(ctx, bedPoly);
     const top=f.bedDepth?sY+f.depthPx(f.loc.maxDepth*.4):this.minY;
     const g = ctx.createLinearGradient(0, top, 0, top + 300);
     g.addColorStop(0, mix(bedC, "#ffffff", 0.1));
     g.addColorStop(1, mix(bedC, "#000000", 0.55));
     ctx.fillStyle = g;
-    ctx.fill();
+    fillPath(bedPoly, paths.bed);
     // кромка и осадочные слои
     ctx.save();
-    tracePoly(ctx, bedPoly);
-    ctx.clip();
+    if (paths.bed) ctx.clip(paths.bed);
+    else { tracePoly(ctx, bedPoly); ctx.clip(); }
     ctx.lineWidth = 2.2;
     ctx.strokeStyle = hexA(mix(bedC, "#ffffff", 0.35), 0.7);
-    tracePoly(ctx, bedLine, false);
-    ctx.stroke();
+    if (paths.line) ctx.stroke(paths.line);
+    else { tracePoly(ctx, bedLine, false); ctx.stroke(); }
     ctx.lineWidth = 1;
-    for (let k = 1; k <= 4; k++) {
-      ctx.strokeStyle = hexA(mix(bedC, "#000000", 0.4), 0.25);
-      ctx.beginPath();
-      for (let i = 0; i < bedLine.length; i += 2) {
-        const x = bedLine[i];
-        const y = bedLine[i + 1] + k * 14 * f.sc + Math.sin((x + (f.chunkOffset ?? 0)) * 0.03 + k) * 3;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+    if (!this.strataPaths) {
+      const layers: (Path2D | null)[] = [];
+      for (let k = 1; k <= 4; k++) {
+        if (typeof Path2D === "undefined") { layers.push(null); continue; }
+        const path = new Path2D();
+        for (let i = 0; i < bedLine.length; i += 2) {
+          const x = bedLine[i];
+          const y = bedLine[i + 1] + k * 14 * f.sc + Math.sin((x + (f.chunkOffset ?? 0)) * 0.03 + k) * 3;
+          if (i === 0) path.moveTo(x, y);
+          else path.lineTo(x, y);
+        }
+        layers.push(path);
       }
-      ctx.stroke();
+      this.strataPaths = { key: pathKey, layers, caustic: null };
+    }
+    for (let k = 0; k < 4; k++) {
+      ctx.strokeStyle = hexA(mix(bedC, "#000000", 0.4), 0.25);
+      const path = this.strataPaths.layers[k];
+      if (path) ctx.stroke(path);
+      else {
+        ctx.beginPath();
+        for (let i = 0; i < bedLine.length; i += 2) {
+          const x = bedLine[i];
+          const y = bedLine[i + 1] + (k + 1) * 14 * f.sc + Math.sin((x + (f.chunkOffset ?? 0)) * 0.03 + k + 1) * 3;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
     }
     if (f.spot.feature === "sandbar" || f.loc.seabed === "sand") {
       ctx.strokeStyle = hexA(mix(bedC, "#000000", 0.2), 0.35);
@@ -243,15 +296,29 @@ export class SeabedRenderer {
     if (causticsEnabled && ca > 0.05 && this.minY < shallow && f.quality > 1) {
       const band = 16 * f.sc;
       ctx.save();
-      ctx.beginPath();
-      for (let i = 0; i < bedLine.length; i += 2) {
-        const x = bedLine[i], y = bedLine[i + 1] - 3;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+      if (!this.strataPaths.caustic && typeof Path2D !== "undefined") {
+        const path = new Path2D();
+        for (let i = 0; i < bedLine.length; i += 2) {
+          const x = bedLine[i], y = bedLine[i + 1] - 3;
+          if (i === 0) path.moveTo(x, y);
+          else path.lineTo(x, y);
+        }
+        for (let i = bedLine.length - 2; i >= 0; i -= 2) path.lineTo(bedLine[i], bedLine[i + 1] + band);
+        path.closePath();
+        this.strataPaths.caustic = path;
       }
-      for (let i = bedLine.length - 2; i >= 0; i -= 2) ctx.lineTo(bedLine[i], bedLine[i + 1] + band);
-      ctx.closePath();
-      ctx.clip();
+      if (this.strataPaths.caustic) ctx.clip(this.strataPaths.caustic);
+      else {
+        ctx.beginPath();
+        for (let i = 0; i < bedLine.length; i += 2) {
+          const x = bedLine[i], y = bedLine[i + 1] - 3;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        for (let i = bedLine.length - 2; i >= 0; i -= 2) ctx.lineTo(bedLine[i], bedLine[i + 1] + band);
+        ctx.closePath();
+        ctx.clip();
+      }
       ctx.globalCompositeOperation = "lighter";
       tileCaustics(ctx, left, this.minY - 10, right - left, shallow - this.minY + band + 10, t * 0.8, 0.9 * f.sc, 0.18 * ca);
       ctx.restore();
@@ -659,14 +726,15 @@ export class SeabedRenderer {
     }
     switch (d.kind) {
       case "grass":
+        // Шесть травинок — один путь: та же геометрия и цвет, но один вызов вместо шести.
         ctx.strokeStyle = "#5a9a4a";
         ctx.lineWidth = 2;
+        ctx.beginPath();
         for (let i = 0; i < 6; i++) {
-          ctx.beginPath();
           ctx.moveTo(i * 3 - 8, 0);
           ctx.quadraticCurveTo(i * 3 - 8 + sway * 0.4, -14 * s, i * 3 - 8 + sway, -(18 + (i % 3) * 7) * s);
-          ctx.stroke();
         }
+        ctx.stroke();
         break;
       case "kelp": {
         const hgt = (90 + d.seed * 1.5) * s;

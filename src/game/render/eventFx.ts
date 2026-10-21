@@ -20,7 +20,10 @@ export interface FxScene {
   horizon: number;
   surface: number;
   seabed: number;
+  /** Ширина кадра игрока (не мира): эффекты живут в окне, а не на всей карте. */
   visW: number;
+  /** Мировая координата левого края кадра. */
+  viewX0: number;
   cam: number;
   windPx: number;
   sAt(x: number): number;
@@ -94,7 +97,7 @@ const wrap = (v: number, m: number) => ((v % m) + m) % m;
 const sd = (e: VisibleEvent, n = 0) => h((e.seed % 9973) * 0.137 + n);
 const farY = (S: FxScene, p: number) => S.horizon + (S.surface - S.horizon) * p * p;
 const zAt = (S: FxScene, p: number) => S.s * (0.18 + 0.82 * p);
-const anchor = (S: FxScene, e: VisibleEvent, lo = 0.3, hi = 0.85) => S.visW * (lo + (hi - lo) * sd(e));
+const anchor = (S: FxScene, e: VisibleEvent, lo = 0.3, hi = 0.85) => S.viewX0 + S.visW * (lo + (hi - lo) * sd(e));
 
 function tinyFish(c: CanvasRenderingContext2D, x: number, y: number, len: number, ang: number) {
   c.save();
@@ -220,7 +223,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const y = farY(S, p);
       const z = zAt(S, p);
       const span = S.visW + 300;
-      const bx = wrap(t * 38 * z + sd(e) * span, span) - 150;
+      const bx = S.viewX0 + wrap(t * 38 * z + sd(e) * span, span) - 150;
       c.fillStyle = css(mix([62, 76, 92], S.pal.land1, 0.35));
       c.strokeStyle = '#eef6ff';
       c.lineWidth = 1;
@@ -296,7 +299,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const y = farY(S, p);
       const z = zAt(S, p);
       const span = S.visW + 300;
-      const bx = wrap(-t * 30 * z + sd(e) * span, span) - 150;
+      const bx = S.viewX0 + wrap(-t * 30 * z + sd(e) * span, span) - 150;
       for (let j = 0; j < 3; j++) {
         const up = Math.max(0, Math.sin(t * 0.9 + j * 1.3));
         if (up <= 0.02) continue;
@@ -438,7 +441,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const { c, t, s } = S;
       const n = Math.round(12 * (spec.n ?? 1) * (S.q === 0 ? 0.5 : 1));
       for (let i = 0; i < n; i++) {
-        const x = h(i + 60) * S.W + Math.sin(t * 0.1 + i) * 30 * s;
+        const x = S.viewX0 + h(i + 60) * S.visW + Math.sin(t * 0.1 + i) * 30 * s;
         const y = S.surface + (0.06 + h(i + 61) * 0.75) * S.H + Math.sin(t * 0.3 + i) * 12 * s;
         if (y < S.cam - 40 || y > S.cam + S.H + 40) continue;
         const r = (5 + h(i + 62) * 7) * s;
@@ -465,7 +468,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const pj = j / 14;
         const y = farY(S, pj) + 1;
         for (let i = 0; i < 5; i++) {
-          const x = wrap(h(j * 7 + i) * (S.W + 200) + t * (8 + pj * 20) * s, S.W + 200) - 100;
+          const x = S.viewX0 + wrap(h(j * 7 + i) * (S.visW + 200) + t * (8 + pj * 20) * s, S.visW + 200) - 100;
           c.globalAlpha = a * (0.25 + 0.6 * Math.max(0, Math.sin(t * 2 + i + j * 1.3)));
           c.fillRect(x, y, (6 + pj * 50) * s, Math.max(0.8, pj * 1.8 * s));
         }
@@ -480,15 +483,15 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       c.lineWidth = 2.2 * s;
       c.globalAlpha = a * (0.45 + 0.25 * Math.sin(t * 3));
       c.beginPath();
-      for (let x = 0; x <= S.W; x += 10) {
+      for (let x = S.viewX0; x <= S.viewX0 + S.visW; x += 10) {
         const y = S.sAt(x) + 1;
-        if (x === 0) c.moveTo(x, y);
+        if (x === S.viewX0) c.moveTo(x, y);
         else c.lineTo(x, y);
       }
       c.stroke();
       c.fillStyle = 'rgb(160,255,240)';
       for (let i = 0; i < 40; i++) {
-        const x = h(i + 80) * S.W;
+        const x = S.viewX0 + h(i + 80) * S.visW;
         const tw = Math.max(0, Math.sin(t * (2 + h(i) * 3) + i * 2));
         c.globalAlpha = a * tw;
         c.fillRect(x, S.sAt(x) + (2 + h(i + 81) * 20) * s, 1.6 * s, 1.6 * s);
@@ -502,14 +505,14 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       if (!spec.color) return;
       S.c.globalAlpha = e.k * 0.26;
       S.c.fillStyle = css(spec.color);
-      S.c.fillRect(-20, S.horizon, S.W + 40, S.surface - S.horizon + 40);
+      S.c.fillRect(S.viewX0 - 20, S.horizon, S.visW + 40, S.surface - S.horizon + 40);
       S.c.globalAlpha = 1;
     },
     under: (S, { e, spec }) => {
       if (!spec.color) return;
       S.c.globalAlpha = e.k * 0.2;
       S.c.fillStyle = css(spec.color);
-      S.c.fillRect(-20, S.surface, S.W + 40, S.H * 1.3);
+      S.c.fillRect(S.viewX0 - 20, S.surface, S.visW + 40, S.H * 1.3);
       S.c.globalAlpha = 1;
     },
   },
@@ -520,7 +523,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const n = S.q === 0 ? 40 : 80;
       const range = S.H * 0.95;
       for (let i = 0; i < n; i++) {
-        const x = h(i + 100) * S.W + Math.sin(t * 0.6 + i) * 8 * s;
+        const x = S.viewX0 + h(i + 100) * S.visW + Math.sin(t * 0.6 + i) * 8 * s;
         const y = S.surface + range - wrap(t * (10 + h(i + 101) * 10) * s + h(i + 102) * range, range);
         if (y < S.cam - 10 || y > S.cam + S.H + 10) continue;
         c.globalAlpha = e.k * (0.5 + 0.4 * Math.sin(t * 3 + i));
@@ -545,7 +548,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         if (ph > 0.32) continue;
         const q = ph / 0.32;
         const k2 = i * 31 + cyc * 7.13;
-        const x0 = h(k2) * S.visW * 1.1;
+        const x0 = S.viewX0 + h(k2) * S.visW * 1.1;
         const y0 = h(k2 + 1) * S.horizon * 0.5;
         const len = (60 + h(k2 + 2) * 130) * s;
         const ang = 0.55 + (h(k2 + 3) - 0.5) * 0.35;
@@ -609,7 +612,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
     sky: (S, { e }) => {
       const { c } = S;
       const a = e.k * 0.24 * (0.3 + 0.7 * S.A.night);
-      const cx = S.visW - S.moon.x + S.visW * 0.05;
+      const cx = 2 * S.viewX0 + S.visW - S.moon.x + S.visW * 0.05;
       const cy = S.horizon + (S.horizon - S.moon.y) * 0.4;
       const R = S.horizon * 0.82;
       c.lineWidth = R * 0.028;
@@ -627,11 +630,11 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const { c, t, s } = S;
       const k = e.k;
       c.fillStyle = `rgba(4,6,18,${k * 0.62})`;
-      c.fillRect(-20, -S.H, S.W + 40, S.horizon + S.H);
+      c.fillRect(S.viewX0 - 20, -S.H, S.visW + 40, S.horizon + S.H);
       c.fillStyle = '#fff8ea';
       for (let i = 0; i < 60; i++) {
         c.globalAlpha = k * (0.4 + 0.5 * h(i + 7)) * (0.6 + 0.4 * Math.sin(t * 2 + i));
-        c.fillRect(h(i + 3) * S.W, h(i + 4) * S.horizon * 0.85, 1.3, 1.3);
+        c.fillRect(S.viewX0 + h(i + 3) * S.visW, h(i + 4) * S.horizon * 0.85, 1.3, 1.3);
       }
       const { x, y } = S.sun;
       c.globalCompositeOperation = 'lighter';
@@ -656,7 +659,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
     },
     front: (S, { e }) => {
       S.c.fillStyle = `rgba(4,6,16,${e.k * 0.42})`;
-      S.c.fillRect(0, S.cam - 10, S.W, S.H + 20);
+      S.c.fillRect(S.viewX0, S.cam - 10, S.visW, S.H + 20);
     },
   },
 
@@ -761,7 +764,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const p = 0.2;
       const z = zAt(S, p) * 1.7;
       const span = S.visW + 400;
-      const x = wrap(t * 3 * z + sd(e) * span, span) - 200;
+      const x = S.viewX0 + wrap(t * 3 * z + sd(e) * span, span) - 200;
       const y = farY(S, p);
       const a = e.k * (0.28 + S.A.fog * 0.5) * (0.75 + 0.25 * Math.sin(t * 1.3));
       const col = css([150, 186, 180], a);
@@ -813,7 +816,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       for (let i = 0; i < n; i++) {
         const per = 9 + h(i) * 6;
         const ph = ((t + h(i + 1) * 20) / per) % 1;
-        const x = h(i + 2) * S.W + Math.sin(t * 0.3 + i) * 20 * s;
+        const x = S.viewX0 + h(i + 2) * S.visW + Math.sin(t * 0.3 + i) * 20 * s;
         const y = S.surface + S.H * 0.95 - ph * S.H * 0.85;
         if (y < S.cam - 40 || y > S.cam + S.H + 40) continue;
         const col = spec.color ?? (i % 3 ? [110, 220, 255] : [150, 255, 200]);
@@ -876,8 +879,8 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   leviathan: {
     under: (S, { e }) => {
       const { c, t, s } = S;
-      const L = S.W * 0.8;
-      const x = S.W * 1.4 - e.p * (S.W * 1.9);
+      const L = S.visW * 0.8;
+      const x = S.viewX0 + S.visW * (1.4 - e.p * 1.9);
       const y = S.surface + S.H * 0.27 + Math.sin(t * 0.5) * 10 * s;
       c.globalAlpha = e.k * 0.55;
       c.fillStyle = 'rgb(0,5,9)';
@@ -906,14 +909,14 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       c.fillStyle = col;
       c.beginPath();
       c.moveTo(-20, S.horizon + 1);
-      for (let x = -20; x <= S.W + 20; x += 16) c.lineTo(x, S.horizon - S.H * (0.06 + 0.035 * Math.sin(x * 0.012 + t * 0.05) + 0.015 * Math.sin(x * 0.05)) * (0.4 + a * 0.6));
-      c.lineTo(S.W + 20, S.horizon + 1);
+      for (let x = S.viewX0 - 20; x <= S.viewX0 + S.visW + 20; x += 16) c.lineTo(x, S.horizon - S.H * (0.06 + 0.035 * Math.sin(x * 0.012 + t * 0.05) + 0.015 * Math.sin(x * 0.05)) * (0.4 + a * 0.6));
+      c.lineTo(S.viewX0 + S.visW + 20, S.horizon + 1);
       c.fill();
       c.strokeStyle = css(mix(S.pal.cloud, [12, 14, 18], 0.6), a * 0.25);
       c.lineWidth = 1;
       c.beginPath();
       for (let i = 0; i < 40; i++) {
-        const x = h(i + 200) * S.W;
+        const x = S.viewX0 + h(i + 200) * S.visW;
         c.moveTo(x, S.horizon - S.H * 0.05);
         c.lineTo(x + S.windPx * 0.04, S.horizon);
       }
@@ -1009,7 +1012,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const span = S.visW + 200;
         const p = 0.04 + h(i + 300) * 0.16;
         const z = zAt(S, p) * 1.6;
-        const x = wrap(h(i + 301) * span + t * (4 + h(i + 302) * 3) * z * dir, span) - 100;
+        const x = S.viewX0 + wrap(h(i + 301) * span + t * (4 + h(i + 302) * 3) * z * dir, span) - 100;
         const y = farY(S, p);
         c.globalAlpha = e.k;
         c.fillStyle = hull;
@@ -1221,7 +1224,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const q = ph / 0.7;
         const p = 0.55 + h(i + 402) * 0.35;
         const z = zAt(S, p);
-        const x = h(i + 403) * S.visW + q * 120 * z;
+        const x = S.viewX0 + h(i + 403) * S.visW + q * 120 * z;
         const y = farY(S, p) - Math.sin(q * PI) * 9 * z - 4 * z * Math.min(1, q * 8, (1 - q) * 8);
         c.globalAlpha = e.k;
         tinyFish(c, x, y, 10 * z, 0);
@@ -1249,7 +1252,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const cyc = Math.floor(tt / per);
         const p = 0.25 + h(i + 502 + cyc) * 0.6;
         const z = zAt(S, p);
-        const x = h(i + 503 + cyc * 3.1) * S.visW;
+        const x = S.viewX0 + h(i + 503 + cyc * 3.1) * S.visW;
         const y = farY(S, p);
         if (ph < 0.42) {
           const q = ph / 0.42;
@@ -1270,8 +1273,8 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       for (let i = 0; i < 7; i++) {
         const y = S.surface + (0.15 + h(i + 600) * 0.5) * S.H;
         if (y < S.cam - 30 || y > S.cam + S.H + 30) continue;
-        const span = S.W + 300;
-        const x = wrap(t * 22 * s * (0.6 + h(i + 601)) + h(i + 602) * span, span) - 150;
+        const span = S.visW + 300;
+        const x = S.viewX0 + wrap(t * 22 * s * (0.6 + h(i + 601)) + h(i + 602) * span, span) - 150;
         c.globalAlpha = e.k * 0.65;
         c.beginPath();
         for (let k = 0; k < 14; k++) {
@@ -1294,13 +1297,13 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       c.fillStyle = 'rgba(240,248,255,0.85)';
       for (let i = 0; i < n; i++) {
         const y = S.cam - 20 + wrap(h(i + 700) * range + t * 820 * s * (0.8 + h(i + 701) * 0.4), range);
-        const x = wrap(h(i + 702) * (S.W + 100) + t * S.windPx * 0.5, S.W + 100) - 50;
+        const x = S.viewX0 + wrap(h(i + 702) * (S.visW + 100) + t * S.windPx * 0.5, S.visW + 100) - 50;
         if (y > S.sAt(x)) continue;
         c.fillRect(x, y, 2 * s, 2.6 * s);
       }
       for (let i = 0; i < 30 * e.k; i++) {
         const ph = (t * 3 + h(i + 710)) % 1;
-        const x = h(i + 711 + Math.floor(t * 3 + h(i + 710))) * S.W;
+        const x = S.viewX0 + h(i + 711 + Math.floor(t * 3 + h(i + 710))) * S.visW;
         c.globalAlpha = 1 - ph;
         c.fillRect(x, S.sAt(x) - ph * 6 * s, 1.5 * s, 1.5 * s);
       }
@@ -1315,10 +1318,10 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       c.lineCap = 'round';
       c.beginPath();
       for (let i = 0; i < 8; i++) {
-        const span = S.W + 100;
+        const span = S.visW + 100;
         const p = 0.5 + h(i + 800) * 0.45;
         const z = zAt(S, p);
-        const x = wrap(t * (60 + h(i + 801) * 40) * z + h(i + 802) * span, span) - 50;
+        const x = S.viewX0 + wrap(t * (60 + h(i + 801) * 40) * z + h(i + 802) * span, span) - 50;
         const y = farY(S, p) - (3 + Math.abs(Math.sin(t * 3 + i)) * 6) * z * 2 + Math.sin(t * 9 + i) * z;
         const w = 4 * z;
         const fl = Math.sin(t * 14 + i) * 2 * z;
@@ -1339,8 +1342,8 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const pj = 0.1 + (j / 12) * 0.9;
         const y = farY(S, pj);
         for (let i = 0; i < 3; i++) {
-          const span = S.W + 300;
-          const x = wrap(t * (30 + pj * 90) * s + h(j * 5 + i + 900) * span, span) - 150;
+          const span = S.visW + 300;
+          const x = S.viewX0 + wrap(t * (30 + pj * 90) * s + h(j * 5 + i + 900) * span, span) - 150;
           c.globalAlpha = e.k * 0.2;
           c.fillRect(x, y, (20 + pj * 140) * s, Math.max(0.8, pj * 1.4 * s));
         }
@@ -1353,7 +1356,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       for (let i = 0; i < 40; i++) {
         const y = S.surface + h(i + 950) * S.H * 0.8;
         if (y < S.cam - 10 || y > S.cam + S.H + 10) continue;
-        const x = wrap(t * (80 + h(i + 951) * 60) * s + h(i + 952) * S.W, S.W + 40) - 20;
+        const x = S.viewX0 + wrap(t * (80 + h(i + 951) * 60) * s + h(i + 952) * S.visW, S.visW + 40) - 20;
         c.globalAlpha = e.k * 0.22;
         c.fillRect(x, y, 22 * s, 1);
       }
@@ -1369,7 +1372,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       for (let i = 0; i < n; i++) {
         const p = 0.2 + h(i + 1000) * 0.7;
         const z = zAt(S, p) * 2;
-        const x = h(i + 1001) * S.visW + Math.sin(t * 0.3 + i) * 40 * z;
+        const x = S.viewX0 + h(i + 1001) * S.visW + Math.sin(t * 0.3 + i) * 40 * z;
         const y = farY(S, p) - (10 + Math.sin(t * 0.8 + i * 1.3) * 8) * z;
         S.glow(x, y, (10 + 4 * Math.sin(t * 2 + i)) * z, [190, 240, 225], e.k * 0.6 * (0.5 + 0.5 * Math.sin(t * 1.5 + i)));
       }
@@ -1390,3 +1393,7 @@ export function drawEventFx(S: FxScene, layer: Layer, calls: FxCall[]) {
     S.c.restore();
   }
 }
+
+/** Таблица эффектов. Экспортируется для guard-тестов: они проверяют, что ни один
+ *  эффект не рисует за пределами кадра игрока. */
+export const FX_TABLE = FX;

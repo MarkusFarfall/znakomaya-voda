@@ -30,6 +30,7 @@ export class PrecipitationField {
   private impacts: Impact[] = [];
   private seed = 8147;
   private key = "";
+  private bounds: { x0: number; x1: number; top: number; bottom: number; s: number } | null = null;
   private amount = 0;
   private wind = 0;
   private elapsed = 0;
@@ -59,7 +60,22 @@ export class PrecipitationField {
     dt = Number.isFinite(dt) ? clamp(dt, 0, 0.1) : 0;
     if (o.active === false) { this.drops.length = 0; this.impacts.length = 0; this.amount = 0; return; }
     const key = `${o.x0}:${o.x1}:${o.top}:${o.bottom}:${o.s}`;
-    if (key !== this.key) { this.key = key; this.drops.length = 0; this.impacts.length = 0; }
+    if (key !== this.key) {
+      const prev = this.bounds;
+      this.key = key;
+      // Камера сдвинула окно — переносим уже живущие капли, а не сбрасываем поле:
+      // иначе дождь «мигает» при каждом пикселе движения.
+      const sameShape = prev && prev.top === o.top && prev.bottom === o.bottom && prev.s === o.s;
+      if (sameShape) {
+        const dx = o.x0 - prev.x0;
+        for (const p of this.drops) p.x += dx;
+        for (const p of this.impacts) p.x += dx;
+      } else {
+        this.drops.length = 0;
+        this.impacts.length = 0;
+      }
+      this.bounds = { x0: o.x0, x1: o.x1, top: o.top, bottom: o.bottom, s: o.s };
+    }
     this.elapsed += dt;
     this.amount += (clamp(o.intensity, 0, 1.5) - this.amount) * -Math.expm1(-dt * 2.5);
     this.wind += (clamp(o.wind, -900, 900) - this.wind) * -Math.expm1(-dt * 2);

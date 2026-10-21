@@ -75,11 +75,13 @@ export function drawSeaBand(f: Frame, reflect: () => void) {
   ctx.fillRect(0, hY, W, sY - hY + f.amp * 2 + 6);
   reflect();
 
-  // перспективная рябь
+  // перспективная рябь: позиции остаются в мировых координатах (мир не меняется),
+  // но штрихи вне кадра не рисуются — на широкой карте их большинство.
   const band = sY - hY;
   const lightC = mix(mix(f.mid, rgbHex(f.atmo.palette.glow), 0.18), "#1a2438", night * 0.8);
   const darkC = mix(water, "#000000", 0.35);
   const rows = f.quality > 0 ? 34 : 14;
+  const rippleView = horizontalRange(f, 40);
   for (let i = 0; i < rows; i++) {
     const p = i / rows;
     const y = hY + band * p * p;
@@ -91,6 +93,7 @@ export function drawSeaBand(f: Frame, reflect: () => void) {
       const seed = i * 31.7 + k * 7.3;
       const len = (6 + (seed % 5) * 4) * (0.4 + p * 2);
       const x = (((seed * 97) % W) + t * spd + Math.sin(t * 0.8 + seed) * 6) % (W + 60) - 30;
+      if (x + len < rippleView.left || x > rippleView.right) continue;
       ctx.fillStyle = k % 3 === 0 ? dS : lS;
       ctx.fillRect(x, y, len, th);
     }

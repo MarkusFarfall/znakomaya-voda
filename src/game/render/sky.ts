@@ -1,8 +1,11 @@
 import { cloudBank } from "./cloudBank";
 import type { WeatherId } from "../types";
-import { findActiveEvent, hasActiveEvent, type Frame } from "./frame";
+import { findActiveEvent, hasActiveEvent, horizontalRange, type Frame } from "./frame";
 import { drawRainbow as drawRainbowFx } from "./weatherFx";
 import { clamp, ctx2d, glow, hexA, makeCanvas, mix, rng, smooth, af, rgbHex } from "./util";
+
+/** Квантование цвета для ключей кэша: 32 градации на канал — глазу неотличимо, кэш не дёргается. */
+const quant = (c: string) => (c.length === 7 ? "#" + c.slice(1).match(/../g)!.map(h => Math.min(255, Math.round(parseInt(h, 16) / 8) * 8).toString(16).padStart(2, "0")).join("") : c);
 
 // [час, зенит, середина, горизонт]
 const SKY: [number, string, string, string][] = [
@@ -146,6 +149,8 @@ export class SkyRenderer {
   draw(f: Frame) {
     const { ctx, W, H, hY, t, e } = f;
     this.setup(W, H);
+    // Кадр игрока: всё, что дальше него, не рисуется и не блитится.
+    const view = horizontalRange(f, 0);
     const abyssDark = f.loc.land === "abyss" ? 0.25 : 0;
 
     const g = ctx.createLinearGradient(0, 0, 0, hY);
@@ -170,10 +175,15 @@ export class SkyRenderer {
     if (starA > 0.02) {
       if (this.milky) {
         ctx.globalAlpha = starA * 0.9;
-        ctx.drawImage(this.milky, 0, 0);
+        // Источник рисуем только видимым срезом: та же картинка, но без блита полотна на всю карту.
+        const sx = Math.max(0, Math.min(this.milky.width, Math.floor(view.left)));
+        const sw = Math.max(1, Math.min(this.milky.width - sx, Math.ceil(view.right - sx)));
+        if (sw > 0) ctx.drawImage(this.milky, sx, 0, sw, this.milky.height, sx, 0, sw, this.milky.height);
       }
       for (const [x, y, r, p, c] of this.stars) {
         if (y > hY - 4) continue;
+        // Звёзды живут по всей ширине мира; рисуем только попавшие в кадр.
+        if (x + r < view.left || x > view.right) continue;
         ctx.globalAlpha = starA * (0.45 + 0.55 * Math.sin(t * (1.5 + (p % 1) * 2) + p)) * clamp(1 - y / hY + 0.25, 0, 1);
         ctx.fillStyle = c;
         ctx.fillRect(x, y, r, r);
@@ -189,8 +199,10 @@ export class SkyRenderer {
     // метеоры
     if (hasActiveEvent(f, "meteor")) {
       if (Math.random() < f.dt * 1.6) this.meteors.push([Math.random() * W, Math.random() * H * 0.2, 0]);
+      const meteorView = horizontalRange(f, 320);
       for (const m of this.meteors) {
         m[2] += f.dt;
+        if (m[0] < meteorView.left || m[0] > meteorView.right) continue;
         const k = m[2] / 0.9;
         const x = m[0] + k * 280, y = m[1] + k * 140;
         const gr = ctx.createLinearGradient(x, y, x - 110, y - 55);
@@ -220,22 +232,28 @@ export class SkyRenderer {
     lit = mix(lit, "#1c2232", f.night * 0.88);
     let shade = mix(lit, f.top, 0.4);
     shade = mix(shade, f.golden > 0.1 ? "#7a5a80" : "#46505e", 0.3 + f.golden * 0.2);
-    const key = `${lit}|${shade}|${W}|${H}|${f.sunX < W / 2}`;
+    // Ключ перестройки квантуется по цвету: иначе плавно меняющиеся сумерки
+    // пересобирали 14 облачных спрайтов и полотно на 220 градиентов каждый кадр.
+    const key = `${quant(lit)}|${quant(shade)}|${W}|${H}|${f.sunX < W / 2}`;
     if (key !== this.key) {
       this.key = key;
       this.rebuild(f, lit, shade);
     }
     if (f.cover > 0.7 && this.deck && f.quality > 0) {
       ctx.globalAlpha = clamp((f.cover - 0.7) * 3.3, 0, 1) * (wt === "fog" ? 0.5 : 1);
-      ctx.drawImage(this.deck, 0, 0);
+      // Тот же кадр, но из источника читается только видимая полоса (иначе браузер тянет все 7200 px).
+      const dsx = Math.max(0, Math.min(this.deck.width, Math.floor(view.left)));
+      const dsw = Math.max(1, Math.min(this.deck.width - dsx, Math.ceil(view.right - dsx)));
+      if (dsw > 0) ctx.drawImage(this.deck, dsx, 0, dsw, this.deck.height, dsx, 0, dsw, this.deck.height);
       ctx.globalAlpha = 1;
     }
-    // перистые
+    // Перистые: держатся в окне игрока, а не размазаны по всей карте.
+    const span = Math.max(1, view.right - view.left);
     if ((wt === "clear" || wt === "fair" || wt === "cloudy") && f.night < 0.8) {
       ctx.strokeStyle = hexA(lit, 0.18 * (1 - f.night));
       ctx.lineWidth = 2;
       for (let i = 0; i < 6; i++) {
-        const x0 = ((i * 260 + t * 2) % (W + 400)) - 200, y0 = H * (0.05 + (i % 3) * 0.04);
+        const x0 = view.left - 200 + ((i * 260 + view.left + t * 2) % (span + 400)), y0 = H * (0.05 + (i % 3) * 0.04);
         ctx.beginPath();
         ctx.moveTo(x0, y0);
         ctx.bezierCurveTo(x0 + 60, y0 - 10, x0 + 140, y0 + 6, x0 + 220, y0 - 4);
@@ -246,9 +264,11 @@ export class SkyRenderer {
     for (let i = 0; i < n; i++) {
       const c = this.clouds[i];
       c.x += (c.speed + f.atmo.wind * 1.5 * f.atmo.windDir) * f.dt * (0.5 + c.layer);
-      if (c.x > W + 40) c.x = -c.w * 1.4;
-      if (c.x < -c.w * 1.5) c.x = W + 30;
+      // Облака перецикливаются вокруг окна игрока: погода всегда над ним, а не «где-то на карте».
+      const lo = view.left - c.w * 2;
+      c.x = lo + (((c.x - lo) % span) + span) % span;
       if (!c.sprite) continue;
+      if (c.x + c.sprite.width < view.left - 60 || c.x > view.right + 60) continue;
       const big = wt === "storm" || wt === "gale" || wt === "rain" || wt === "downpour" || wt === "blizzard" ? 1.35 : 1;
       ctx.globalAlpha = wt === "fog" ? 0.55 : 0.95;
       ctx.drawImage(c.sprite, c.x, c.y - c.h * (big - 1), c.sprite.width * big, c.sprite.height * big);

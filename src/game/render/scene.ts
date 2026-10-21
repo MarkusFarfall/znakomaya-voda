@@ -13,7 +13,7 @@ import { projectFightFish } from "./fishingGeometry";
 import { BAIT_BY_ID, BOATS } from "../world";
 import { BOAT_SPECS, drawBoat, drawFleetBoat } from "./boat";
 import { Boat3D } from "./boats3d/boat3d";
-import { hasActiveEvent, type Frame } from "./frame";
+import { hasActiveEvent, horizontalRange, type Frame } from "./frame";
 import { drawBobberPointer, drawFightPanel, drawPower, drawRuler, drawSonar } from "./hud";
 import { LandRenderer } from "./land";
 import { AmbientLife } from "./ambient";
@@ -134,14 +134,18 @@ export class Scene {
     const mast: readonly [number, number] = [boatX - 15 * sc, f.waveY(boatX) - 30 * sc];
     const tip: readonly [number, number] = rodTip ?? [boatX + 70 * sc, f.waveY(boatX) - 50 * sc];
     const rocks = this.voyage===null?this.stream.rocks():this.land.seaRocks.slice(0,8).map(rock=>[rock.x,rock.y-rock.h] as [number,number]);
+    // Эффекты событий привязываются к кадру игрока: раньше якоря считались в долях всей
+    // акватории (7200 px), поэтому событие могло быть активным, но невидимым.
+    const viewX0 = f.viewLeft ?? 0;
+    const viewW = f.viewWidth ?? W;
     return {
       c: ctx, t, W, H, s: sc, q: Math.max(0, Math.min(2, this.quality)) as 0 | 1 | 2,
-      horizon: hY, surface: sY, seabed: sY + f.depthPx(f.spot.maxDepth), visW: W, cam,
+      horizon: hY, surface: sY, seabed: sY + f.depthPx(f.spot.maxDepth), visW: viewW, viewX0, cam,
       windPx: atmo.wind * atmo.windDir * 26 * sc,
       sAt: f.waveY,
       glow: (x, y, r, col, a) => glow(ctx, x, y, r, rgbHex(col), a),
       sun: { x: f.sunX, y: f.sunY }, moon: { x: f.moonX, y: f.moonY },
-      rocks, capeX: W * (f.loc.land === "cliffs" ? 0.82 : 0.72), capeTop: hY,
+      rocks, capeX: viewX0 + viewW * (f.loc.land === "cliffs" ? 0.88 : 0.82), capeTop: hY,
       rodTip: tip, mast, lantern: [boatX - 20 * sc, f.waveY(boatX) - 20 * sc], boatX,
       A: atmo, pal: atmo.palette,
     };
@@ -565,8 +569,13 @@ export class Scene {
   private drawWhale(f: Frame) {
     const { ctx, e, W, sY, t, sc } = f;
     if (!hasActiveEvent(f, "whale")) return;
-    this.whaleX += f.dt * 40;
-    if (this.whaleX > W + 500) this.whaleX = -500;
+    // Кит проходит через кадр игрока, а не ползёт 205 секунд через всю акваторию.
+    const viewX0 = f.viewLeft ?? 0, viewW = f.viewWidth ?? W;
+    const left = viewX0 - 420, right = viewX0 + viewW + 520;
+    if (this.whaleX < left || this.whaleX > right) this.whaleX = left;
+    // 110 px/s: проход кадра занимает ~19 с, а не три с половиной минуты.
+    this.whaleX += f.dt * 110;
+    if (this.whaleX > right) this.whaleX = left;
     const wy = sY + f.depthPx(Math.min(f.spot.maxDepth * 0.5, 40));
     ctx.save();
     ctx.translate(this.whaleX, wy);
@@ -1138,8 +1147,10 @@ export class Scene {
   }
 
   private drawPrecipitation(f: Frame) {
+    // Дождь и снег живут в окне игрока, а не по всей ширине акватории.
+    const view = horizontalRange(f, 60);
     const o = {
-      x0: 0, x1: f.W, top: -60, bottom: f.sY + f.amp + 6,
+      x0: view.left, x1: view.right, top: -60, bottom: f.sY + f.amp + 6,
       floor: f.waveY, horizon: f.hY,
       wind: f.atmo.wind * f.atmo.windDir * 26 * f.sc, s: f.sc,
       q: clamp(Math.round(f.quality), 0, 2) as 0 | 1 | 2,

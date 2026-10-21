@@ -91,3 +91,32 @@ test("camera/zoom changes need no particle resampling: view is world-space only"
   for (let i = 0; i < 120; i++) { a.step(view, 1 / 60); b.step(view, 1 / 60); }
   assert.deepEqual(a.snapshot(), b.snapshot());
 });
+
+test("panning the camera moves a live field instead of resetting it", () => {
+  const field = new PrecipitationField("rain");
+  warm(field);
+  const before = field.snapshot().drops;
+  const dx = 260;
+  const moved = { ...view, x0: view.x0 + dx, x1: view.x1 + dx };
+  field.step(moved, 1 / 600);
+  const after = field.snapshot().drops;
+  let kept = 0;
+  before.forEach((p, i) => {
+    const q = after[i];
+    if (!q || p.phase !== q.phase) return;
+    // Same drop identity, shifted by the camera delta, no fade-in from the top.
+    assert.ok(Math.abs(q.x - (p.x + dx)) < 2.5);
+    kept++;
+  });
+  assert.ok(kept > 60, `kept ${kept}`);
+});
+
+test("a zoom change rebuilds the field, a pan does not", () => {
+  const field = new PrecipitationField("snow");
+  warm(field, view, 2);
+  const count = field.snapshot().drops.length;
+  field.step({ ...view, x0: view.x0 - 90, x1: view.x1 - 90 }, 1 / 600);
+  assert.equal(field.snapshot().drops.length, count);
+  field.step({ ...view, s: 1.4 }, 1 / 600);
+  assert.ok(field.snapshot().drops.length <= count);
+});

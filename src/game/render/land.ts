@@ -7,6 +7,10 @@ export interface Layer {
   base: string;
   haze: number;
   reflect: boolean;
+  /** Кэш геометрии: силуэт строится один раз на чанк, а не каждый кадр. */
+  path?: Path2D;
+  /** Открытая кромка без нижней кромки — для подсветки со стороны солнца. */
+  crestPath?: Path2D;
   /** только для отражения — рисуется отдельным модулем */
   hidden?: boolean;
   snowY?: number;
@@ -16,6 +20,16 @@ export interface Layer {
 interface Tree { x: number; y: number; h: number; kind: "pine" | "round"; haze: number; c: string }
 interface House { x: number; y: number; w: number; h: number; lit: boolean; haze: number; church?: boolean; c: string }
 interface LightSrc { x: number; y: number; c: string; night: boolean }
+
+/** Path2D из массива точек: статичная геометрия чанка переиспользуется между кадрами. */
+function polygonPath(pts: number[], close = true): Path2D | null {
+  if (typeof Path2D === "undefined") return null;
+  const p = new Path2D();
+  p.moveTo(pts[0], pts[1]);
+  for (let i = 2; i < pts.length; i += 2) p.lineTo(pts[i], pts[i + 1]);
+  if (close) p.closePath();
+  return p;
+}
 
 export class LandRenderer {
   private key = "";
@@ -27,6 +41,8 @@ export class LandRenderer {
   private lighthouse: { x: number; y: number; h: number; sweep: boolean; haze: number } | null = null;
   private strata: { pts: number[]; haze: number }[] = [];
   private grass: { pts: number[]; haze: number } | null = null;
+  private grassPath: Path2D | undefined;
+  private strataPaths: (Path2D | null)[] = [];
   private waterfall: { x: number; top: number; w: number } | null = null;
   palms: { x: number; y: number; h: number; lean: number }[] = [];
   floes: { x: number; y: number; w: number; h: number; v: number }[] = [];
@@ -91,6 +107,8 @@ export class LandRenderer {
     this.lighthouse = null;
     this.strata = [];
     this.grass = null;
+    this.grassPath = undefined;
+    this.strataPaths = [];
     this.waterfall = null;
     this.palms = [];
     this.floes = [];
@@ -260,51 +278,67 @@ export class LandRenderer {
     const { ctx, W, H, hY, t, night } = f;
     const view = horizontalRange(f, 16);
     // северное сияние — сила и вероятность приходят из атмосферы/сезона.
-    if (f.atmo.aurora > 0.01) {
+    if (f.atmo.aurora > 0.02) {
       ctx.save();
       ctx.globalCompositeOperation = "lighter";
       const a = f.atmo.aurora;
+      // Одна лента = одна заливка. Раньше на каждый 6-px столбец создавался свой
+      // градиент (до 1.4 тыс. объектов за кадр) — это была самая дорогая петля сцены.
+      const step = 24;
+      const firstX = Math.max(view.left, 0) - step;
+      const lastX = Math.min(W, view.right) + step;
+      const span = Math.max(1, lastX - firstX);
       for (let k = 0; k < 4; k++) {
-        const firstX = Math.max(0, Math.floor(view.left / 6) * 6);
-        const lastX = Math.min(W, view.right);
-        for (let x = firstX; x <= lastX; x += 6) {
-          const y = H * (0.08 + k * 0.025) + Math.sin(x * 0.005 + t * 0.25 + k) * 30 + Math.sin(x * 0.012 - t * 0.17 + k * 2) * 14;
-          const hgt = 50 + Math.sin(x * 0.02 + t + k) * 20;
-          const g = ctx.createLinearGradient(0, y, 0, y + hgt);
-          const c = k === 2 ? "150,90,255" : "70,255,160";
-          g.addColorStop(0, `rgba(${c},0)`);
-          g.addColorStop(0.7, `rgba(${c},${af(0.15 * a)})`);
-          g.addColorStop(1, `rgba(${c},0)`);
-          ctx.fillStyle = g;
-          ctx.fillRect(x, y, 6, hgt);
+        const top = H * (0.08 + k * 0.025);
+        const col = k === 2 ? "150,90,255" : "70,255,160";
+        ctx.beginPath();
+        for (let x = firstX; x <= lastX; x += step) {
+          const y = top + Math.sin(x * 0.005 + t * 0.25 + k) * 30 + Math.sin(x * 0.012 - t * 0.17 + k * 2) * 14;
+          if (x === firstX) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
+        for (let x = lastX; x >= firstX; x -= step) {
+          const y = top + Math.sin(x * 0.005 + t * 0.25 + k) * 30 + Math.sin(x * 0.012 - t * 0.17 + k * 2) * 14;
+          ctx.lineTo(x, y + 50 + Math.sin(x * 0.02 + t + k) * 20);
+        }
+        ctx.closePath();
+        const g = ctx.createLinearGradient(0, top - 44, 0, top + 70);
+        g.addColorStop(0, `rgba(${col},0)`);
+        g.addColorStop(0.55, `rgba(${col},${af(0.15 * a)})`);
+        g.addColorStop(1, `rgba(${col},0)`);
+        ctx.fillStyle = g;
+        ctx.fill();
       }
+      void span;
       ctx.restore();
     }
 
     this.extra.drawBack(this, f);
     for (const L of this.layers) {
       if (L.hidden) continue;
+      // Слой за пределами кадра не строит ни путь, ни градиент.
+      if (L.x1 < view.left || L.x0 > view.right) continue;
+      if (L.path === undefined) L.path = polygonPath(L.pts) ?? undefined;
       const col = this.colorOf(f, L.base, L.haze);
-      tracePoly(ctx, L.pts);
       const g = ctx.createLinearGradient(0, hY - H * 0.3, 0, hY);
       g.addColorStop(0, mix(col, "#ffffff", 0.04 * (1 - night)));
       g.addColorStop(1, mix(col, f.hor, 0.18 * (1 - night)));
       ctx.fillStyle = g;
-      ctx.fill();
+      if (L.path) ctx.fill(L.path);
+      else { tracePoly(ctx, L.pts); ctx.fill(); }
       // подсветка кромки со стороны солнца
       if (f.golden > 0.1 && L.haze < 0.8) {
         ctx.strokeStyle = hexA("#ffb070", 0.25 * f.golden * f.sunVis);
         ctx.lineWidth = 1.2;
-        tracePoly(ctx, L.pts.slice(2, -2), false);
-        ctx.stroke();
+        if (L.crestPath === undefined) L.crestPath = polygonPath(L.pts.slice(2, -2), false) ?? undefined;
+        if (L.crestPath) ctx.stroke(L.crestPath);
+        else { tracePoly(ctx, L.pts.slice(2, -2), false); ctx.stroke(); }
       }
       if (L.snowY !== undefined) {
         const snowLeft = Math.max(L.x0, view.left), snowRight = Math.min(L.x1, view.right);
         if (snowRight > snowLeft) {
         ctx.save();
-        tracePoly(ctx, L.pts);
-        ctx.clip();
+        if (L.path) ctx.clip(L.path);
+        else { tracePoly(ctx, L.pts); ctx.clip(); }
         ctx.beginPath();
         ctx.rect(snowLeft, -H * 4, snowRight - snowLeft, H * 8);
         ctx.clip();
@@ -326,17 +360,20 @@ export class LandRenderer {
       this.drawDetailsFor(f, L.haze);
     }
     if (this.grass) {
-      tracePoly(ctx, this.grass.pts);
+      if (this.grassPath === undefined) this.grassPath = polygonPath(this.grass.pts) ?? undefined;
       const se = f.e.season;
       ctx.fillStyle = this.colorOf(f, se === 3 ? "#e8eef2" : se === 2 ? "#8a7a3a" : se === 1 ? "#6a8a3e" : "#56733e", this.grass.haze);
-      ctx.fill();
+      if (this.grassPath) ctx.fill(this.grassPath);
+      else { tracePoly(ctx, this.grass.pts); ctx.fill(); }
     }
     if (this.strata.length) {
       ctx.strokeStyle = hexA(this.colorOf(f, "#2e2a26", 0.2), 0.6);
       ctx.lineWidth = 1;
-      for (const s of this.strata) {
-        tracePoly(ctx, s.pts, false);
-        ctx.stroke();
+      if (!this.strataPaths.length) this.strataPaths = this.strata.map(s => polygonPath(s.pts, false));
+      for (let i = 0; i < this.strata.length; i++) {
+        const path = this.strataPaths[i];
+        if (path) ctx.stroke(path);
+        else { tracePoly(ctx, this.strata[i].pts, false); ctx.stroke(); }
       }
     }
     if (this.lighthouse && overlapsHorizontal(f, this.lighthouse.x - W * 0.55, this.lighthouse.x + W * 0.55)) this.drawLighthouse(f);
@@ -602,9 +639,10 @@ export class LandRenderer {
     ctx.globalAlpha = 0.45 * (1 - f.amp / 14);
     for (const L of this.layers) {
       if (!L.reflect || L.x1 < view.left || L.x0 > view.right) continue;
-      tracePoly(ctx, L.pts);
+      if (L.path === undefined) L.path = polygonPath(L.pts) ?? undefined;
       ctx.fillStyle = mix(this.colorOf(f, L.base, L.haze), water, 0.45);
-      ctx.fill();
+      if (L.path) ctx.fill(L.path);
+      else { tracePoly(ctx, L.pts); ctx.fill(); }
     }
     ctx.restore();
     if (night > 0.3) {

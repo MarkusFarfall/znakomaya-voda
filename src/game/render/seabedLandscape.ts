@@ -44,11 +44,14 @@ export class SeabedLandscape {
   private formations: BedFormation[] = [];
   private grains: { x: number; offset: number; r: number; shade: number }[] =
     [];
+  /** Полосы-слои дна статичны внутри чанка: путь строится один раз. */
+  private bandPaths: (Path2D | null | undefined)[] = [];
 
   private prepare(f: Frame) {
     const key = `${f.spot.id}|${f.W}|${f.H}|${f.sc}`;
     if (key === this.key) return;
     this.key = key;
+    this.bandPaths = [];
     this.formations = bedFormations(f.W, f.sc, f.spot.seed).filter(o=>f.chunkOffset===undefined || (o.x-o.width*.6>4 && o.x+o.width*.6<f.W-4));
     const random = rng(f.spot.seed * 43 + 19);
     this.grains = Array.from(
@@ -114,31 +117,54 @@ export class SeabedLandscape {
     const xStart = start + Math.max(0, Math.floor((view.left - start) / 8)) * 8;
     const xEnd = Math.min(W + 8, start + Math.ceil((view.right + 8 - start) / 8) * 8);
     for (let k = 0; k < bands; k++) {
-      ctx.beginPath();
-      const offset = (10 + k * k * 7) * sc;
-      let first = true;
-      for (let x = xStart; x <= xEnd; x += 8) {
-        const y =
-          bed(x) +
-          offset +
-          Math.sin((x + (f.chunkOffset ?? 0)) * 0.012 + k * 2 + (f.chunkOffset !== undefined ? 1 : f.spot.seed)) * (4 + k * 2) * sc;
-        if (first) { ctx.moveTo(x, y); first = false; }
-        else ctx.lineTo(x, y);
+      // Слои дна не зависят от камеры: строим один раз на чанк и только заливаем.
+      let path = this.bandPaths[k];
+      if (path === undefined) {
+        if (typeof Path2D === "undefined") path = null;
+        else {
+          const p = new Path2D();
+          const offset = (10 + k * k * 7) * sc;
+          const fullFrom = start, fullTo = W + 8;
+          let first = true;
+          for (let x = fullFrom; x <= fullTo; x += 8) {
+            const y = bed(x) + offset + Math.sin((x + (f.chunkOffset ?? 0)) * 0.012 + k * 2 + (f.chunkOffset !== undefined ? 1 : f.spot.seed)) * (4 + k * 2) * sc;
+            if (first) { p.moveTo(x, y); first = false; } else p.lineTo(x, y);
+          }
+          for (let x = fullTo; x >= fullFrom; x -= 8)
+            p.lineTo(x, bed(x) + offset + (12 + k * 4) * sc + Math.sin((x + (f.chunkOffset ?? 0)) * 0.014 + k) * 5 * sc);
+          p.closePath();
+          path = p;
+        }
+        this.bandPaths[k] = path;
       }
-      for (let x = xEnd; x >= xStart; x -= 8)
-        ctx.lineTo(
-          x,
-          bed(x) +
-            offset +
-            (12 + k * 4) * sc +
-            Math.sin((x+(f.chunkOffset??0)) * 0.014 + k) * 5 * sc,
-        );
-      ctx.closePath();
       ctx.fillStyle = hexA(
         mix(material, k % 2 ? "#152a2e" : "#d6c6a1", k % 2 ? 0.3 : 0.23),
         soft ? 0.1 : 0.2,
       );
-      ctx.fill();
+      if (path) ctx.fill(path);
+      else {
+        ctx.beginPath();
+        const offset = (10 + k * k * 7) * sc;
+        let first = true;
+        for (let x = xStart; x <= xEnd; x += 8) {
+          const y =
+            bed(x) +
+            offset +
+            Math.sin((x + (f.chunkOffset ?? 0)) * 0.012 + k * 2 + (f.chunkOffset !== undefined ? 1 : f.spot.seed)) * (4 + k * 2) * sc;
+          if (first) { ctx.moveTo(x, y); first = false; }
+          else ctx.lineTo(x, y);
+        }
+        for (let x = xEnd; x >= xStart; x -= 8)
+          ctx.lineTo(
+            x,
+            bed(x) +
+              offset +
+              (12 + k * 4) * sc +
+              Math.sin((x+(f.chunkOffset??0)) * 0.014 + k) * 5 * sc,
+          );
+        ctx.closePath();
+        ctx.fill();
+      }
     }
     // Pockets, compacted sediment and fractured mineral seams in the cutaway.
     for (const o of this.formations) {
