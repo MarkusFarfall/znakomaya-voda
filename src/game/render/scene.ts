@@ -28,10 +28,14 @@ import {
   drawShafts,
   drawSurfaceCaustics,
   drawSurfaceFront,
+  drawSurfaceGlow,
+  drawSurfaceStreaks,
   drawUnderwaterBody,
   seaSurfaceColor,
   type Ring,
 } from "./water";
+
+const EVENT_FX_MOTION_SCALE = 0.42;
 
 interface Ambient { f: FishDef; x: number; depth: number; dir: 1 | -1; speed: number; len: number; phase: number; known: boolean }
 interface Creature { kind: "jelly" | "turtle" | "crab"; x: number; y: number; vx: number; vy: number; s: number; phase: number; hue: string }
@@ -142,7 +146,9 @@ export class Scene {
     const viewX0 = f.viewLeft ?? 0;
     const viewW = f.viewWidth ?? W;
     return {
-      c: ctx, t, W, H, s: sc, q: Math.max(0, Math.min(2, this.quality)) as 0 | 1 | 2,
+      // Событийная анимация — только представление: замедляем визуальный дрейф,
+      // не трогая возраст/таймеры в EventFxBuffer и EventDirector.
+      c: ctx, t: t * EVENT_FX_MOTION_SCALE, W, H, s: sc, q: Math.max(0, Math.min(2, this.quality)) as 0 | 1 | 2,
       horizon: hY, surface: sY, seabed: sY + f.depthPx(f.spot.maxDepth), visW: viewW, viewX0, cam,
       windPx: atmo.wind * atmo.windDir * 26 * sc,
       sAt: f.waveY,
@@ -332,6 +338,8 @@ export class Scene {
 
     // ───── ПОВЕРХНОСТЬ ─────
     if(this.voyage===null)this.stream.draw(f,(c,cf)=>c.land.drawFront(cf));else this.land.drawFront(f);
+    // Свет поверхности — ДО судна: иначе полоса свечения ложится на корпус и режет его.
+    if (this.gfx.foam) { drawSurfaceGlow(f); drawSurfaceStreaks(f); }
     const bx = fxBoatX;
     const flowPx = this.voyage ?? Math.abs(e.navigation.velocity);
     const speed01 = Math.min(1, flowPx / (this.voyage !== null ? 230 : navigationSpeed(e.boat)));

@@ -309,33 +309,34 @@ export function drawDepthOverlay(f: Frame) {
 
 export interface Ring { x: number; t: number; s: number }
 
-/** Передний полупрозрачный слой воды + пена + круги от дождя */
-export function drawSurfaceFront(f: Frame, rings: Ring[]) {
-  const { ctx, W, sY, night, t } = f;
+/**
+ * Подводное свечение у поверхности (светлая полоса под гребнем волны).
+ * Рисуется ДО судна: раньше эта заливка ложилась поверх корпуса и разрезала
+ * его прямой светлой полосой — подводная часть выглядела отдельным клином.
+ */
+export function drawSurfaceGlow(f: Frame) {
+  const { ctx, sY, night } = f;
   const wc = f.loc.water;
   const slc = mix(mix(wc.surface, "#ffffff", 0.08 * (1 - night)), "#02050c", night * 0.86);
   const depth = 80 * f.sc;
   const sl = ctx.createLinearGradient(0, sY - f.amp, 0, sY + depth);
   sl.addColorStop(0, hexA(slc, 0.75 - night * 0.35));
   sl.addColorStop(1, hexA(slc, 0));
-  // Гребень поверхности строится один раз на кадр и служит и заливке, и обводке.
-  // Раньше заливка и обводка сэмплировали волну независимо (шаг 8 и 5).
+  // Гребень строится одним подпутём: заливка и обводка сэмплируют одну волну.
   const outlineRange = horizontalGridRange(f, 5, 5);
-  const wave = new Path2D();
-  for (let x = outlineRange.first; x <= outlineRange.last; x += 5) {
-    const y = f.waveY(x);
-    if (x === outlineRange.first) wave.moveTo(x, y);
-    else wave.lineTo(x, y);
-  }
   const surfaceFill = new Path2D();
   surfaceFill.moveTo(outlineRange.first, sY + depth);
-  surfaceFill.addPath(wave);
+  for (let x = outlineRange.first; x <= outlineRange.last; x += 5) surfaceFill.lineTo(x, f.waveY(x));
   surfaceFill.lineTo(outlineRange.last, sY + depth);
   surfaceFill.closePath();
   ctx.fillStyle = sl;
   ctx.fill(surfaceFill);
+}
 
-  // World-anchored specular streaks make wind direction and swell legible without a GPU shader.
+/** Блики на поверхности: мировые штрихи по ветру (тоже свет, а не объём — до судна). */
+export function drawSurfaceStreaks(f: Frame) {
+  const { ctx, W, night, t } = f;
+
   const streaks = Math.min(120, Math.max(22, Math.round(W / 110)));
   const drift = t * (4 + f.atmo.wind * 1.5) * (f.atmo.windDir < 0 ? -1 : 1);
   const streakRange = horizontalRange(f, 50 * f.sc);
@@ -359,7 +360,18 @@ export function drawSurfaceFront(f: Frame, rings: Ring[]) {
     ctx.stroke();
   }
   ctx.restore();
+}
 
+/** Передний слой воды: гребень, барашки и круги от дождя (поверх судна) */
+export function drawSurfaceFront(f: Frame, rings: Ring[]) {
+  const { ctx, sY, night, t } = f;
+  const outlineRange = horizontalGridRange(f, 5, 5);
+  const wave = new Path2D();
+  for (let x = outlineRange.first; x <= outlineRange.last; x += 5) {
+    const y = f.waveY(x);
+    if (x === outlineRange.first) wave.moveTo(x, y);
+    else wave.lineTo(x, y);
+  }
   const plankton = hasActiveEvent(f, "plankton");
   ctx.strokeStyle = plankton ? "rgba(110,255,225,0.85)" : `rgba(${night > 0.5 ? "170,190,210" : "255,255,255"},${af(0.12 + 0.43 * (1 - night))})`;
   ctx.lineWidth = 1.6;
@@ -370,7 +382,7 @@ export function drawSurfaceFront(f: Frame, rings: Ring[]) {
     const crestRange = horizontalRange(f, Math.max(40, 8 + f.amp * 0.6));
     let x = (t * 30) % 40;
     if (x < crestRange.left) x += Math.ceil((crestRange.left - x) / 40) * 40;
-    for (; x < W && x <= crestRange.right; x += 40) {
+    for (; x < f.W && x <= crestRange.right; x += 40) {
       const y = f.waveY(x);
       if (f.waveY(x - 6) > y + 0.5 && f.waveY(x + 6) > y + 0.5) {
         ctx.beginPath();

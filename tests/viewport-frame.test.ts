@@ -133,6 +133,17 @@ test("movable effects appear inside the strict viewport at some point in their c
   }
 });
 
+test("floating event FX render after the opaque sea-band pass", () => {
+  const waterline: FxId[] = [
+    "boil", "birds", "dolphins", "whale", "orcas", "fins", "seals",
+    "bioglow", "tint", "waterspout", "ghostship", "flyingfish", "jumpers",
+    "petrels", "current", "wisps",
+  ];
+  for (const id of waterline) {
+    assert.ok(FX_TABLE[id].surface, `${id} must draw above the sea band`);
+  }
+});
+
 test("event context carries the player's actual spot, not the whole aquatory", () => {
   const atm = new Atmosphere({ climate: "ocean", seed: 11 });
   // Акватория «Бездна» целиком глубокая, но контекст обязан отражать точку под лодкой.

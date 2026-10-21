@@ -43,8 +43,18 @@ export const WEATHER_TINT: Record<WeatherId, [string, number]> = {
 };
 export const CLOUD_COVER: Record<WeatherId, number> = { clear: 0.22, cloudy: 0.75, rain: 1, storm: 1, fog: 0.4, snow: 0.95 };
 
+/** Stable world-space sky tiles: same procedural pattern, only nearby tiles are built. */
+const SKY_TILE_WIDTH = 600;
+const SKY_TILE_CACHE_LIMIT = 6;
+interface MilkyParticle { x: number; y: number; alpha: number; size: number }
+interface MilkyHole { x: number; gradientY: number; gradientRadius: number; y: number; rx: number; ry: number }
+interface DeckBlob { x: number; y: number; radius: number; shaded: boolean }
+
 interface Cloud {
+  /** мировая координата. NaN — ещё не размещено: ставим в кадр при первом кадре. */
   x: number;
+  /** стартовая доля окна (0..1), чтобы облака не липли в одну точку. */
+  nx0: number;
   y: number;
   w: number;
   h: number;
@@ -52,18 +62,26 @@ interface Cloud {
   seed: number;
   layer: number;
   sprite: HTMLCanvasElement | null;
+  /** доля высоты спрайта, где лежит основание облака */
+  anchorY: number;
 }
 
 export class SkyRenderer {
   private W = 0;
   private H = 0;
   private stars: [number, number, number, number, string][] = [];
-  private milky: HTMLCanvasElement | null = null;
+  private milkyParticles: MilkyParticle[] = [];
+  private milkyHoles: MilkyHole[] = [];
+  private milkyTiles = new Map<number, HTMLCanvasElement>();
   private clouds: Cloud[] = [];
-  private deck: HTMLCanvasElement | null = null;
+  private deckBlobs: DeckBlob[] = [];
+  private deckTiles = new Map<number, HTMLCanvasElement>();
+  private deckHeight = 0;
+  private milkyHeight = 0;
   private key = "";
   private meteors: [number, number, number][] = [];
   private gulls: [number, number, number, number][] = [];
+  private gullsReady = false;
 
   private setup(W: number, H: number) {
     if (W === this.W && H === this.H) return;
@@ -72,78 +90,171 @@ export class SkyRenderer {
     this.key = "";
     const r = rng(11);
     const hy = H * 0.39;
+    this.milkyHeight = hy;
+    this.deckTiles.clear();
     const tints = ["#ffffff", "#ffffff", "#dfe8ff", "#fff2dc", "#ffe0d0"];
     this.stars = Array.from({ length: 320 }, () => [r() * W, Math.pow(r(), 1.4) * hy, r() < 0.06 ? 1.8 : r() * 1.2 + 0.4, r() * 6.28, tints[Math.floor(r() * tints.length)]]);
-    // Млечный путь
-    const mw = makeCanvas(W, hy);
-    const m = ctx2d(mw);
-    m.translate(W * 0.55, hy * 0.35);
-    m.rotate(-0.42);
+    // Тот же единый ПСЧ и порядок случайных чисел, что у прежнего полотна 7200 px.
+    // Храним мировые координаты частиц, а растеризуем только востребованные тайлы.
+    this.milkyTiles.clear();
     const len = W * 0.9;
+    this.milkyParticles = Array.from({ length: 2600 }, () => {
+      const x = (r() - 0.5) * len * 2;
+      const y = (r() + r() + r() - 1.5) * hy * 0.12;
+      const alpha = 0.15 + r() * 0.5;
+      const size = r() * 1.1 + 0.3;
+      return { x, y, alpha, size };
+    });
+    this.milkyHoles = Array.from({ length: 60 }, () => {
+      const x = (r() - 0.5) * len * 2;
+      const gradientY = (r() - 0.5) * 8;
+      const gradientRadius = 18 + r() * 30;
+      const y = (r() - 0.5) * 8;
+      const rx = 40 + r() * 40;
+      const ry = 6 + r() * 6;
+      return { x, gradientY, gradientRadius, y, rx, ry };
+    });
+    // Облака живут в долях кадра, а не в мировых координатах: раньше они были
+    // размазаны по 7200 px и при нарезке на кадр «прыгали» на границах окна.
+    this.clouds = Array.from({ length: 14 }, (_, i) => {
+      const layer = i / 13;
+      const w = (190 + r() * 240) * (0.7 + layer * 0.55) * (H / 720);
+      return { x: NaN, nx0: r(), anchorY: 0, y: H * (0.16 + (1 - layer) * 0.2 + r() * 0.06), w, h: w * (0.3 + r() * 0.16), speed: 3 + layer * 9, seed: r() * 1000, layer, sprite: null };
+    });
+    this.gulls = Array.from({ length: 7 }, () => [r(), H * (0.1 + r() * 0.2), r() * 6.28, 0.7 + r() * 0.5]);
+    this.gullsReady = false;
+  }
+
+  private rebuild(f: Frame, lit: string, shade: string) {
+    for (const c of this.clouds) {
+      // Банк рисуется в пределах ±half по горизонтали и ~0.9·half по вертикали.
+      // Спрайт берём с запасом, иначе мягкий край обрезается ровной линией.
+      // Спрайт с небольшим запасом по краям: силуэт укладывается в width ровно.
+      const cw = Math.ceil(c.w * 1.15), ch = Math.ceil(c.w * 0.75);
+      const cv = c.sprite && c.sprite.width === cw && c.sprite.height === ch ? c.sprite : makeCanvas(cw, ch);
+      const g = ctx2d(cv);
+      g.clearRect(0, 0, cw, ch);
+      g.save();
+      // Мягкие края: размытие считается один раз при пересборке спрайта,
+      // а не на каждом кадре. Именно оно убирает «набор кругов».
+      const canFilter = typeof g.filter === "string";
+      if (canFilter) g.filter = `blur(${Math.min(3.2, Math.max(1.4, c.w * 0.007)).toFixed(2)}px)`;
+      // Якорь: центр по горизонтали, основание облака — на 0.78 высоты.
+      g.translate(cw * 0.5, ch * 0.82);
+      cloudBank(g, 0, 0, c.w, lit, shade, 0.88, c.seed);
+      g.restore();
+      if (canFilter) g.filter = "none";
+      c.sprite = cv;
+      c.anchorY = ch * 0.82;
+    }
+    // Позиции 220 облачных пятен совпадают с прежней декой мира; тайлы создаются
+    // лениво только под камерой и кэшируются по абсолютному tileId.
+    const dw = Math.ceil(f.W), dh = Math.ceil(f.hY + 10);
+    const r = rng(77);
+    this.deckBlobs = Array.from({ length: 220 }, () => {
+      const x = r() * dw * 1.2 - dw * 0.1;
+      const y = Math.pow(r(), 0.8) * dh * 0.95;
+      const radius = (40 + r() * 110) * (0.6 + (y / dh) * 0.6);
+      return { x, y, radius, shaded: r() < 0.5 };
+    });
+    this.deckHeight = dh;
+    this.deckTiles.clear();
+  }
+
+  private tileIds(left: number, right: number) {
+    const x0 = clamp(left, 0, this.W);
+    const x1 = clamp(right, 0, this.W);
+    if (x1 <= x0) return [];
+    const first = Math.floor(x0 / SKY_TILE_WIDTH);
+    const last = Math.floor(Math.max(x0, x1 - 1e-6) / SKY_TILE_WIDTH);
+    return Array.from({ length: last - first + 1 }, (_, i) => first + i);
+  }
+
+  private cachedTile(cache: Map<number, HTMLCanvasElement>, id: number, build: () => HTMLCanvasElement) {
+    let tile = cache.get(id);
+    if (!tile) tile = build();
+    cache.delete(id);
+    cache.set(id, tile);
+    while (cache.size > SKY_TILE_CACHE_LIMIT) {
+      const oldest = cache.keys().next().value;
+      if (oldest === undefined) break;
+      cache.delete(oldest);
+    }
+    return tile;
+  }
+
+  private buildMilkyTile(id: number) {
+    const left = id * SKY_TILE_WIDTH;
+    const width = Math.min(SKY_TILE_WIDTH, this.W - left);
+    const hy = this.milkyHeight;
+    const canvas = makeCanvas(width, hy) as HTMLCanvasElement;
+    const m = ctx2d(canvas);
+    const theta = -0.42;
+    const cos = Math.cos(theta), sin = Math.sin(theta);
+    const len = this.W * 0.9;
+    m.save();
+    m.translate(this.W * 0.55 - left, hy * 0.35);
+    m.rotate(theta);
     const band = m.createLinearGradient(0, -hy * 0.18, 0, hy * 0.18);
     band.addColorStop(0, "rgba(160,170,255,0)");
     band.addColorStop(0.5, "rgba(200,205,255,0.22)");
     band.addColorStop(1, "rgba(160,170,255,0)");
     m.fillStyle = band;
     m.fillRect(-len, -hy * 0.18, len * 2, hy * 0.36);
-    for (let i = 0; i < 2600; i++) {
-      const x = (r() - 0.5) * len * 2;
-      const g = (r() + r() + r() - 1.5) * hy * 0.12;
-      m.fillStyle = `rgba(255,255,255,${0.15 + r() * 0.5})`;
-      const s = r() * 1.1 + 0.3;
-      m.fillRect(x, g, s, s);
+    const right = left + width;
+    for (const p of this.milkyParticles) {
+      const wx = this.W * 0.55 + cos * p.x - sin * p.y;
+      const wy = hy * 0.35 + sin * p.x + cos * p.y;
+      const extent = p.size * (Math.abs(cos) + Math.abs(sin));
+      if (wx + extent < left || wx - extent > right || wy + extent < 0 || wy - extent > hy) continue;
+      m.fillStyle = `rgba(255,255,255,${p.alpha})`;
+      m.fillRect(p.x, p.y, p.size, p.size);
     }
     m.globalCompositeOperation = "destination-out";
-    for (let i = 0; i < 60; i++) {
-      const x = (r() - 0.5) * len * 2;
-      const dg = m.createRadialGradient(x, (r() - 0.5) * 8, 0, x, 0, 18 + r() * 30);
+    for (const hole of this.milkyHoles) {
+      const wx = this.W * 0.55 + cos * hole.x - sin * hole.y;
+      const wy = hy * 0.35 + sin * hole.x + cos * hole.y;
+      const xRadius = Math.sqrt((hole.rx * cos) ** 2 + (hole.ry * sin) ** 2);
+      const yRadius = Math.sqrt((hole.rx * sin) ** 2 + (hole.ry * cos) ** 2);
+      if (wx + xRadius < left || wx - xRadius > right || wy + yRadius < 0 || wy - yRadius > hy) continue;
+      const dg = m.createRadialGradient(hole.x, hole.gradientY, 0, hole.x, 0, hole.gradientRadius);
       dg.addColorStop(0, "rgba(0,0,0,0.5)");
       dg.addColorStop(1, "rgba(0,0,0,0)");
       m.fillStyle = dg;
       m.beginPath();
-      m.ellipse(x, (r() - 0.5) * 8, 40 + r() * 40, 6 + r() * 6, 0, 0, Math.PI * 2);
+      m.ellipse(hole.x, hole.y, hole.rx, hole.ry, 0, 0, Math.PI * 2);
       m.fill();
     }
-    this.milky = mw;
-    this.clouds = Array.from({ length: 14 }, (_, i) => {
-      const layer = i / 13;
-      const w = (120 + r() * 200) * (0.6 + layer * 0.7) * clamp(W / 1280, 0.6, 1.4);
-      return { x: r() * W * 1.3 - W * 0.15, y: H * (0.04 + (1 - layer) * 0.22 + r() * 0.05), w, h: w * (0.3 + r() * 0.16), speed: 3 + layer * 9, seed: r() * 1000, layer, sprite: null };
-    });
-    this.gulls = Array.from({ length: 7 }, () => [r() * W, H * (0.1 + r() * 0.2), r() * 6.28, 0.7 + r() * 0.5]);
+    m.restore();
+    return canvas;
   }
 
-  private rebuild(f: Frame, lit: string, shade: string) {
-    for (const c of this.clouds) {
-      const cw = Math.ceil(c.w * 1.3), ch = Math.ceil(c.h * 1.8);
-      const cv = c.sprite && c.sprite.width === cw && c.sprite.height === ch ? c.sprite : makeCanvas(cw, ch);
-      const g = ctx2d(cv);
-      g.clearRect(0, 0, cw, ch);
-      g.save(); g.translate(cw * .5, ch * .55); g.scale(1, Math.min(1.8, ch / cw * 3));
-      cloudBank(g, 0, 0, cw * .48, lit, shade, .85, c.seed);
-      g.restore();
-      c.sprite = cv;
-    }
-    // сплошная облачность
-    const dw = Math.ceil(f.W), dh = Math.ceil(f.hY + 10);
-    const deck = this.deck && this.deck.width === dw && this.deck.height === dh ? this.deck : makeCanvas(dw, dh);
-    const d = ctx2d(deck);
-    d.clearRect(0, 0, dw, dh);
-    const r = rng(77);
-    for (let i = 0; i < 220; i++) {
-      const x = r() * dw * 1.2 - dw * 0.1;
-      const y = Math.pow(r(), 0.8) * dh * 0.95;
-      const rad = (40 + r() * 110) * (0.6 + (y / dh) * 0.6);
-      const col = r() < 0.5 ? shade : mix(shade, lit, 0.35);
-      const gr = d.createRadialGradient(x, y, 0, x, y, rad);
+  private milkyTile(id: number) {
+    return this.cachedTile(this.milkyTiles, id, () => this.buildMilkyTile(id));
+  }
+
+  private buildDeckTile(id: number, lit: string, shade: string) {
+    const left = id * SKY_TILE_WIDTH;
+    const width = Math.min(SKY_TILE_WIDTH, this.W - left);
+    const d = ctx2d(makeCanvas(width, this.deckHeight));
+    const right = left + width;
+    for (const blob of this.deckBlobs) {
+      if (blob.x + blob.radius * 1.8 < left || blob.x - blob.radius * 1.8 > right) continue;
+      const x = blob.x - left;
+      const col = blob.shaded ? shade : mix(shade, lit, 0.35);
+      const gr = d.createRadialGradient(x, blob.y, 0, x, blob.y, blob.radius);
       gr.addColorStop(0, hexA(col, 0.55));
       gr.addColorStop(1, hexA(col, 0));
       d.fillStyle = gr;
       d.beginPath();
-      d.ellipse(x, y, rad * 1.8, rad * 0.6, 0, 0, Math.PI * 2);
+      d.ellipse(x, blob.y, blob.radius * 1.8, blob.radius * 0.6, 0, 0, Math.PI * 2);
       d.fill();
     }
-    this.deck = deck;
+    return d.canvas as HTMLCanvasElement;
+  }
+
+  private deckTile(id: number, lit: string, shade: string) {
+    return this.cachedTile(this.deckTiles, id, () => this.buildDeckTile(id, lit, shade));
   }
 
   draw(f: Frame) {
@@ -158,7 +269,7 @@ export class SkyRenderer {
     g.addColorStop(0.62, f.mid);
     g.addColorStop(1, f.hor);
     ctx.fillStyle = g;
-    ctx.fillRect(0, -40, W, hY + 42);
+    ctx.fillRect(view.left, -40, view.right - view.left, hY + 42);
 
     // свечение у горизонта со стороны солнца
     if (f.golden > 0.02) {
@@ -167,18 +278,16 @@ export class SkyRenderer {
       hg.addColorStop(0.4, `rgba(255,120,90,${af(0.18 * f.golden)})`);
       hg.addColorStop(1, "rgba(255,120,90,0)");
       ctx.fillStyle = hg;
-      ctx.fillRect(0, 0, W, hY);
+      ctx.fillRect(view.left, 0, view.right - view.left, hY);
     }
 
     // звёзды
     const starA = f.atmo.starVis;
     if (starA > 0.02) {
-      if (this.milky) {
-        ctx.globalAlpha = starA * 0.9;
-        // Источник рисуем только видимым срезом: та же картинка, но без блита полотна на всю карту.
-        const sx = Math.max(0, Math.min(this.milky.width, Math.floor(view.left)));
-        const sw = Math.max(1, Math.min(this.milky.width - sx, Math.ceil(view.right - sx)));
-        if (sw > 0) ctx.drawImage(this.milky, sx, 0, sw, this.milky.height, sx, 0, sw, this.milky.height);
+      ctx.globalAlpha = starA * 0.9;
+      // Полоса Млечного пути строится только в тайлах, пересекающих кадр игрока.
+      for (const id of this.tileIds(view.left, view.right)) {
+        ctx.drawImage(this.milkyTile(id), id * SKY_TILE_WIDTH, 0);
       }
       for (const [x, y, r, p, c] of this.stars) {
         if (y > hY - 4) continue;
@@ -198,8 +307,8 @@ export class SkyRenderer {
 
     // метеоры
     if (hasActiveEvent(f, "meteor")) {
-      if (Math.random() < f.dt * 1.6) this.meteors.push([Math.random() * W, Math.random() * H * 0.2, 0]);
       const meteorView = horizontalRange(f, 320);
+      if (Math.random() < f.dt * 1.6) this.meteors.push([meteorView.left + Math.random() * (meteorView.right - meteorView.left), Math.random() * H * 0.2, 0]);
       for (const m of this.meteors) {
         m[2] += f.dt;
         if (m[0] < meteorView.left || m[0] > meteorView.right) continue;
@@ -239,12 +348,12 @@ export class SkyRenderer {
       this.key = key;
       this.rebuild(f, lit, shade);
     }
-    if (f.cover > 0.7 && this.deck && f.quality > 0) {
+    if (f.cover > 0.7 && f.quality > 0) {
       ctx.globalAlpha = clamp((f.cover - 0.7) * 3.3, 0, 1) * (wt === "fog" ? 0.5 : 1);
-      // Тот же кадр, но из источника читается только видимая полоса (иначе браузер тянет все 7200 px).
-      const dsx = Math.max(0, Math.min(this.deck.width, Math.floor(view.left)));
-      const dsw = Math.max(1, Math.min(this.deck.width - dsx, Math.ceil(view.right - dsx)));
-      if (dsw > 0) ctx.drawImage(this.deck, dsx, 0, dsw, this.deck.height, dsx, 0, dsw, this.deck.height);
+      // Дека облачности тоже кэшируется тайлами: внекадровая поверхность не растеризуется.
+      for (const id of this.tileIds(view.left, view.right)) {
+        ctx.drawImage(this.deckTile(id, lit, shade), id * SKY_TILE_WIDTH, 0);
+      }
       ctx.globalAlpha = 1;
     }
     // Перистые: держатся в окне игрока, а не размазаны по всей карте.
@@ -263,15 +372,22 @@ export class SkyRenderer {
     const n = Math.round(clamp(f.cover * 1.25, 0, 1) * this.clouds.length);
     for (let i = 0; i < n; i++) {
       const c = this.clouds[i];
+      // Облако живёт в МИРОВЫХ координатах: при движении камеры оно честно проплывает
+      // мимо, а не летит вместе с ней (раньше позиция каждый кадр выводилась из view.left).
+      if (!Number.isFinite(c.x)) c.x = view.left + ((c.nx0 * span * 1.4) % span) - span * 0.2;
       c.x += (c.speed + f.atmo.wind * 1.5 * f.atmo.windDir) * f.dt * (0.5 + c.layer);
-      // Облака перецикливаются вокруг окна игрока: погода всегда над ним, а не «где-то на карте».
-      const lo = view.left - c.w * 2;
-      c.x = lo + (((c.x - lo) % span) + span) % span;
+      // Вышло за кадр — переносим на другую сторону. Шаг переноса фиксирован на текущий кадр,
+      // поэтому перескоков внутри кадра нет.
+      const pad = c.w * 1.2, total = span + pad * 2;
+      if (c.x < view.left - pad) c.x += total;
+      else if (c.x > view.right + pad) c.x -= total;
       if (!c.sprite) continue;
-      if (c.x + c.sprite.width < view.left - 60 || c.x > view.right + 60) continue;
+      if (c.x + c.sprite.width < view.left - 80 || c.x > view.right + 80) continue;
       const big = wt === "storm" || wt === "gale" || wt === "rain" || wt === "downpour" || wt === "blizzard" ? 1.35 : 1;
       ctx.globalAlpha = wt === "fog" ? 0.55 : 0.95;
-      ctx.drawImage(c.sprite, c.x, c.y - c.h * (big - 1), c.sprite.width * big, c.sprite.height * big);
+      const dw = c.sprite.width * big, dh = c.sprite.height * big;
+      // c.y — линия основания облака: при смене погоды масштаб не «подпрыгивает».
+      ctx.drawImage(c.sprite, c.x, c.y - c.anchorY * big, dw, dh);
     }
     ctx.globalAlpha = 1;
 
@@ -302,6 +418,7 @@ export class SkyRenderer {
 
   private drawRainbow(f: Frame) {
     const { ctx, e, W, H, hY } = f;
+    const view = horizontalRange(f, 0);
     const ev = findActiveEvent(f, "rainbow");
     let alpha = f.atmo.rainbow * 0.72;
     if (ev && f.sunElev > 0.05) {
@@ -313,7 +430,7 @@ export class SkyRenderer {
     const cy = hY + H * 0.1;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, 0, W, hY);
+    ctx.rect(view.left, 0, view.right - view.left, hY);
     ctx.clip();
     ctx.globalCompositeOperation = "screen";
     drawRainbowFx(ctx, cx, cy, H * 0.42, Math.min(0.7, alpha));
@@ -322,6 +439,7 @@ export class SkyRenderer {
 
   private drawSun(f: Frame) {
     const { ctx, hY, H } = f;
+    const view = horizontalRange(f, 0);
     if (f.sunElev < -1) return;
     const low = 1 - clamp(f.sunElev / 18, 0, 1);
     const r = H * 0.028 * (1 + low * 0.25);
@@ -332,10 +450,10 @@ export class SkyRenderer {
     halo.addColorStop(0.12, hexA(mix(rgbHex(f.atmo.palette.sun), "#ff9050", low * 0.55), 0.22 * vis));
     halo.addColorStop(1, "rgba(255,180,120,0)");
     ctx.fillStyle = halo;
-    ctx.fillRect(0, 0, f.W, hY);
+    ctx.fillRect(view.left, 0, view.right - view.left, hY);
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, -50, f.W, hY + 50);
+    ctx.rect(view.left, -50, view.right - view.left, hY + 50);
     ctx.clip();
     ctx.globalAlpha = clamp(vis * 1.4, 0.08, 1);
     ctx.fillStyle = core;
@@ -390,20 +508,28 @@ export class SkyRenderer {
   }
 
   private drawGulls(f: Frame) {
-    const { ctx, e, W, t } = f;
+    const { ctx, e, t } = f;
+    const view = horizontalRange(f, 0);
+    const width = Math.max(1, view.right - view.left);
     const gullsEv = hasActiveEvent(f, "gulls");
     if (e.isNight || f.loc.land === "abyss" || f.atmo.wind > 18 || f.atmo.precip > 0.82) return;
     if (!gullsEv && f.loc.land === "open" && f.spot.feature !== "seamount") return;
     const n = gullsEv || f.spot.feature === "seamount" ? 7 : f.atmo.precip < 0.15 && f.atmo.cover < 0.78 ? 3 : 1;
+    if (!this.gullsReady) {
+      for (const gull of this.gulls) gull[0] = view.left + gull[0] * width;
+      this.gullsReady = true;
+    }
     ctx.strokeStyle = mix("#1c242c", f.hor, 0.25 + f.fogK * 0.5);
     ctx.lineCap = "round";
     for (let i = 0; i < n; i++) {
       const gg = this.gulls[i];
-      gg[0] += f.dt * (18 + i * 6) * (0.6 + f.atmo.wind / 12);
-      gg[2] += f.dt * (5 + i * 0.3);
-      if (gg[0] > W + 40) gg[0] = -40;
+      // Птицы появляются в окне игрока и проходят его медленно, а не летают по всему миру.
+      gg[0] += f.dt * (4 + i * 1.5) * (0.6 + f.atmo.wind / 12);
+      gg[2] += f.dt * (2 + i * 0.15);
+      if (gg[0] > view.right + 40) gg[0] = view.left - 40;
+      else if (gg[0] < view.left - 80) gg[0] = view.right + 40;
       const s = gg[3];
-      const gx = gg[0], gy = gg[1] + Math.sin(t * 0.5 + i * 2) * 18;
+      const gx = gg[0], gy = gg[1] + Math.sin(t * 0.21 + i * 2) * 18;
       const fl = Math.sin(gg[2]) * 6 * s;
       ctx.lineWidth = 1.7 * s;
       ctx.beginPath();

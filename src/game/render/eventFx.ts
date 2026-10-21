@@ -8,10 +8,12 @@ import type { ActiveInfo, EventDirector } from '../events';
  * Каждый эффект рисуется в своём слое сцены.
  */
 
+/** `horizon` рисуется до непрозрачной полосы моря; плавающие FX должны быть в `surface`. */
 export type Layer = 'sky' | 'horizon' | 'under' | 'surface' | 'front';
 
 export interface FxScene {
   c: CanvasRenderingContext2D;
+  /** Slowed presentation clock; event lifetime/age is tracked separately and unchanged. */
   t: number;
   W: number;
   H: number;
@@ -145,7 +147,7 @@ function ring(c: CanvasRenderingContext2D, x: number, y: number, rx: number, a: 
 
 const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   boil: {
-    horizon: (S, { e, spec }) => {
+    surface: (S, { e, spec }) => {
       const { c, t } = S;
       const n = spec.n ?? 1;
       const cx = anchor(S, e);
@@ -182,7 +184,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   birds: {
-    horizon: (S, { e, spec }) => {
+    surface: (S, { e, spec }) => {
       const { c, t, s } = S;
       const n = Math.round(8 * (spec.n ?? 1));
       const cx = anchor(S, e);
@@ -217,7 +219,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   dolphins: {
-    horizon: (S, { e }) => {
+    surface: (S, { e }) => {
       const { c, t } = S;
       const p = 0.58;
       const y = farY(S, p);
@@ -241,7 +243,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   whale: {
-    horizon: (S, { e }) => {
+    surface: (S, { e }) => {
       const { c, t } = S;
       const p = 0.24;
       const y = farY(S, p);
@@ -293,7 +295,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   orcas: {
-    horizon: (S, { e }) => {
+    surface: (S, { e }) => {
       const { c, t } = S;
       const p = 0.5;
       const y = farY(S, p);
@@ -331,7 +333,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   fins: {
-    horizon: (S, { e }) => {
+    surface: (S, { e }) => {
       const { c, t } = S;
       const p = 0.78;
       const cx = anchor(S, e, 0.45, 0.75);
@@ -363,7 +365,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   seals: {
-    horizon: (S, { e }) => {
+    surface: (S, { e }) => {
       const { c, t, s } = S;
       c.fillStyle = css(mix([60, 62, 66], S.pal.land1, 0.4));
       S.rocks.forEach(([x, y], i) => {
@@ -459,10 +461,11 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   bioglow: {
-    horizon: (S, { e, spec }) => {
+    surface: (S, { e, spec }) => {
       const { c, t, s } = S;
       const a = e.k * (spec.n ?? 1) * (0.2 + 0.8 * S.A.night);
       if (a < 0.02) return;
+      // Дальние блики на поверхности рисуются ПОСЛЕ морской заливки, не под ней.
       c.fillStyle = 'rgb(110,240,230)';
       for (let j = 0; j < 14; j++) {
         const pj = j / 14;
@@ -474,11 +477,6 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         }
       }
       c.globalAlpha = 1;
-    },
-    surface: (S, { e, spec }) => {
-      const { c, t, s } = S;
-      const a = e.k * (spec.n ?? 1) * (0.2 + 0.8 * S.A.night);
-      if (a < 0.02) return;
       c.strokeStyle = 'rgb(120,255,235)';
       c.lineWidth = 2.2 * s;
       c.globalAlpha = a * (0.45 + 0.25 * Math.sin(t * 3));
@@ -501,7 +499,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   tint: {
-    horizon: (S, { e, spec }) => {
+    surface: (S, { e, spec }) => {
       if (!spec.color) return;
       S.c.globalAlpha = e.k * 0.26;
       S.c.fillStyle = css(spec.color);
@@ -684,7 +682,16 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         c.lineTo(cx + w / 2, base);
         c.fill();
       }
-      c.fillRect(cx - w / 2, S.horizon - 24 * s, w, 2 * s * (1 + Math.sin(t * 3) * 0.3));
+      // Отражение острова было жёстким прямоугольным штрихом; делаем его мягкой,
+      // слегка волнистой полосой с круглыми концами.
+      const reflectionY = S.horizon - 24 * s;
+      c.strokeStyle = col;
+      c.lineCap = 'round';
+      c.lineWidth = 1.2 * s * (1 + Math.sin(t * 1.2) * 0.12);
+      c.beginPath();
+      c.moveTo(cx - w / 2, reflectionY);
+      c.quadraticCurveTo(cx, reflectionY + Math.sin(t * 0.7) * s, cx + w / 2, reflectionY);
+      c.stroke();
       const sx = cx - 170 * s;
       const sy = S.horizon - 30 * s + Math.sin(t * 1.7) * 1.5 * s;
       c.beginPath();
@@ -699,7 +706,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   waterspout: {
-    horizon: (S, { e }) => {
+    surface: (S, { e }) => {
       const { c, t, s } = S;
       const cx = anchor(S, e, 0.45, 0.85);
       const base = farY(S, 0.3);
@@ -759,14 +766,14 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   ghostship: {
-    horizon: (S, { e }) => {
+    surface: (S, { e }) => {
       const { c, t } = S;
-      const p = 0.2;
-      const z = zAt(S, p) * 1.7;
+      const p = 0.32;
+      const z = zAt(S, p) * 2.0;
       const span = S.visW + 400;
       const x = S.viewX0 + wrap(t * 3 * z + sd(e) * span, span) - 200;
       const y = farY(S, p);
-      const a = e.k * (0.28 + S.A.fog * 0.5) * (0.75 + 0.25 * Math.sin(t * 1.3));
+      const a = e.k * (0.45 + S.A.fog * 0.4) * (0.75 + 0.25 * Math.sin(t * 0.8));
       const col = css([150, 186, 180], a);
       c.fillStyle = col;
       c.strokeStyle = col;
@@ -1003,15 +1010,15 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   sails: {
-    horizon: (S, { e }) => {
+    surface: (S, { e }) => {
       const { c, t } = S;
       const dir = Math.sign(S.windPx || 1);
       const sail = css(mix([90, 100, 120], [245, 244, 238], S.A.daylight));
       const hull = css(mix(S.pal.land1, [40, 40, 46], 0.4));
       for (let i = 0; i < 6; i++) {
         const span = S.visW + 200;
-        const p = 0.04 + h(i + 300) * 0.16;
-        const z = zAt(S, p) * 1.6;
+        const p = 0.09 + h(i + 300) * 0.15;
+        const z = zAt(S, p) * 2.0;
         const x = S.viewX0 + wrap(h(i + 301) * span + t * (4 + h(i + 302) * 3) * z * dir, span) - 100;
         const y = farY(S, p);
         c.globalAlpha = e.k;
@@ -1033,35 +1040,73 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   boat: {
-    horizon: (S, { e, spec }) => {
+    surface: (S, { e, spec }) => {
       const { c, t } = S;
-      const p = 0.5;
-      const z = zAt(S, p) * 1.3;
+      const trader = spec.variant === 'trader';
+      // Контейнеровоз ставим чуть ближе к зрителю и крупнее: у самой линии горизонта
+      // силуэт сливался с берегом и не читался.
+      const p = trader ? 0.62 : 0.5;
+      const z = zAt(S, p) * (trader ? 1.5 : 1.3);
       const x = anchor(S, e, 0.58, 0.82) + Math.sin(t * 0.05) * 30 * z;
       const y = farY(S, p) + Math.sin(t * 1.3) * 1.2 * z;
-      const trader = spec.variant === 'trader';
       c.globalAlpha = e.k;
-      c.fillStyle = css(mix([100, 70, 44], S.pal.land1, 0.5 - S.A.daylight * 0.3));
+      const hullCol = css(mix([100, 70, 44], S.pal.land1, 0.5 - S.A.daylight * 0.3));
+      c.fillStyle = hullCol;
       c.beginPath();
-      c.moveTo(x - 22 * z, y - 5 * z);
-      c.quadraticCurveTo(x, y - 3 * z, x + 24 * z, y - 7 * z);
-      c.lineTo(x + 18 * z, y + 2 * z);
-      c.lineTo(x - 18 * z, y + 2 * z);
-      c.closePath();
-      c.fill();
-      c.fillStyle = css(mix([30, 32, 38], S.pal.land1, 0.3));
-      c.fillRect(x - 6 * z, y - 15 * z, 5 * z, 10 * z);
-      c.beginPath();
-      c.arc(x - 3.5 * z, y - 17 * z, 2.6 * z, 0, TAU);
+      if (trader) {
+        // Контейнеровоз идёт НОСОМ ВПРАВО: наклонный форштевень, прямая палуба,
+        // кормовой подзор слева — иначе силуэт читается «задом наперёд».
+        c.moveTo(x - 21 * z, y - 6 * z);
+        c.lineTo(x + 14 * z, y - 5 * z);
+        c.quadraticCurveTo(x + 22 * z, y - 5 * z, x + 26 * z, y - 1 * z);
+        c.lineTo(x + 24 * z, y + 2 * z);
+        c.lineTo(x - 19 * z, y + 2 * z);
+        c.closePath();
+      } else {
+        c.moveTo(x - 22 * z, y - 5 * z);
+        c.quadraticCurveTo(x, y - 3 * z, x + 24 * z, y - 7 * z);
+        c.lineTo(x + 18 * z, y + 2 * z);
+        c.lineTo(x - 18 * z, y + 2 * z);
+        c.closePath();
+      }
       c.fill();
       if (trader) {
-        for (let i = 0; i < 6; i++) {
-          c.fillStyle = i % 2 ? css(mix([240, 236, 226], S.pal.land1, 0.3)) : css(mix([190, 60, 50], S.pal.land1, 0.3));
-          c.fillRect(x + (2 + i * 3.4) * z, y - 16 * z, 3.4 * z, 4 * z);
+        // тень борта
+        c.fillStyle = css(mix([62, 46, 34], S.pal.land1, 0.35 - S.A.daylight * 0.2));
+        c.fillRect(x - 19 * z, y + 0.6 * z, 43 * z, 1.4 * z);
+        // кормовая надстройка
+        c.fillStyle = css(mix([238, 236, 230], S.pal.land1, 0.15));
+        c.fillRect(x - 19.5 * z, y - 13.6 * z, 6.4 * z, 8.4 * z);
+        c.fillStyle = css(mix([196, 199, 205], S.pal.land1, 0.12));
+        c.fillRect(x - 19.5 * z, y - 13.6 * z, 6.4 * z, 1.2 * z);
+        // труба
+        c.fillStyle = css(mix([34, 36, 42], S.pal.land1, 0.3));
+        c.fillRect(x - 17.8 * z, y - 18.6 * z, 3.2 * z, 5.2 * z);
+        c.fillStyle = css(mix([190, 60, 50], S.pal.land1, 0.3));
+        c.fillRect(x - 17.8 * z, y - 18.6 * z, 3.2 * z, 1.5 * z);
+        // контейнеры в два яруса на палубе
+        for (let i = 0; i < 8; i++) {
+          c.fillStyle = i % 2
+            ? css(mix([240, 236, 226], S.pal.land1, 0.3))
+            : css(mix([190, 60, 50], S.pal.land1, 0.3));
+          c.fillRect(x - 10.6 * z + i * 3.4 * z, y - 8.8 * z, 3.2 * z, 3.2 * z);
+          c.fillRect(x - 10.6 * z + i * 3.4 * z, y - 12 * z, 3.2 * z, 3.2 * z);
         }
-        c.fillRect(x + 2 * z, y - 12 * z, 0.8 * z, 7 * z);
-        c.fillRect(x + 21.6 * z, y - 12 * z, 0.8 * z, 7 * z);
+        // буруны у кормы и у форштевня
+        c.fillStyle = 'rgba(255,255,255,0.30)';
+        c.beginPath();
+        c.ellipse(x - 22 * z, y + 1.9 * z, 6 * z, 1.2 * z, 0, 0, TAU);
+        c.fill();
+        c.fillStyle = 'rgba(255,255,255,0.20)';
+        c.beginPath();
+        c.ellipse(x + 24 * z, y + 1.9 * z, 4 * z, 0.9 * z, 0, 0, TAU);
+        c.fill();
       } else {
+        c.fillStyle = css(mix([30, 32, 38], S.pal.land1, 0.3));
+        c.fillRect(x - 6 * z, y - 15 * z, 5 * z, 10 * z);
+        c.beginPath();
+        c.arc(x - 3.5 * z, y - 17 * z, 2.6 * z, 0, TAU);
+        c.fill();
         c.strokeStyle = css(mix([40, 34, 28], S.pal.land1, 0.3));
         c.lineWidth = 1;
         c.beginPath();
@@ -1071,7 +1116,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       }
       if (S.A.lights > 0.05) {
         c.globalCompositeOperation = 'lighter';
-        S.glow(x + (trader ? 12 : -16) * z, y - (trader ? 18 : 10) * z, 14 * z, [255, 196, 120], e.k * S.A.lights * 0.7);
+        S.glow(x + (trader ? -16 : -16) * z, y - (trader ? 15 : 10) * z, 14 * z, [255, 196, 120], e.k * S.A.lights * 0.7);
         c.globalCompositeOperation = 'source-over';
       }
       c.globalAlpha = 1;
@@ -1214,7 +1259,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   flyingfish: {
-    horizon: (S, { e }) => {
+    surface: (S, { e }) => {
       const { c, t } = S;
       c.fillStyle = css(mix([120, 140, 160], [220, 230, 240], S.A.daylight));
       for (let i = 0; i < 6; i++) {
@@ -1239,7 +1284,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   jumpers: {
-    horizon: (S, { e, spec }) => {
+    surface: (S, { e, spec }) => {
       const { c, t } = S;
       const n = Math.round(8 * (spec.n ?? 1));
       c.fillStyle = css(mix([110, 120, 130], [215, 222, 230], S.A.daylight));
@@ -1312,7 +1357,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   petrels: {
-    horizon: (S, { e }) => {
+    surface: (S, { e }) => {
       const { c, t } = S;
       c.strokeStyle = css(mix([30, 32, 38], S.pal.land1, 0.3), e.k * 0.9);
       c.lineCap = 'round';
@@ -1335,37 +1380,52 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   },
 
   current: {
-    horizon: (S, { e }) => {
+    surface: (S, { e }) => {
       const { c, t, s } = S;
-      c.fillStyle = 'rgb(200,235,245)';
+      // Течение рисуем каплями-штрихами (толщина = высота, `lineCap: round`),
+      // а не прямоугольниками: плоские полосы на воде читались как артефакт.
+      c.strokeStyle = 'rgb(200,235,245)';
+      c.lineCap = 'round';
       for (let j = 0; j < 12; j++) {
         const pj = 0.1 + (j / 12) * 0.9;
         const y = farY(S, pj);
+        const th = Math.max(0.9, pj * 1.4 * s);
+        c.lineWidth = th;
         for (let i = 0; i < 3; i++) {
           const span = S.visW + 300;
-          const x = S.viewX0 + wrap(t * (30 + pj * 90) * s + h(j * 5 + i + 900) * span, span) - 150;
-          c.globalAlpha = e.k * 0.2;
-          c.fillRect(x, y, (20 + pj * 140) * s, Math.max(0.8, pj * 1.4 * s));
+          const x = S.viewX0 + wrap(t * (18 + pj * 46) * s + h(j * 5 + i + 900) * span, span) - 150;
+          const len = (20 + pj * 140) * s;
+          c.globalAlpha = e.k * 0.28 * (0.65 + h(i + j * 9 + 903) * 0.35);
+          c.beginPath();
+          c.moveTo(x, y);
+          c.lineTo(x + len, y);
+          c.stroke();
         }
       }
       c.globalAlpha = 1;
     },
     under: (S, { e }) => {
       const { c, t, s } = S;
-      c.fillStyle = 'rgb(190,230,245)';
+      c.strokeStyle = 'rgb(190,230,245)';
+      c.lineCap = 'round';
+      c.lineWidth = Math.max(1, 1.2 * s);
       for (let i = 0; i < 40; i++) {
         const y = S.surface + h(i + 950) * S.H * 0.8;
         if (y < S.cam - 10 || y > S.cam + S.H + 10) continue;
-        const x = S.viewX0 + wrap(t * (80 + h(i + 951) * 60) * s + h(i + 952) * S.visW, S.visW + 40) - 20;
+        // Под водой течение медленнее и короче: те же штрихи, но вполовину хода.
+        const x = S.viewX0 + wrap(t * (40 + h(i + 951) * 30) * s + h(i + 952) * S.visW, S.visW + 40) - 20;
         c.globalAlpha = e.k * 0.22;
-        c.fillRect(x, y, 22 * s, 1);
+        c.beginPath();
+        c.moveTo(x, y);
+        c.lineTo(x + 22 * s, y);
+        c.stroke();
       }
       c.globalAlpha = 1;
     },
   },
 
   wisps: {
-    horizon: (S, { e, spec }) => {
+    surface: (S, { e, spec }) => {
       const { t } = S;
       const n = Math.max(2, Math.round(9 * (spec.n ?? 1)));
       S.c.globalCompositeOperation = 'lighter';

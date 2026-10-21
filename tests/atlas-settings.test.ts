@@ -1,3 +1,5 @@
+import "./path2d-polyfill";
+import { MockPath2D } from "./path2d-polyfill";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { Engine } from "../src/game/engine";
@@ -222,12 +224,16 @@ test("distant rain renders nothing in cloudy or dry weather; wet curtain has tra
     } else assert.deepEqual(r.calls, []);
   }
 });
-test("a cloud is one continuous shaded silhouette, not multiple luminous circular puffs", () => {
+test("a cloud uses one merged silhouette with clipped soft highlights and a shaded base", () => {
   const r = recorder();
+  const before = MockPath2D.instances.length;
   cloudBank(r.ctx, 100, 50, 80, "#ccddee", "#667788");
-  assert.equal(r.calls.filter((x) => x === "fill").length, 1);
-  assert.ok(r.calls.includes("bezierCurveTo"));
-  assert.ok(!r.calls.includes("createRadialGradient"));
+  const paths = MockPath2D.instances.slice(before);
+  assert.equal(paths.length, 1, "all overlapping lobes belong to one Path2D silhouette");
+  assert.ok(paths[0].commands.filter((command) => command.name === "arc").length >= 6);
+  assert.equal(r.calls.filter((x) => x === "clip").length, 1, "highlights stay inside the silhouette");
+  assert.ok(r.calls.filter((x) => x === "createRadialGradient").length >= 6);
+  assert.equal(r.calls.filter((x) => x === "createLinearGradient").length, 2);
   assert.equal(
     r.calls.filter((x) => x === "save").length,
     r.calls.filter((x) => x === "restore").length,
