@@ -232,7 +232,7 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
   const say = (m: string) => { setFlash(m); setTimeout(() => setFlash(null), 2400); };
   const quote = engine.coolerQuote();
   const coolerValue = [...quote.values()].reduce((a, b) => a + b, 0);
-  const readyOrders = s.orders.filter((o) => engine.orderMatches(o).length >= engine.orderCount(o)).length;
+  const readyOrders = s.orders.filter((o) => engine.orderReady(o)).length;
   const tabs: [PortTab, string, string][] = [
     ["market", "Рынок", s.cooler.length ? `${s.cooler.length}` : ""],
     ["orders", "Заказы", readyOrders ? `${readyOrders} готов` : `${s.orders.length}`],
@@ -322,7 +322,9 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
                     const fr = engine.freshness(c);
                     const best = PORTS.filter((p) => s.portsKnown.includes(p.id) && p.id !== s.port).map((p) => ({ p, d: (p.demand[f.loc[0]] ?? 1) * (f.rarity === "epic" || f.rarity === "legendary" ? p.rareDemand : 1) })).sort((a, b) => b.d - a.d)[0];
                     const hereD = engine.demand(c.fishId);
-                    const forOrder = s.orders.some((o) => o.fishId === c.fishId && c.weight >= o.minWeight);
+                    const forOrder = s.orders.some((o) =>
+                      engine.orderLines(o).some((l) => l.fishId === c.fishId && c.weight + 1e-9 >= l.minWeight),
+                    );
                     const confirmRelease = pendingRelease === c.uid;
                     return (
                       <tr key={c.uid} className="border-t border-[var(--line)]">
@@ -362,28 +364,89 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
 
         {tab === "orders" && (
           <div>
-            <p className="mb-5 max-w-2xl text-[13px] muted">После сбора улова выплата пересчитывается и гарантирует минимум 15% сверх отдельной продажи тех же рыб. Несобранный заказ показывает базовую оплату. Заказы обновляются при заходе в порт. Выполнено: <span className="num text-[#ece6d8]">{s.ordersDone}</span></p>
-            <div className="grid gap-3 sm:gap-4 md:grid-cols-3">
+            <div className="orders-head mb-4 flex flex-wrap items-end justify-between gap-3">
+              <p className="orders-intro max-w-2xl text-[13px] muted">
+                Заказчики просят конкретную рыбу: одиночную, оптом, набором из нескольких видов или трофейную по весу.
+                Собранный заказ платит минимум на 15 % больше отдельной продажи тех же рыб. Выполнено:{" "}
+                <span className="num text-[#ece6d8]">{s.ordersDone}</span>
+              </p>
+              <div className="orders-level text-right">
+                <div className="label">Уровень заказчика</div>
+                <div className="num text-[15px] text-[#e3c996]">
+                  {engine.orderLevel} / 5
+                  <span className="ml-2 text-[11px] dim">слотов {engine.orderSlots}</span>
+                </div>
+                <div className="mt-1 flex justify-end gap-1">
+                  {Array.from({ length: 4 }, (_, i) => (
+                    <span
+                      key={i}
+                      className={`h-[3px] w-6 ${s.ordersDone % 4 > i || engine.orderLevel === 5 ? "bg-[var(--brass)]" : "bg-white/12"}`}
+                    />
+                  ))}
+                </div>
+              </div>
+            </div>
+            {s.orders.length === 0 && <p className="font-serif py-12 text-center text-xl italic dim">Заказов пока нет — загляните в порт позже</p>}
+            <div className="grid gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3">
               {s.orders.map((o) => {
-                const f = FISH_BY_ID[o.fishId];
-                const have = engine.orderMatches(o).length;
-                const need = engine.orderCount(o);
-                const known = !!s.codex[o.fishId];
+                const lines = engine.orderLines(o);
+                const progress = engine.orderProgress(o);
+                const ready = progress.every((p) => p.have >= p.need);
                 const left = o.expiresDay - engine.day;
-                const ready = have >= need;
                 const payout = engine.orderReward(o);
+                const kindName = { single: "заказ", bulk: "опт", bundle: "набор", trophy: "трофей" }[o.kind ?? "single"];
                 return (
-                  <div key={o.id} className={`cell flex flex-col p-5 ${ready ? "!border-[rgba(134,180,148,0.45)]" : ""}`}>
-                    <div className="flex items-center justify-between"><span className="label">{o.client}</span><span className={`text-[11px] ${left <= 0 ? "text-[var(--color-bad)]" : "dim"}`}>{left <= 0 ? "последний день" : `${left} дн.`}</span></div>
-                    <div className="plate my-3 flex justify-center py-2"><FishIcon fish={f} size={200} height={84} known={known} /></div>
-                    <div className="font-serif text-[22px] text-[#f1ebdd]">{known ? f.name : "Неизвестный вид"}</div>
-                    <div className="text-[11px] dim">{known ? f.latin : LOC_BY_ID[f.loc[0]].name}</div>
-                    <dl className="mt-3">
-                      <Row k="Количество" v={<span className={ready ? "text-[var(--color-ok)]" : ""}>{have} / {need}</span>} />
-                      {o.minWeight > 0 && <Row k="Масса от" v={fmtW(o.minWeight)} />}
-                      <Row k={ready ? "Оплата · бонус к рынку" : "Базовая оплата"} v={<span className="text-[var(--brass-2,#e3c996)]">{fmt(payout)} ₽</span>} strong />
-                    </dl>
-                    <button className="btn btn-solid mt-4 w-full" disabled={!ready} onClick={() => engine.fulfillOrder(o.id) && say(`Заказ сдан: +${fmt(payout)} ₽`)}>Сдать заказ</button>
+                  <div key={o.id} className={`cell flex flex-col p-4 sm:p-5 ${ready ? "!border-[rgba(134,180,148,0.45)]" : ""} ${o.urgent ? "!bg-[linear-gradient(160deg,rgba(120,52,40,0.20),transparent_60%)]" : ""}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="label truncate">{o.client}</span>
+                      <span className={`num shrink-0 text-[11px] ${left <= 0 ? "text-[var(--color-bad)]" : "dim"}`}>{left <= 0 ? "последний день" : `${left} дн.`}</span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px] uppercase tracking-[0.12em]">
+                      <span className="border border-[var(--line-2)] px-1.5 py-[1px] text-[var(--brass)]">{kindName}</span>
+                      {o.urgent && <span className="border border-[rgba(214,120,92,0.45)] px-1.5 py-[1px] text-[#e5a58e]">срочный</span>}
+                      {o.kind === "bundle" && <span className="dim">· {lines.length} видов</span>}
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {progress.map(({ line, have, need }, i) => {
+                        const f = FISH_BY_ID[line.fishId];
+                        const known = !!s.codex[line.fishId];
+                        const done = have >= need;
+                        return (
+                          <div key={`${line.fishId}-${i}`} className="flex items-center gap-2.5">
+                            <span className="flex h-9 w-11 shrink-0 items-center justify-center">
+                              <FishIcon fish={f} size={84} height={34} known={known} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className="flex items-baseline justify-between gap-2">
+                                <span className="truncate text-[12.5px] text-[#ece6d8]">{known ? f.name : "Неизвестный вид"}</span>
+                                <span className={`num shrink-0 text-[11.5px] ${done ? "text-[var(--color-ok)]" : "muted"}`}>{have} / {need}</span>
+                              </span>
+                              <span className="mt-1 block h-[3px] w-full overflow-hidden bg-white/10">
+                                <span className="block h-full bg-[var(--color-ok)]" style={{ width: `${Math.min(100, (have / need) * 100)}%` }} />
+                              </span>
+                              {line.minWeight > 0 && (
+                                <span className="mt-0.5 block text-[10px] dim">масса от {fmtW(line.minWeight)}</span>
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-3 flex items-baseline justify-between border-t border-[var(--line)] pt-2">
+                      <span className="text-[10.5px] dim">{ready ? "оплата с бонусом к рынку" : "базовая оплата"}</span>
+                      <span className="num text-[15px] text-[var(--brass-2,#e3c996)]">{fmt(payout)} ₽</span>
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <button className="btn btn-solid flex-1" disabled={!ready} onClick={() => engine.fulfillOrder(o.id) && say(`Заказ сдан: +${fmt(payout)} ₽`)}>Сдать заказ</button>
+                      <button
+                        className="btn btn-quiet shrink-0 px-3"
+                        disabled={engine.orderDeclinesLeft <= 0}
+                        title={engine.orderDeclinesLeft > 0 ? `Отказаться · осталось ${engine.orderDeclinesLeft}` : "Отказы на сегодня закончились"}
+                        onClick={() => engine.declineOrder(o.id) && say("Заказ отклонён — придёт другой")}
+                      >
+                        Отказ
+                      </button>
+                    </div>
                   </div>
                 );
               })}

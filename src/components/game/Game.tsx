@@ -494,6 +494,24 @@ export default function Game() {
     let last = performance.now();
     let clearedWhileAuth = false;
     let W = 0, H = 0;
+    // Титул показывает последнюю позицию игрока: декоративная копия сохранения,
+    // отдельный движок в паузе. Иначе за списком «Продолжить» был синий градиент.
+    // Титульный фон зависит только от сохранения, но пересобирать цикл на
+    // каждое изменение ссылки не нужно: boot.state меняется вместе с ним.
+    const previewSave = boot.state === "title" && !playing && !travelling ? boot.save : null;
+    let title: Engine | null = null;
+    if (previewSave) {
+      try {
+        const snap = JSON.parse(JSON.stringify(previewSave)) as SaveData;
+        snap.atPort = false;
+        snap.events = [];
+        title = new Engine(snap);
+        title.paused = true;
+        title.phase = "idle";
+      } catch { title = null; }
+    }
+    let titleAcc = 0;
+    let titleInterval = 1 / 15;
     sceneRef.current.quality = quality;
     const resize = () => {
       W = canvas.clientWidth;
@@ -524,6 +542,29 @@ export default function Game() {
       // лёгкая SVG-сцена авторизации. Статичный титульный/переходный фон рисуется
       // один раз; повторный кадр нужен только после resize или смены состояния.
       if (!playing || travelling || startupError) {
+        if (title && W > 0 && H > 0) {
+          // Живой, но спокойный фон: ~15 кадров/с и медленный ход мира.
+          titleAcc += dt;
+          if (titleAcc >= titleInterval) {
+            const step = Math.min(0.25, titleAcc) * 0.55;
+            titleAcc = 0;
+            const t0 = performance.now();
+            try {
+              title.update(step);
+              scene.render(ctx, title, W, H, step);
+              clearedWhileAuth = false;
+            } catch (err) {
+              console.warn("[title] фон недоступен", err);
+              title = null;
+            }
+            // Слабые устройства получают более редкий кадр, а не рывки.
+            const cost = performance.now() - t0;
+            titleInterval = cost > 26 ? 1 / 7 : cost > 14 ? 1 / 11 : 1 / 15;
+          }
+          e.sfx.length = 0;
+          schedule();
+          return;
+        }
         if (!clearedWhileAuth) {
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           ctx.fillStyle = "#07151f";
@@ -583,6 +624,7 @@ export default function Game() {
     };
     schedule();
     return () => { if (raf !== null) cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [quality, playing, boot.state, travelling, startupError]);
 
   useEffect(() => {
@@ -797,16 +839,16 @@ export default function Game() {
 
       {/* ───────── ТИТУЛ ───────── */}
       {!playing && boot.state !== "auth" && (
-        <div className="absolute inset-0 z-50 flex items-center bg-[linear-gradient(90deg,rgba(3,7,12,0.88)_0%,rgba(3,7,12,0.55)_38%,rgba(3,7,12,0)_70%)]">
-          <div className="title-in mx-6 max-h-[100dvh] max-w-[520px] overflow-y-auto py-6 sm:ml-[7vw]">
+        <div className="absolute inset-0 z-50 flex items-center bg-[linear-gradient(90deg,rgba(3,7,12,0.9)_0%,rgba(3,7,12,0.62)_30%,rgba(3,7,12,0.18)_58%,rgba(3,7,12,0)_78%)]">
+          <div className="title-in zv-title mx-6 max-h-[100dvh] max-w-[520px] overflow-y-auto py-6 sm:ml-[7vw]">
             <div className="label-brass">Симулятор морской рыбалки</div>
             <h1 className="font-serif mt-3 text-[clamp(48px,8vw,112px)] font-light leading-[0.92] text-[#f4eee0] sm:mt-4">Знакомая<br />вода</h1>
-            <p className="font-serif mt-4 max-w-sm text-[18px] italic leading-snug text-[#d8cfbd] sm:mt-6 sm:text-[22px]">Лодка, удочка, море и одинокий рыбак на рассвете. Никакой спешки.</p>
-            <div className="mt-6 h-px w-24 bg-[var(--brass)] sm:mt-10" />
+            <p className="zv-title-tagline font-serif mt-4 max-w-sm text-[18px] italic leading-snug text-[#d8cfbd] sm:mt-6 sm:text-[22px]">Лодка, удочка, море и одинокий рыбак на рассвете. Никакой спешки.</p>
+            <div className="zv-title-rule mt-6 h-px w-24 bg-[var(--brass)] sm:mt-10" />
             {boot.state === "loading" ? (
               <div className="label pulse-soft mt-10">Загрузка</div>
             ) : (
-              <div className="mt-6 w-full max-w-[340px] space-y-3 sm:mt-10">
+              <div className="zv-title-form mt-6 w-full max-w-[340px] space-y-3 sm:mt-10">
                 <div className="label">Имя</div>
                 <input value={name} onChange={(e) => setName(e.target.value)} maxLength={24} placeholder="Рыбак" className="field !text-left" />
                 {boot.save && (
@@ -833,7 +875,7 @@ export default function Game() {
               </div>
             )}
           </div>
-          <div className="absolute bottom-6 left-[7vw] right-6 hidden flex-wrap gap-x-6 gap-y-1 text-[11px] dim md:flex">
+          <div className="zv-title-keys absolute bottom-6 left-[7vw] right-6 hidden flex-wrap gap-x-6 gap-y-1 text-[11px] dim md:flex">
             <span>ЛКМ / Пробел — заброс и подмотка</span><span>A · D — против рывка</span><span>Колесо — глубина · Shift + колесо — зум</span><span>C · J · P — кодекс, журнал, порт</span>
           </div>
         </div>
@@ -853,7 +895,7 @@ export default function Game() {
       {playing && (
         <>
           {!engine.s.atPort && !panel && !tripReq && !travelling && !settingsOpen && letter === null && !authOpen && !engine.lastCatch && !engine.lastFind && (
-            engine.navigationMode ? <LocalNavigationPanel engine={engine} scene={scene0} landscape={view.compact && view.land} mobile={mobileControls} controls={settings.controls} /> : ["idle","waiting","sinking"].includes(engine.phase) &&
+            engine.navigationMode ? <LocalNavigationPanel engine={engine} scene={scene0} landscape={view.compact && view.land} mobile={mobileControls} controls={settings.controls} onSettings={() => setSettingsOpen(true)} /> : ["idle","waiting","sinking"].includes(engine.phase) &&
             <button className="zv-ui navigation-entry" style={{bottom:controlReserve+12,right:58}} disabled={!!engine.navigationBlock} onClick={() => engine.setNavigationMode(true)} title={engine.navigationBlock ?? "Выбрать точку и плыть · N"}>
               <span aria-hidden="true">↔</span> Перемещение
               {!!engine.navigationBlock && <small>уберите снасть</small>}
@@ -1237,7 +1279,7 @@ export default function Game() {
             </div>
           )}
 
-          {!engine.s.atPort && !panel && !tripReq && !travelling && !settingsOpen && letter === null && !authOpen && engine.phase !== "caught" && (
+          {!engine.s.atPort && !panel && !tripReq && !travelling && !settingsOpen && !engine.navigationMode && letter === null && !authOpen && engine.phase !== "caught" && (
             <div className="pointer-events-none absolute inset-0 z-[25]">
               <button style={{ position: "absolute", ...(["fight","bite","charging","casting"].includes(engine.phase)?{top:view.compact?(view.land?102:122):220}:{bottom:controlReserve+12}),right:12 }} className="iconbtn pointer-events-auto !bg-[rgba(6,12,18,0.72)]" onClick={() => setSettingsOpen(true)} title="Настройки" aria-label="Настройки"><Icon name="gear" size={16} /></button>
             </div>

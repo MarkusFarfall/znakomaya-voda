@@ -11,7 +11,7 @@ import { GAME_EVENT_BY_ID, GAME_EVENTS } from "./events/gameCatalog";
 import { ACHIEVEMENTS, FINDS, FIND_BY_ID, levelFromXp, levelReward, levelTitle, PERKS, perkPoints, QUESTS, RANK_LEVEL, rankCost, spentPoints, type FindDef } from "./progress";
 import type { GearKind } from "./world";
 import { applyDaily, dailyChestReward, dailyTaskFamily, isDailySideFamily, newDaily, rollDaily, streakBonus, todayKey, makeTasks, type DailyEvent, type DailyState } from "./daily";
-import type { ActiveEvent, BaitId, CaughtFish, FishDef, LocId, Order, PortId, Rarity, SaveData, Season, Variant, WeatherId } from "./types";
+import type { ActiveEvent, BaitId, CaughtFish, FishDef, LocId, Order, OrderKind, OrderLine, PortId, Rarity, SaveData, Season, Variant, WeatherId } from "./types";
 import {
   BAIT_BY_ID,
   BOATS,
@@ -201,14 +201,35 @@ export function migrateSave(raw: unknown): SaveData | null {
   s.orders = Array.isArray(s.orders)
     ? s.orders
         .filter((o) => o && FISH_BY_ID[o.fishId])
-        .map((o) => ({
-          ...o,
-          count: Number.isFinite(o.count) && o.count > 0 ? Math.min(99, Math.round(o.count)) : 1,
-          minWeight: Number.isFinite(o.minWeight) && o.minWeight > 0 ? Math.round(o.minWeight * 100) / 100 : 0,
-          reward: Number.isFinite(o.reward) && o.reward > 0 ? Math.round(o.reward) : 50,
-          expiresDay: Number.isFinite(o.expiresDay) ? o.expiresDay : dayOf + 3,
-        }))
+        .map((o) => {
+          // Сборные заказы появились позже: у старых сохранений строк нет,
+          // поэтому состав восстанавливаем из полей первого вида.
+          const lines = Array.isArray(o.lines)
+            ? o.lines
+                .filter((l) => l && FISH_BY_ID[l.fishId])
+                .map((l) => ({
+                  fishId: l.fishId,
+                  count: Number.isFinite(l.count) && l.count > 0 ? Math.min(99, Math.round(l.count)) : 1,
+                  minWeight: Number.isFinite(l.minWeight) && l.minWeight > 0 ? Math.round(l.minWeight * 100) / 100 : 0,
+                }))
+            : [];
+          return {
+            ...o,
+            count: Number.isFinite(o.count) && o.count > 0 ? Math.min(99, Math.round(o.count)) : 1,
+            minWeight: Number.isFinite(o.minWeight) && o.minWeight > 0 ? Math.round(o.minWeight * 100) / 100 : 0,
+            reward: Number.isFinite(o.reward) && o.reward > 0 ? Math.round(o.reward) : 50,
+            expiresDay: Number.isFinite(o.expiresDay) ? o.expiresDay : dayOf + 3,
+            lines: lines.length ? lines : undefined,
+            kind: o.kind === "bulk" || o.kind === "bundle" || o.kind === "trophy" ? o.kind : "single",
+            urgent: !!o.urgent,
+          };
+        })
     : [];
+  const declines = s.orderDeclines;
+  s.orderDeclines =
+    declines && Number.isFinite(declines.day) && Number.isFinite(declines.left)
+      ? { day: Math.round(declines.day), left: Math.max(0, Math.min(2, Math.round(declines.left))) }
+      : undefined;
   s.flags = Array.isArray(s.flags) ? s.flags : [];
   s.hints = Array.isArray(s.hints) ? s.hints : [];
   s.milestones = Array.isArray(s.milestones) ? s.milestones : [];
@@ -1432,8 +1453,8 @@ export class Engine {
     this.s.cooler.push(this.lastCatch.item);
     this.lastCatch = null;
     this.phase = "idle";
-    const order = this.s.orders.find((o) => o.fishId === this.s.cooler[this.s.cooler.length - 1].fishId);
-    if (order && this.orderMatches(order).length >= this.orderCount(order)) this.toast("Заказ собран", "good", `${order.client} — сдать в порту`);
+    const order = this.s.orders.find((o) => this.orderReady(o));
+    if (order) this.toast("Заказ собран", "good", `${order.client} — сдать в порту`);
     this.markDirty();
   }
 
@@ -1835,46 +1856,180 @@ export class Engine {
   }
 
   // ─────────── orders ───────────
+  /** Уровень заказчика: растёт с числом сданных заказов, даёт надбавку и слоты. */
+  get orderLevel() {
+    return Math.max(1, Math.min(5, 1 + Math.floor((this.s.ordersDone || 0) / 4)));
+  }
+  /** Сколько заказов висит в порту одновременно. */
+  get orderSlots() {
+    const lvl = this.orderLevel;
+    return 3 + (lvl >= 3 ? 1 : 0) + (lvl >= 5 ? 1 : 0);
+  }
+  /** Остаток отказов на сегодня (2 в день). */
+  get orderDeclinesLeft() {
+    const d = this.s.orderDeclines;
+    return d && d.day === this.day ? Math.max(0, d.left) : 2;
+  }
+
   refreshOrders() {
     const day = this.day;
     const expired = this.s.orders.filter((o) => o.expiresDay < day);
     if (expired.length) this.toast(`Заказов просрочено: ${expired.length}`, "bad");
     this.s.orders = this.s.orders.filter((o) => o.expiresDay >= day);
+    if (this.s.orderDeclines?.day !== day) this.s.orderDeclines = { day, left: 2 };
     let guard = 0;
-    while (this.s.orders.length < 3 && guard++ < 30) {
+    while (this.s.orders.length < this.orderSlots && guard++ < 40) {
       const o = this.makeOrder();
-      if (o && !this.s.orders.some((x) => x.fishId === o.fishId)) this.s.orders.push(o);
+      if (o && !this.s.orders.some((x) => this.orderKey(x) === this.orderKey(o))) this.s.orders.push(o);
     }
+  }
+
+  /** Ключ состава: одинаковые наборы не дублируются в витрине. */
+  private orderKey(o: Order) {
+    return this.orderLines(o)
+      .map((l) => l.fishId)
+      .sort()
+      .join("+");
+  }
+
+  /** Рыба, которую этот заказчик ещё не просит. */
+  private freeFish(pool: FishDef[], used: Set<string>) {
+    const left = pool.filter((f) => !used.has(f.id));
+    return left.length ? left : pool;
+  }
+
+  private orderRewardFor(line: OrderLine, mult: number) {
+    const f = FISH_BY_ID[line.fishId];
+    if (!f) return 0;
+    const avgW = line.minWeight ? line.minWeight * 1.15 : ((f.weight[0] + f.weight[1]) / 2) * 0.75;
+    return (RARITY_INFO[f.rarity].base + avgW * f.price) * this.orderLineCount(line) * mult + 40;
   }
 
   private makeOrder(): Order | null {
     const tier = this.boat.tier;
-    const pool = FISH.filter((f) => f.rarity !== "legendary" && f.loc.some((l) => LOC_BY_ID[l].boatTier <= tier) && f.depth[0] <= this.line.value);
+    const pool = FISH.filter(
+      (f) => f.rarity !== "legendary" && f.loc.some((l) => LOC_BY_ID[l].boatTier <= tier) && f.depth[0] <= this.line.value,
+    );
     if (!pool.length) return null;
     const known = pool.filter((f) => this.s.codex[f.id]);
     const src = known.length && Math.random() < 0.75 ? known : pool;
-    const f = src[ri(src.length)];
-    const count = f.rarity === "common" ? 2 + ri(3) : f.rarity === "uncommon" ? 1 + ri(2) : 1;
-    const minWeight = Math.random() < 0.4 ? +(f.weight[0] + (f.weight[1] - f.weight[0]) * (0.25 + Math.random() * 0.3)).toFixed(2) : 0;
-    const avgW = minWeight ? minWeight * 1.2 : ((f.weight[0] + f.weight[1]) / 2) * 0.7;
-    const mult = { common: 2.2, uncommon: 2.5, rare: 3, epic: 3.5, legendary: 4 }[f.rarity];
-    const reward = Math.max(50, Math.round(((RARITY_INFO[f.rarity].base + avgW * f.price) * count * mult + 40) / 10) * 10);
-    return { id: rid(), fishId: f.id, count, minWeight, reward, expiresDay: this.day + 2 + ri(3), client: this.port.clients[ri(this.port.clients.length)] ?? ORDER_CLIENTS[ri(ORDER_CLIENTS.length)] };
+    const level = this.orderLevel;
+    const r = Math.random();
+    // Чем выше уровень, тем чаще попадаются сборные и трофейные заказы.
+    const kind: OrderKind =
+      r < 0.44 - level * 0.05 ? "single" : r < 0.7 - level * 0.03 ? "bulk" : r < 0.9 ? "bundle" : "trophy";
+    const used = new Set<string>();
+    const lines: OrderLine[] = [];
+    const weightFloor = (f: FishDef) => +(f.weight[0] + (f.weight[1] - f.weight[0]) * (0.55 + Math.random() * 0.35)).toFixed(2);
+
+    if (kind === "bundle") {
+      const n = level >= 3 ? 2 + ri(2) : 2;
+      for (let i = 0; i < n; i++) {
+        const f = this.freeFish(src, used)[ri(this.freeFish(src, used).length)];
+        used.add(f.id);
+        lines.push({ fishId: f.id, count: 1 + ri(2), minWeight: 0 });
+      }
+    } else {
+      const f = src[ri(src.length)];
+      used.add(f.id);
+      if (kind === "bulk") {
+        const cheap = src.filter((x) => x.rarity === "common" || x.rarity === "uncommon");
+        const b = cheap.length ? cheap[ri(cheap.length)] : f;
+        used.add(b.id);
+        lines.push({ fishId: b.id, count: 5 + ri(4), minWeight: 0 });
+      } else if (kind === "trophy") {
+        lines.push({ fishId: f.id, count: 1, minWeight: weightFloor(f) });
+      } else {
+        const count = f.rarity === "common" ? 2 + ri(3) : f.rarity === "uncommon" ? 1 + ri(2) : 1;
+        const minWeight = Math.random() < 0.35 ? weightFloor(f) : 0;
+        lines.push({ fishId: f.id, count, minWeight });
+      }
+    }
+
+    const mult: Record<OrderKind, number> = { single: { common: 2.2, uncommon: 2.5, rare: 3, epic: 3.5, legendary: 4 }[FISH_BY_ID[lines[0].fishId].rarity], bulk: 1.7, bundle: 2.7, trophy: 3.4 };
+    const base = lines.reduce((sum, l) => sum + this.orderRewardFor(l, mult[kind]), 0);
+    const lvlBonus = 1 + 0.07 * (level - 1);
+    const urgent = kind !== "bulk" && Math.random() < 0.28;
+    const reward = Math.max(50, Math.round((base * lvlBonus * (urgent ? 1.35 : 1)) / 10) * 10);
+    const first = lines[0];
+    return {
+      id: rid(),
+      fishId: first.fishId,
+      count: first.count,
+      minWeight: first.minWeight,
+      lines,
+      kind,
+      urgent,
+      reward,
+      expiresDay: this.day + (urgent ? 1 : 2 + ri(3)),
+      client: this.port.clients[ri(this.port.clients.length)] ?? ORDER_CLIENTS[ri(ORDER_CLIENTS.length)],
+    };
   }
 
-  /** Сколько рыбы из садка подходит под заказ. Поля заказа могут прийти из
-   *  старого сохранения пустыми — тогда трактуем их как 0 и 1, иначе заказ
-   *  «не видит» ни одной рыбы. */
-  orderMatches(o: Order) {
-    const minWeight = Number.isFinite(o.minWeight) ? o.minWeight : 0;
-    return this.s.cooler
-      .filter((c) => c.fishId === o.fishId && Number.isFinite(c.weight) && c.weight + 1e-9 >= minWeight)
-      .sort((a, b) => a.weight - b.weight);
+  /** Состав заказа; у старых сохранений строк нет — берём поля первого вида. */
+  orderLines(o: Order): OrderLine[] {
+    const lines = Array.isArray(o.lines)
+      ? o.lines
+          .filter((l) => l && FISH_BY_ID[l.fishId])
+          .map((l) => ({
+            fishId: l.fishId,
+            count: this.orderLineCount(l),
+            minWeight: Number.isFinite(l.minWeight) && l.minWeight > 0 ? Math.round(l.minWeight * 100) / 100 : 0,
+          }))
+      : [];
+    if (lines.length) return lines;
+    // Поля старого заказа нормализуем здесь же: orderCount() сам зовёт
+    // orderLines(), поэтому в фолбэке его использовать нельзя.
+    return [
+      {
+        fishId: o.fishId,
+        count: Number.isFinite(o.count) && o.count > 0 ? Math.min(99, Math.round(o.count)) : 1,
+        minWeight: Number.isFinite(o.minWeight) && o.minWeight > 0 ? o.minWeight : 0,
+      },
+    ];
   }
 
-  /** Требуемое количество с защитой от битого сохранения. */
+  /** Количество в строке с защитой от битого сохранения. */
+  orderLineCount(l: OrderLine) {
+    return Number.isFinite(l.count) && l.count > 0 ? Math.min(99, Math.round(l.count)) : 1;
+  }
+
+  /** Количество в первой строке — совместимость со старым интерфейсом. */
   orderCount(o: Order) {
-    return Number.isFinite(o.count) && o.count > 0 ? Math.round(o.count) : 1;
+    return this.orderLines(o)[0]?.count ?? 1;
+  }
+
+  /**
+   * Прогресс по строкам заказа. Экземпляры из садка не переиспользуются между
+   * строками: сборный заказ требует именно столько рыб каждого вида.
+   */
+  orderProgress(o: Order) {
+    const taken = new Set<string>();
+    return this.orderLines(o).map((line) => {
+      const need = this.orderLineCount(line);
+      const items = this.s.cooler
+        .filter(
+          (c) =>
+            !taken.has(c.uid) &&
+            c.fishId === line.fishId &&
+            Number.isFinite(c.weight) &&
+            c.weight + 1e-9 >= line.minWeight,
+        )
+        .sort((a, b) => a.weight - b.weight)
+        .slice(0, need);
+      for (const c of items) taken.add(c.uid);
+      return { line, need, have: items.length, items };
+    });
+  }
+
+  /** Рыба из садка, подходящая под заказ (для подсветки и старых вызовов). */
+  orderMatches(o: Order) {
+    return this.orderProgress(o).flatMap((p) => p.items);
+  }
+
+  /** Все строки закрыты — заказ можно сдавать. */
+  orderReady(o: Order) {
+    return this.orderProgress(o).every((p) => p.have >= p.need);
   }
 
   /**
@@ -1883,10 +2038,8 @@ export class Engine {
    * минимум 15% (не меньше 20 ₽), сохраняя при этом базовую награду заказа.
    */
   orderReward(o: Order) {
-    const need = this.orderCount(o);
-    const selected = this.orderMatches(o).slice(0, need);
-    if (selected.length < need) return o.reward;
-
+    if (!this.orderReady(o)) return o.reward;
+    const selected = this.orderMatches(o);
     // Сначала продаём наиболее дорогие экземпляры, чтобы скидка насыщения
     // применялась так же выгодно, как при продаже садка по отдельности.
     const sorted = selected
@@ -1899,28 +2052,45 @@ export class Engine {
       separateSale += this.marketValue(c, count);
       extra[c.fishId] = count + 1;
     }
-
     const bonus = Math.max(20, Math.ceil(separateSale * 0.15));
     return Math.max(o.reward, separateSale + bonus);
   }
 
   fulfillOrder(id: string) {
     const o = this.s.orders.find((x) => x.id === id);
-    if (!o) return false;
-    const need = this.orderCount(o);
-    const m = this.orderMatches(o);
-    if (m.length < need) return false;
+    if (!o || !this.orderReady(o)) return false;
     const reward = this.orderReward(o);
-    const use = new Set(m.slice(0, need).map((c) => c.uid));
+    const use = new Set(this.orderMatches(o).map((c) => c.uid));
     this.s.cooler = this.s.cooler.filter((c) => !use.has(c.uid));
     this.s.orders = this.s.orders.filter((x) => x.id !== id);
     this.s.money += reward;
     this.s.stats.totalEarned += reward;
     this.s.ordersDone++;
     this.dailyEvent({ k: "order" });
-    this.addXp(30 + Math.round(reward / 50));
+    this.addXp(30 + Math.round(reward / 50) + (o.kind === "bundle" ? 15 : 0));
     this.sfx.push("coins");
+    if (this.s.orders.length < this.orderSlots) this.refreshOrders();
     this.checkProgress();
+    this.markDirty();
+    return true;
+  }
+
+  /** Отказ от заказа: не больше двух в день, на его место приходит новый. */
+  declineOrder(id: string) {
+    const o = this.s.orders.find((x) => x.id === id);
+    if (!o) return false;
+    if (this.orderDeclinesLeft <= 0) {
+      this.toast("Отказы на сегодня закончились", "info", "Новые заказы придут завтра");
+      return false;
+    }
+    const day = this.day;
+    this.s.orderDeclines = { day, left: this.orderDeclinesLeft - 1 };
+    this.s.orders = this.s.orders.filter((x) => x.id !== id);
+    let guard = 0;
+    while (this.s.orders.length < this.orderSlots && guard++ < 20) {
+      const next = this.makeOrder();
+      if (next && !this.s.orders.some((x) => this.orderKey(x) === this.orderKey(next))) this.s.orders.push(next);
+    }
     this.markDirty();
     return true;
   }

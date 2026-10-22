@@ -157,6 +157,33 @@ const wrapW = (S: FxScene, x: number) => {
 /** Мировая координата элемента события: якорь + смещение в пикселях. */
 const worldX = (S: FxScene, e: VisibleEvent, offset = 0) => wrapW(S, eventAnchor(S, e) + offset);
 
+/**
+ * Дрейф частиц внутри пятна события: смещение зациклено на ширине кластера.
+ *
+ * Раньше частицы течения, угрей и стай уходили по `t * speed` без границы: за
+ * полминуты события они расползались по всей акватории, и явление читалось как
+ * «сразу на всю воду». Теперь частица, дойдя до края пятна, входит с другой
+ * стороны — вода движется, а событие остаётся местным.
+ */
+const drift = (S: FxScene, t: number, speed: number, span = 1) => {
+  const L = Math.max(80, S.visW * CLUSTER * span);
+  const x = ((t * speed) % L + L) % L;
+  return x - L / 2;
+};
+
+/**
+ * Проход «плавучего» актёра — дельфинов, касаток, судов, птиц.
+ *
+ * Актёр входит у одного края пятна, проходит ~1.6 ширины кластера и уходит за
+ * другой. Фаза едет по кругу, а прозрачность гаснет у краёв, поэтому он не
+ * прыгает с места на место и не ползёт через всю акваторию.
+ */
+const trip = (S: FxScene, t: number, speed: number, span = 1) => {
+  const L = Math.max(120, S.visW * CLUSTER * 1.6 * span);
+  const ph = (((t * speed) / L) % 1 + 1) % 1;
+  return { x: (ph - 0.5) * L, fade: Math.min(1, Math.min(ph, 1 - ph) * 8) };
+};
+
 /** Глубина как доля от поверхности до дна: 0 — поверхность, 1 — грунт.
  *  Подводные существа не могут оказаться ниже дна или выше воды. */
 const depthY = (S: FxScene, q: number, x = S.boatX) => {
@@ -291,8 +318,10 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const p = 0.58;
       const y = farY(S, p);
       const z = zAt(S, p);
-      // Дельфины идут по воде своим ходом: 64 px/с на масштабе дальнего плана.
-      const bx = worldX(S, e, t * 64 * z);
+      // Дельфины идут по воде своим ходом: 64 px/с на масштабе дальнего плана,
+      // но только внутри пятна события — не через всю акваторию.
+      const tr = trip(S, t, 64 * z, 1.1);
+      const bx = worldX(S, e, tr.x);
       c.fillStyle = css(mix([62, 76, 92], S.pal.land1, 0.35));
       c.strokeStyle = '#eef6ff';
       c.lineWidth = 1;
@@ -301,9 +330,9 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const x = bx - j * 34 * z;
         if (ph < 0.42) {
           const q = ph / 0.42;
-          c.globalAlpha = e.k;
+          c.globalAlpha = e.k * tr.fade;
           dolphin(c, x + (q - 0.5) * 30 * z, y - Math.sin(q * PI) * 20 * z, 30 * z, -Math.cos(q * PI) * 0.85);
-        } else if (ph < 0.6) ring(c, x + 15 * z, y + 1, (ph - 0.42) * 120 * z, e.k * 0.45);
+        } else if (ph < 0.6) ring(c, x + 15 * z, y + 1, (ph - 0.42) * 120 * z, e.k * tr.fade * 0.45);
       }
       c.globalAlpha = 1;
     },
@@ -367,13 +396,15 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const p = 0.5;
       const y = farY(S, p);
       const z = zAt(S, p);
-      const bx = worldX(S, e, -t * 46 * z);
+      const tr = trip(S, t, 46 * z, 1.05);
+      const bx = worldX(S, e, -tr.x);
       for (let j = 0; j < 3; j++) {
         const up = Math.max(0, Math.sin(t * 0.9 + j * 1.3));
         if (up <= 0.02) continue;
         const x = bx + j * 30 * z;
         const hh = (j === 0 ? 18 : 12) * z * up;
-        c.globalAlpha = e.k;
+        const fade = tr.fade;
+        c.globalAlpha = e.k * fade;
         c.fillStyle = '#0b0e12';
         c.beginPath();
         c.moveTo(x - 4 * z, y + 1);
@@ -386,7 +417,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         c.fill();
         c.strokeStyle = '#eef6ff';
         c.lineWidth = 1;
-        c.globalAlpha = e.k * 0.4 * up;
+        c.globalAlpha = e.k * fade * 0.4 * up;
         c.beginPath();
         c.moveTo(x - 4 * z, y + 1);
         c.lineTo(x - 18 * z, y + 3 * z);
@@ -840,9 +871,10 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const { c, t } = S;
       const p = 0.32;
       const z = zAt(S, p) * 2.0;
-      const x = worldX(S, e, t * 9 * z);
+      const tr = trip(S, t, 9 * z, 1.3);
+      const x = worldX(S, e, tr.x);
       const y = farY(S, p);
-      const a = e.k * (0.45 + S.A.fog * 0.4) * (0.75 + 0.25 * Math.sin(t * 0.8));
+      const a = e.k * tr.fade * (0.45 + S.A.fog * 0.4) * (0.75 + 0.25 * Math.sin(t * 0.8));
       const col = css([150, 186, 180], a);
       c.fillStyle = col;
       c.strokeStyle = col;
@@ -1088,9 +1120,10 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       for (let i = 0; i < 6; i++) {
         const p = 0.09 + h(i + 300) * 0.15;
         const z = zAt(S, p) * 2.0;
-        const x = worldX(S, e, spreadX(S, h(i + 301)) + t * (7 + h(i + 302) * 4) * z * dir);
+        const tr = trip(S, t, (7 + h(i + 302) * 4) * z * dir, 0.7);
+        const x = worldX(S, e, spreadX(S, h(i + 301), 0.7) + tr.x);
         const y = farY(S, p);
-        c.globalAlpha = e.k;
+        c.globalAlpha = e.k * tr.fade;
         c.fillStyle = hull;
         c.fillRect(x - 6 * z, y - 1.5 * z, 12 * z, 1.5 * z);
         c.fillStyle = sail;
@@ -1387,7 +1420,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const { c, t, s } = S;
       c.lineCap = 'round';
       for (let i = 0; i < 9; i++) {
-        const x = worldX(S, e, spreadX(S, h(i + 602), 0.7) + t * 30 * s * (0.6 + h(i + 601)));
+        const x = worldX(S, e, spreadX(S, h(i + 602), 0.7) + drift(S, t, 30 * s * (0.6 + h(i + 601)), 0.7));
         const y = depthY(S, 0.14 + h(i + 600) * 0.5, x);
         if (y < S.cam - 30 || y > S.cam + S.H + 30) continue;
         // Тёмное тело на тёмной воде не читалось: сперва светлая обводка,
@@ -1446,7 +1479,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const z = zAt(S, p);
         // Птицы летят своим ходом и по ветру: скорость не зависит от камеры.
         const dir = Math.sign(S.windPx || 1);
-        const x = worldX(S, e, spreadX(S, h(i + 802)) + t * (60 + h(i + 801) * 38) * z * dir);
+        const x = worldX(S, e, spreadX(S, h(i + 802), 0.8) + drift(S, t, (60 + h(i + 801) * 38) * z * dir, 0.8));
         const y = farY(S, p) - (3 + Math.abs(Math.sin(t * 3 + i)) * 6) * z * 2 + Math.sin(t * 9 + i) * z;
         const w = 4 * z;
         const fl = Math.sin(t * 14 + i) * 2 * z;
@@ -1472,7 +1505,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const th = Math.max(0.9, pj * 1.4 * s);
         c.lineWidth = th;
         for (let i = 0; i < 3; i++) {
-          const x = worldX(S, e, t * (18 + pj * 46) * s + spreadX(S, h(j * 5 + i + 900)));
+          const x = worldX(S, e, drift(S, t, (18 + pj * 46) * s) + spreadX(S, h(j * 5 + i + 900)));
           const len = (20 + pj * 140) * s;
           c.globalAlpha = e.k * 0.28 * (0.65 + h(i + j * 9 + 903) * 0.35);
           c.beginPath();
@@ -1492,7 +1525,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const y = S.surface + h(i + 950) * S.H * 0.8;
         if (y < S.cam - 10 || y > S.cam + S.H + 10) continue;
         // Под водой течение медленнее и короче: те же штрихи, но вполовину хода.
-        const x = worldX(S, e, t * (40 + h(i + 951) * 30) * s + spreadX(S, h(i + 952)));
+        const x = worldX(S, e, drift(S, t, (40 + h(i + 951) * 30) * s) + spreadX(S, h(i + 952)));
         c.globalAlpha = e.k * 0.22;
         c.beginPath();
         c.moveTo(x, y);

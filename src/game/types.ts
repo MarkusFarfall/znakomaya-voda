@@ -90,14 +90,33 @@ export interface SpotDef {
   swell?: number;
 }
 
+/** Тип заказа: одиночный, опт, сборный набор, трофейная рыба. */
+export type OrderKind = "single" | "bulk" | "bundle" | "trophy";
+
+/**
+ * Одна строка заказа: вид, количество и минимальный вес.
+ * Заказ из одного вида — это одна строка; сборный заказ — 2–3 строки.
+ */
+export interface OrderLine {
+  fishId: string;
+  count: number;
+  minWeight: number;
+}
+
 export interface Order {
   id: string;
+  /** Первая строка заказа. Оставлена ради старых сохранений и простых проверок. */
   fishId: string;
   count: number;
   minWeight: number;
   reward: number;
   expiresDay: number;
   client: string;
+  /** Полный состав заказа; у старых сохранений отсутствует. */
+  lines?: OrderLine[];
+  kind?: OrderKind;
+  /** Срочный заказ: сдать до конца текущего дня, оплата выше. */
+  urgent?: boolean;
 }
 
 export type BoatStyle = "row" | "kayak" | "dinghy" | "barkas" | "cutter" | "yacht" | "seiner" | "trawler" | "research";
@@ -238,6 +257,8 @@ export interface SaveData {
   market: { day: number; sold: Record<string, number>; byPort?: Partial<Record<PortId, Record<string, number>>> };
   sonar: number;
   orders: Order[];
+  /** Обновления заказов: остаток отказов на текущий день. */
+  orderDeclines?: { day: number; left: number };
   ordersDone: number;
   weatherQueued: WeatherId;
   flags: string[];
