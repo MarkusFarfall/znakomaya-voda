@@ -111,7 +111,138 @@
 
 /* Catch, letters and finds keep their own visual identity, but share dialog ergonomics. */
 .zv-ui.game-catch, .zv-ui.game-letter, .zv-ui.game-find, .zv-ui.game-travel-choice { backdrop-filter: blur(4px); }
-.zv-ui.game-catch > .sheet, .zv-ui.game-find > .sheet, .zv-ui.game-travel-choice > .sheet { border-radius: 12px !important; border-color: #c8a46a38; box-shadow: 0 24px 90px #0008; }
+.zv-ui.game-find > .sheet, .zv-ui.game-travel-choice > .sheet { border-radius: 12px !important; border-color: #c8a46a38; box-shadow: 0 24px 90px #0008; }
+
+/* ───────── Улов: витрина с рыбой + карточка данных ───────── */
+.zv-ui.game-catch { padding: 20px; align-items: center; }
+.catch-card {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.06fr) minmax(0, 1fr);
+  width: min(1080px, 100%);
+  height: min(720px, calc(100dvh - 40px));
+  overflow: hidden;
+  border: 1px solid #c8a46a3d;
+  border-radius: 18px;
+  background: linear-gradient(150deg, #101b26 0%, #0a1420 52%, #081019 100%);
+  box-shadow: 0 40px 120px #000b, inset 0 1px 0 #ffffff0a;
+  animation: catch-card-in .42s cubic-bezier(.2,.75,.25,1) both;
+}
+.catch-card::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 0 0 1px #ffffff06;
+}
+
+/* витрина */
+.catch-show {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 22px 24px 18px;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% 42%, color-mix(in srgb, var(--rar) 16%, transparent) 0%, transparent 66%),
+    linear-gradient(165deg, #0b1723 0%, #08121c 60%, #060e16 100%);
+  border-right: 1px solid #ffffff0a;
+}
+.catch-show__grid {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(#ffffff08 1px, transparent 1px),
+    linear-gradient(90deg, #ffffff08 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(75% 65% at 50% 46%, #000 20%, transparent 100%);
+  pointer-events: none;
+}
+.catch-show__glow {
+  position: absolute;
+  left: 50%; top: 46%;
+  width: min(62%, 420px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--rar) 30%, transparent) 0%, transparent 68%);
+  filter: blur(6px);
+  opacity: .9;
+  pointer-events: none;
+  animation: catch-glow 5.5s ease-in-out infinite;
+}
+.catch-show__top, .catch-show__meta { position: relative; display: flex; align-items: center; gap: 10px; min-width: 0; }
+.catch-show__top { justify-content: space-between; }
+.catch-rarity { display: inline-flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 600; letter-spacing: .2em; text-transform: uppercase; color: var(--rar); }
+.catch-rarity i { width: 6px; height: 6px; border-radius: 50%; background: var(--rar); box-shadow: 0 0 10px var(--rar); }
+.catch-index { font-size: 11px; letter-spacing: .14em; color: #e6e1d6a8; }
+.catch-index span { color: #e6e1d655; }
+.catch-hero { position: relative; display: flex; flex: 1; align-items: center; justify-content: center; min-height: 0; padding: 6px 0; }
+.catch-hero canvas { filter: drop-shadow(0 26px 40px #000000a6); animation: catch-fish-in .55s cubic-bezier(.2,.8,.25,1) both; }
+.catch-badges { position: relative; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; padding: 0; list-style: none; }
+.catch-badges li { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; padding: 5px 9px; border: 1px solid #ffffff14; border-radius: 999px; background: #0a141ecc; color: #d7d2c6; font-size: 10.5px; letter-spacing: .02em; backdrop-filter: blur(6px); }
+.catch-badges li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catch-badges li svg { flex-shrink: 0; opacity: .8; }
+.catch-badges li.is-hot { border-color: color-mix(in srgb, var(--rar) 55%, transparent); color: #f3e6cc; background: color-mix(in srgb, var(--rar) 16%, #0a141ecc); }
+.catch-show__meta { font-size: 11px; color: #e6e1d67d; }
+.catch-show__meta .num { font-variant-numeric: tabular-nums; }
+.catch-dot { opacity: .4; }
+
+/* правая колонка */
+.catch-body { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.catch-body__scroll { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 26px 30px 8px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #9b82504d transparent; }
+/* при запасе высоты содержимое стоит по центру, при нехватке — прокручивается от начала */
+.catch-stack { margin-block: auto; padding-block: 1px; }
+.catch-eyebrow { font-size: 10px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: var(--rar); }
+.catch-name { margin-top: 8px; font-family: var(--font-serif); font-size: clamp(32px, 3.4vw, 44px); font-weight: 500; line-height: 1.02; color: #f6f0e2; overflow-wrap: anywhere; }
+.catch-latin { margin-top: 4px; font-family: var(--font-serif); font-size: 16px; font-style: italic; color: #e6e1d67a; overflow-wrap: anywhere; }
+.catch-variant { margin-top: 8px; font-size: 12px; letter-spacing: .03em; }
+.catch-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 20px; }
+.catch-stat { display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 11px 12px 12px; border: 1px solid #ffffff0f; border-radius: 11px; background: linear-gradient(160deg, #ffffff08, #ffffff02); }
+.catch-stat > span { font-size: 9.5px; letter-spacing: .13em; text-transform: uppercase; color: #e6e1d66b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catch-stat > strong { font-family: var(--font-serif); font-size: 23px; font-weight: 500; line-height: 1.1; color: #f3ecdc; white-space: nowrap; }
+.catch-stat > small { font-size: 10.5px; color: #e6e1d666; }
+.catch-stat--hero { border-color: color-mix(in srgb, var(--rar) 40%, transparent); background: linear-gradient(160deg, color-mix(in srgb, var(--rar) 18%, transparent), #ffffff03); }
+.catch-stat--hero > strong { font-size: 29px; color: #fff6e6; }
+.catch-stat small.is-good { color: #86b494; }
+.catch-stat small.is-bad { color: #c9735c; }
+.catch-bonus { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 10px; padding: 10px 12px; border: 1px dashed #c8a46a4a; border-radius: 10px; background: #c8a46a0d; font-size: 11.5px; color: #e0d6bd; }
+.catch-bonus strong { color: #e9cf9c; font-size: 14px; }
+.catch-conditions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.catch-condition { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 9px 10px; border: 1px solid #ffffff0c; border-radius: 10px; background: #ffffff03; }
+.catch-condition svg { flex-shrink: 0; color: #c8a46a9c; }
+.catch-condition strong { display: block; font-size: 11.5px; font-weight: 500; color: #ded7c8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catch-condition small { display: block; font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: #e6e1d64d; }
+.catch-range { margin-top: 16px; }
+.catch-range__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 9.5px; letter-spacing: .13em; text-transform: uppercase; color: #e6e1d66b; }
+.catch-range__verdict { color: color-mix(in srgb, var(--rar) 70%, #e6e1d6); letter-spacing: .1em; }
+.catch-range__track { position: relative; height: 6px; margin: 9px 0 7px; border-radius: 999px; background: #ffffff0d; box-shadow: inset 0 0 0 1px #ffffff08; }
+.catch-range__fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: linear-gradient(90deg, color-mix(in srgb, var(--rar) 45%, #0a141e), color-mix(in srgb, var(--rar) 90%, #ffffff)); }
+.catch-range__avg { position: absolute; top: -3px; width: 1px; height: 12px; background: #ffffff2e; }
+.catch-range__pin { position: absolute; top: 50%; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border: 2px solid #0b141d; border-radius: 50%; background: #f6efdf; box-shadow: 0 0 10px color-mix(in srgb, var(--rar) 70%, transparent); }
+.catch-range__scale { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 10.5px; color: #e6e1d68a; }
+.catch-desc { margin-top: 16px; font-size: 13px; line-height: 1.6; color: #e6e1d69e; }
+.catch-order { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 9px 11px; border: 1px solid #ffffff0f; border-radius: 9px; background: #ffffff04; font-size: 12px; color: #ded5c2; }
+.catch-order svg { flex-shrink: 0; color: var(--brass); }
+.catch-order b { font-weight: 500; color: #f1e7d2; }
+
+/* действия */
+.catch-actions { position: relative; display: flex; flex-shrink: 0; gap: 10px; padding: 14px 30px calc(18px + env(safe-area-inset-bottom)); border-top: 1px solid #ffffff0d; background: linear-gradient(#0a131de6, #081019f2); }
+/* мягкая растушёвка над кнопками: подсказывает, что текст выше можно прокрутить */
+.catch-actions::before { content: ""; position: absolute; inset: -34px 0 auto; height: 34px; background: linear-gradient(#08101900 0%, #09111999 55%, #0a131de6 100%); pointer-events: none; }
+.catch-btn { display: flex; flex: 1 1 0; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; min-height: 54px; padding: 8px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; transition: transform .18s var(--ui-ease), background .2s, border-color .2s, box-shadow .2s; }
+.catch-btn small { font-size: 10px; font-weight: 500; letter-spacing: .04em; text-transform: none; opacity: .72; }
+.catch-btn:active:not(:disabled) { transform: translateY(1px); }
+.catch-btn--quiet { color: #e6e1d6; border: 1px solid #ffffff1f; background: #ffffff05; }
+.catch-btn--quiet:hover:not(:disabled) { border-color: #ffffff3d; background: #ffffff0c; }
+.catch-btn--primary { color: #191207; border: 1px solid #d9bb85; background: linear-gradient(180deg, #e3c897, #c3a065); box-shadow: 0 8px 26px #00000055, inset 0 1px 0 #fff6; }
+.catch-btn--primary:hover:not(:disabled) { background: linear-gradient(180deg, #eed6a6, #cfab6f); }
+.catch-btn:disabled { opacity: .45; cursor: not-allowed; }
+
+@keyframes catch-card-in { from { opacity: 0; transform: translateY(14px) scale(.985); } to { opacity: 1; transform: none; } }
+@keyframes catch-fish-in { from { opacity: 0; transform: translateY(10px) scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes catch-glow { 0%, 100% { opacity: .62; } 50% { opacity: .95; } }
 .zv-ui.game-find > .sheet, .zv-ui.game-travel-choice > .sheet { max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; }
 .zv-ui.game-letter > .paper { border-radius: 8px; box-shadow: 0 24px 100px #0009; }
 .zv-ui.game-letter button { min-height: 44px; border-radius: 5px; }
@@ -145,7 +276,6 @@
   .zv-ui .btn-sm { min-height: 40px; }
   .codex-grid { gap: 8px; grid-template-columns: repeat(auto-fill,minmax(min(132px,100%),1fr)); }
   .zv-ui .codex-chip { min-height: 40px; }
-  .zv-ui.game-catch > .sheet { border-radius: 0 !important; }
   .zv-ui.game-letter > .paper { max-height: 100dvh; border-radius: 0; padding-bottom: max(28px,env(safe-area-inset-bottom)); }
   .zv-ui.game-travel-choice { padding: 12px; }
   .zv-ui.game-travel-choice > .sheet { padding: 20px; max-height: calc(100dvh - 24px); }
@@ -191,25 +321,98 @@
 }
 /* These overrides also neutralize the legacy .safe-pad { padding: 0 } on wide sheets. */
 .zv-ui.game-travel-choice > .sheet { padding: 28px; }
-.zv-ui.game-catch > .sheet { height: min(90dvh, 720px); overflow: hidden; }
-.game-catch .catch-info { scrollbar-width: thin; scrollbar-color: #9b82504d transparent; }
-.game-catch .catch-actions { padding-bottom: max(16px,env(safe-area-inset-bottom)); }
-@media (max-width: 767px) {
-  .zv-ui.game-catch > .sheet { display: flex; flex-direction: column; height: 100dvh; }
-  .game-catch > .sheet > .plate { flex-shrink: 0; min-height: 150px; height: clamp(150px,30dvh,220px); padding-block: 12px; }
-  .game-catch > .sheet > .plate canvas { max-height: 125px; width: auto !important; }
-  .game-catch > .sheet > .catch-details { flex: 1; }
+
+/* Узкий планшет и телефон: витрина сверху, данные снизу, действия закреплены. */
+@media (max-width: 720px) {
+  .zv-ui.game-catch { padding: 12px; }
+  /* витрина диктует свою высоту, остальное забирает прокручиваемая колонка */
+  .catch-card { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); height: calc(100dvh - 24px); max-height: none; }
+  /* витрина не может съесть больше 36 % высоты — данные всегда видны */
+  .catch-show { gap: 10px; max-height: 36dvh; border-right: 0; border-bottom: 1px solid #ffffff0a; padding: 16px 18px 12px; overflow: hidden; }
+  .catch-hero { flex: 0 1 auto; min-height: 0; }
+  .catch-hero canvas { max-height: min(180px, 22dvh); width: auto !important; }
+  .catch-body__scroll { justify-content: flex-start; padding: 18px 20px 6px; }
+  .catch-stack { margin-block: 0; }
+  .catch-name { font-size: 30px; }
+  .catch-desc { margin-top: 12px; }
+  .catch-order { margin-top: 10px; }
+  .catch-actions { padding: 12px 20px calc(14px + env(safe-area-inset-bottom)); }
 }
-@media (max-width: 359px) and (max-height: 520px) {
-  .game-catch > .sheet > .plate {
-    height: clamp(122px, 26dvh, 150px);
-    min-height: clamp(122px, 26dvh, 150px);
-    padding-block: 8px;
+/* Телефон: полноэкранная карточка, крупная рыба, компактные цифры. */
+@media (max-width: 560px) {
+  .zv-ui.game-catch { padding: 0; }
+  /* витрина по содержимому, данные забирают всё остальное — так ничего не обрезается */
+  .catch-card { width: 100%; height: 100dvh; max-height: none; border: 0; border-radius: 0; padding-top: env(safe-area-inset-top); grid-template-rows: auto minmax(0, 1fr); }
+  .catch-show { gap: 8px; padding: 12px 16px 10px; }
+  .catch-hero { flex: 0 1 auto; padding: 2px 0; }
+  .catch-hero canvas { max-height: min(190px, 26dvh); }
+  .catch-badges { flex-wrap: nowrap; margin-bottom: 0; padding-bottom: 2px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-snap-type: x proximity; mask-image: linear-gradient(90deg, #000 92%, transparent); }
+  .catch-badges::-webkit-scrollbar { display: none; }
+  .catch-badges li { flex: 0 0 auto; padding: 4px 8px; font-size: 10px; scroll-snap-align: start; }
+  .catch-show__meta { font-size: 10.5px; }
+  .catch-body__scroll { justify-content: flex-start; padding: 14px 16px 6px; }
+  .catch-stack { margin-block: 0; }
+  .catch-name { font-size: 27px; }
+  .catch-latin { font-size: 14px; }
+  .catch-stats { gap: 6px; margin-top: 14px; }
+  .catch-desc { margin-top: 12px; font-size: 12.5px; line-height: 1.5; }
+  .catch-order { margin-top: 10px; }
+  .catch-stat { padding: 8px 9px 9px; border-radius: 9px; }
+  .catch-stat > span { font-size: 8.5px; letter-spacing: .1em; }
+  .catch-stat > strong { font-size: 18px; }
+  .catch-stat--hero > strong { font-size: 23px; }
+  .catch-stat > small { font-size: 9.5px; }
+  .catch-range { margin-top: 12px; }
+  .catch-conditions { gap: 6px; margin-top: 10px; }
+  .catch-condition { padding: 7px 8px; border-radius: 8px; }
+  .catch-condition strong { font-size: 10.5px; }
+  .catch-condition small { font-size: 8px; }
+  .catch-bonus { margin-top: 8px; font-size: 11px; padding: 8px 10px; }
+  .catch-actions { gap: 8px; padding: 10px 14px calc(12px + env(safe-area-inset-bottom)); }
+  .catch-btn { min-height: 50px; font-size: 11px; border-radius: 10px; }
+}
+/* Узкая двухколоночная карточка: цифры мельче, чтобы «1.62 кг» не переносилось. */
+@media (max-width: 900px) and (min-width: 721px) {
+  .catch-stat { padding: 10px 10px 11px; }
+  .catch-stat > span { font-size: 8.5px; letter-spacing: .1em; }
+  .catch-stat > strong { font-size: 17px; }
+  .catch-stat--hero > strong { font-size: 20px; }
+  .catch-stat > small { font-size: 9.5px; }
+  .catch-conditions { gap: 6px; }
+  .catch-condition { padding: 7px 8px; }
+  .catch-condition strong { font-size: 10.5px; }
+  .catch-condition small { font-size: 8px; }
+}
+/* Низкий ландшафт: прячем второстепенное, чтобы действия остались на экране. */
+@media (max-height: 520px) and (min-width: 561px) {
+  /* Ландшафт: снова две колонки, из данных остаётся только главное. */
+  .zv-ui.game-catch { padding: 8px; }
+  .catch-card {
+    grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+    grid-template-rows: minmax(0, 1fr);
+    height: calc(100dvh - 16px);
+    max-height: none;
   }
-  .game-catch > .sheet > .plate canvas { max-height: 96px; }
-  .game-catch .catch-info { padding: 12px 16px; }
-  .game-catch .catch-info h3 { font-size: 28px; }
-  .game-catch .catch-info dl { margin-top: 10px; }
+  .catch-show { gap: 8px; padding: 10px 14px 8px; border-right: 1px solid #ffffff0a; border-bottom: 0; }
+  .catch-hero canvas { max-height: min(160px, calc(100dvh - 150px)); }
+  .catch-badges { flex-wrap: nowrap; margin-bottom: 0; overflow: hidden; }
+  .catch-badges li { flex: 0 0 auto; padding: 3px 7px; font-size: 9.5px; }
+  .catch-badges li:nth-child(n + 3) { display: none; }
+  .catch-desc, .catch-conditions, .catch-order { display: none; }
+  .catch-body__scroll { justify-content: flex-start; padding: 12px 16px 4px; }
+  .catch-stack { margin-block: 0; }
+  .catch-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; }
+  .catch-eyebrow { width: 100%; }
+  .catch-name { margin-top: 4px; font-size: 24px; }
+  .catch-latin { margin-top: 0; font-size: 13px; }
+  .catch-stats { margin-top: 10px; }
+  .catch-stat { padding: 7px 9px 8px; }
+  .catch-stat > strong { font-size: 18px; }
+  .catch-stat--hero > strong { font-size: 22px; }
+  .catch-bonus { margin-top: 8px; padding: 7px 10px; }
+  .catch-range { margin-top: 10px; }
+  .catch-actions { padding: 8px 16px calc(10px + env(safe-area-inset-bottom)); }
+  .catch-btn { min-height: 44px; }
 }
 @media (max-width: 639px) {
   .zv-ui.game-travel-choice > .sheet { padding: 20px; }

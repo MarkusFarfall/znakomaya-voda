@@ -34,6 +34,9 @@ const securityHeaders = [
 const nextConfig: NextConfig = {
   // Arena/Vercel preview proxies use a generated subdomain; allow it in dev for HMR and route requests.
   allowedDevOrigins: ["*.e2b.app"],
+  // Круглый значок Next.js в левом нижнем углу перекрывал кнопки HUD и попадал
+  // во все скриншоты интерфейса. В продакшене его нет — убираем и в dev.
+  devIndicators: false,
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   },

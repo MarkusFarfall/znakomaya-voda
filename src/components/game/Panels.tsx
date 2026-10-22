@@ -12,7 +12,7 @@ import type { GearKind } from "@/game/world";
 import { availableNow, conditionsNow, fishNotes } from "@/game/lore";
 import { FISH, FISH_BY_ID, RARITY_INFO, VARIANT_INFO } from "@/game/fish";
 import type { Building, FishDef, LocId, PortId } from "@/game/types";
-import { BAITS, BAIT_BY_ID, BOATS, BOAT_CLASS_NAMES, PORTS, PORT_BY_ID, LINES, LOCATIONS, LOC_BY_ID, MILESTONES, REELS, RODS, SONARS, WEATHER_INFO, spotsOf } from "@/game/world";
+import { BAITS, BAIT_BY_ID, BOATS, BOAT_CLASS_NAMES, PORTS, PORT_BY_ID, LINES, LOCATIONS, LOC_BY_ID, MILESTONES, REELS, RODS, SEASONS, SONARS, WEATHER_INFO, spotsOf } from "@/game/world";
 import { HarborGlyph, type HarborSymbol } from "./PortIdentity";
 import { WorldAtlas } from "./WorldAtlas";
 import { FishIcon } from "./FishIcon";
@@ -49,59 +49,173 @@ export function CatchModal({ engine }: { engine: Engine }) {
   const today = engine.marketValue(c.item);
   const mult = engine.marketMult(f.id);
   const order = engine.s.orders.find((o) => o.fishId === f.id && c.item.weight >= o.minWeight);
-  const notes: [string, string][] = [];
-  if (c.isNew) notes.push(["book", `Новый вид в кодексе · премия ${fmt(c.bonus)} ₽`]);
-  if (c.isRecord) notes.push(["star", "Личный рекорд веса"]);
-  if (c.perfect) notes.push(["target", "Точная подсечка"]);
-  if (order) notes.push(["order", `Подходит для заказа: ${order.client}`]);
+  const releaseXp = Math.round(c.xp * 0.25);
+  const coolerFull = engine.coolerFull;
+  const coolerCount = engine.s.cooler.length;
+  const rare = f.rarity === "rare" || f.rarity === "epic" || f.rarity === "legendary";
+  const badges: [string, string, boolean][] = [];
+  if (c.isNew) badges.push(["book", "новый вид", true]);
+  if (c.isRecord) badges.push(["star", "рекорд веса", false]);
+  if (c.perfect) badges.push(["target", "точная подсечка", false]);
+  const num = String(FISH.indexOf(f) + 1).padStart(3, "0");
+  const weightPct = Math.min(1, Math.max(0, (c.item.weight - f.weight[0]) / Math.max(0.001, f.weight[1] - f.weight[0])));
+  const avgPct = Math.min(1, Math.max(0, (f.weight[0] + (f.weight[1] - f.weight[0]) * 0.35 - f.weight[0]) / Math.max(0.001, f.weight[1] - f.weight[0])));
+  const sizeVerdict = weightPct >= 0.8 ? "трофейный" : weightPct >= 0.5 ? "крупный" : weightPct >= 0.25 ? "средний" : "небольшой";
+  const TIME_LABEL: Record<string, string> = { any: "любое время", day: "днём", night: "ночью", twilight: "сумерки" };
+  // Условия лова — те же данные, что в кодексе, но собранные в три короткие строки.
+  const conditions: [string, string, string][] = [
+    ["depth", `${f.depth[0]}–${f.depth[1]} м`, "глубина"],
+    ["clock", TIME_LABEL[f.time] ?? f.time, f.weather?.length ? f.weather.map((w) => WEATHER_INFO[w].name.toLowerCase()).join(", ") : f.season?.length ? f.season.map((x) => SEASONS[x].toLowerCase()).join(", ") : "круглый год"],
+    ["hook", f.bait?.length ? f.bait.map((b) => BAIT_BY_ID[b].name.toLowerCase()).join(", ") : "любая", "наживка"],
+  ];
   return (
-    <div className="zv-ui game-catch fade-in absolute inset-0 z-30 flex min-w-0 max-w-[100vw] items-stretch justify-center overflow-x-hidden bg-[#02050a]/55 sm:items-center sm:p-4" onPointerDown={(e) => e.stopPropagation()}>
-      <div ref={dialog} role="dialog" aria-modal="true" aria-label="Улов" data-game-dialog tabIndex={-1} className="sheet reveal safe-pad grid min-w-0 max-w-full max-h-[100dvh] w-full overflow-x-hidden overflow-y-auto overscroll-contain !rounded-none sm:!rounded-[3px] md:grid-cols-[1.15fr_1fr] sm:max-h-[94vh] sm:max-w-[880px]">
-        <div className="plate relative flex min-w-0 min-h-[190px] flex-col justify-between overflow-hidden p-4 sm:p-6 [@media(min-height:560px)]:min-h-[300px]">
-          <div className="flex items-center justify-between">
-            <span className="label" style={{ color: r.color }}>{r.name}</span>
-            <span className="label num">№ {String(FISH.indexOf(f) + 1).padStart(3, "0")} / {FISH.length}</span>
+    <div
+      className="zv-ui game-catch fade-in absolute inset-0 z-30 flex min-w-0 max-w-[100vw] items-stretch justify-center overflow-x-hidden bg-[#02050a]/60"
+      style={{ ["--rar" as string]: r.color }}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div
+        ref={dialog}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Улов: ${f.name}`}
+        data-game-dialog
+        tabIndex={-1}
+        className={`catch-card min-w-0 max-w-full ${rare ? "is-rare" : ""}`}
+      >
+        {/* ── витрина: рыба крупно, свечение редкости, служебные подписи ── */}
+        <section className="catch-show">
+          <div className="catch-show__grid" aria-hidden="true" />
+          <div className="catch-show__glow" aria-hidden="true" />
+          <header className="catch-show__top">
+            <span className="catch-rarity">
+              <i aria-hidden="true" />
+              {r.name}
+            </span>
+            <span className="catch-index num">№ {num} <span>/ {FISH.length}</span></span>
+          </header>
+          <div className="catch-hero">
+            <FishIcon fish={f} size={560} height={280} variant={c.item.variant} animate />
           </div>
-          <div className="flex flex-1 items-center justify-center py-2 sm:py-4">
-            <FishIcon fish={f} size={420} height={210} variant={c.item.variant} animate />
-          </div>
-          <div className="flex min-w-0 items-end justify-between gap-2">
-            <div className="flex shrink-0 items-center gap-2 text-[11px] dim">
-              <span className="inline-block h-px w-16 bg-[var(--line-2)]" />
-              <span className="num">≈ {fmtLen(fishLength(f, c.item.weight))}</span>
-            </div>
-            <span className="min-w-0 truncate pl-2 text-right text-[11px] dim">{LOC_BY_ID[c.item.loc].name} · {engine.spot.name} · день {c.item.day}</span>
-          </div>
-        </div>
-        <div className="catch-details flex min-h-0 min-w-0 flex-col overflow-hidden">
-          <div className="catch-info min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 sm:p-7">
-          <div className="label">{c.isNew ? "Впервые пойман" : "Улов"}</div>
-          <h3 className="font-serif mt-1 break-words text-[32px] font-medium leading-[1.05] text-[#f4eee0] sm:text-[40px]">{f.name}</h3>
-          <div className="font-serif break-words text-[17px] italic muted">{f.latin}</div>
-          {v && <div className="mt-2 text-[12px] tracking-wide" style={{ color: v.color }}>Вариация: {v.name.toLowerCase()} · ×{v.mult}</div>}
-          <dl className="mt-5">
-            <Row k="Вес" v={fmtW(c.item.weight)} strong />
-            <Row k="Длина" v={`≈ ${fmtLen(fishLength(f, c.item.weight))}`} />
-            <Row k={`Цена · ${engine.port.name}`} v={<span className="text-[var(--brass-2,#e3c996)]">{fmt(today)} ₽</span>} strong />
-            <Row k="Спрос" v={<span className={mult >= 1 ? "text-[var(--color-ok)]" : "text-[var(--color-bad)]"}>{mult >= 1.9 ? "спрос дня, ×2" : `${mult >= 1 ? "+" : "−"}${Math.abs(Math.round((mult - 1) * 100))} %`}</span>} />
-            <Row k="Опыт" v={`+${c.xp}`} />
-          </dl>
-          {notes.length > 0 && (
-            <ul className="mt-4 space-y-1.5">
-              {notes.map(([ic, t]) => (
-                <li key={t} className="flex min-w-0 items-center gap-2 text-[12px] text-[#ddd2b8]"><Icon name={ic} size={14} className="shrink-0 text-[var(--brass)]" /><span className="min-w-0 break-words">{t}</span></li>
+          {badges.length > 0 && (
+            <ul className="catch-badges">
+              {badges.map(([ic, t, hot]) => (
+                <li key={t} className={hot ? "is-hot" : ""}>
+                  <Icon name={ic} size={12} />
+                  <span>{t}</span>
+                </li>
               ))}
             </ul>
           )}
-          <p className="mt-4 text-[13px] leading-relaxed muted">{f.desc}</p>
+          <footer className="catch-show__meta">
+            <span className="num">≈ {fmtLen(fishLength(f, c.item.weight))}</span>
+            <span className="catch-dot" aria-hidden="true">·</span>
+            <span className="truncate">{LOC_BY_ID[c.item.loc].name}</span>
+            <span className="catch-dot" aria-hidden="true">·</span>
+            <span className="num">день {c.item.day}</span>
+          </footer>
+        </section>
+
+        {/* ── данные и действия ── */}
+        <section className="catch-body">
+          <div className="catch-body__scroll">
+            <div className="catch-stack">
+              <div className="catch-heading">
+                <div className="catch-eyebrow">
+                  {c.isNew ? "Впервые пойман" : c.isRecord ? "Личный рекорд" : "Улов"}
+                </div>
+                <h3 className="catch-name">{f.name}</h3>
+                <div className="catch-latin">{f.latin}</div>
+                {v && (
+                  <div className="catch-variant" style={{ color: v.color }}>
+                    {v.name} · ×{v.mult} к цене
+                  </div>
+                )}
+              </div>
+
+              <div className="catch-stats">
+                <div className="catch-stat catch-stat--hero">
+                  <span>Вес</span>
+                  <strong className="num">{fmtW(c.item.weight)}</strong>
+                  <small className="num">≈ {fmtLen(fishLength(f, c.item.weight))}</small>
+                </div>
+                <div className="catch-stat">
+                  <span>Цена</span>
+                  <strong className="num">{fmt(today)} ₽</strong>
+                  <small className={mult >= 1 ? "is-good" : "is-bad"}>
+                    {mult >= 1.9 ? "спрос дня, ×2" : `${mult >= 1 ? "+" : "−"}${Math.abs(Math.round((mult - 1) * 100))} % к базе`}
+                  </small>
+                </div>
+                <div className="catch-stat">
+                  <span>Опыт</span>
+                  <strong className="num">+{c.xp}</strong>
+                  <small>{f.rarity === "legendary" ? "легендарная" : r.name.toLowerCase()}</small>
+                </div>
+              </div>
+
+              {c.isNew && c.bonus > 0 && (
+                <div className="catch-bonus">
+                  <span>Премия за новый вид в кодексе</span>
+                  <strong className="num">+{fmt(c.bonus)} ₽</strong>
+                </div>
+              )}
+              {order && (
+                <div className="catch-order">
+                  <Icon name="order" size={14} />
+                  <span>Подходит под заказ: <b>{order.client}</b></span>
+                </div>
+              )}
+
+              <div className="catch-conditions">
+                {conditions.map(([ic, value, hint]) => (
+                  <div key={hint} className="catch-condition">
+                    <Icon name={ic === "depth" ? "sonar" : ic} size={15} />
+                    <div className="min-w-0">
+                      <strong>{value}</strong>
+                      <small>{hint}</small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* где этот экземпляр на шкале вида */}
+              <div className="catch-range">
+                <div className="catch-range__head">
+                  <span>Масса вида</span>
+                  <span className="catch-range__verdict">{sizeVerdict}</span>
+                </div>
+                <div className="catch-range__track">
+                  <span className="catch-range__fill" style={{ width: `${Math.round(weightPct * 100)}%` }} />
+                  <span className="catch-range__avg" style={{ left: `${Math.round(avgPct * 100)}%` }} />
+                  <span className="catch-range__pin" style={{ left: `${Math.min(97, Math.max(3, Math.round(weightPct * 100)))}%` }} />
+                </div>
+                <div className="catch-range__scale num">
+                  <span>{fmtW(f.weight[0])}</span>
+                  <span>{fmtW(f.weight[1])}</span>
+                </div>
+              </div>
+
+              <p className="catch-desc">{f.desc}</p>
+            </div>
           </div>
-          <div className="catch-actions flex shrink-0 flex-col gap-2 border-t border-[var(--line)] bg-[#0a121c] px-5 py-4 min-[360px]:flex-row sm:px-7">
-            <button className="btn btn-quiet min-w-0 flex-1 !px-2 !text-[10px] !tracking-[0.12em]" onClick={() => engine.releaseCatch()}>Отпустить</button>
-            <button className="btn btn-solid min-w-0 flex-1 !px-2 !text-[10px] !tracking-[0.12em]" disabled={engine.coolerFull} onClick={() => engine.keepCatch()}>
-              {engine.coolerFull ? "Садок полон" : `В садок · ${engine.s.cooler.length}/${engine.coolerCap}`}
+
+          <div className="catch-actions">
+            <button className="catch-btn catch-btn--quiet" onClick={() => engine.releaseCatch()}>
+              <span>Отпустить</span>
+              <small className="num">+{releaseXp} опыта</small>
+            </button>
+            <button
+              className="catch-btn catch-btn--primary"
+              disabled={coolerFull}
+              onClick={() => engine.keepCatch()}
+            >
+              <span>{coolerFull ? "Садок полон" : "В садок"}</span>
+              <small className="num">
+                {coolerFull ? `${coolerCount}/${engine.coolerCap}` : `${fmt(today)} ₽ · ${coolerCount + 1}/${engine.coolerCap}`}
+              </small>
             </button>
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );
