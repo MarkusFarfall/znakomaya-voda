@@ -95,7 +95,7 @@ export function CatchModal({ engine }: { engine: Engine }) {
             <span className="catch-index num">№ {num} <span>/ {FISH.length}</span></span>
           </header>
           <div className="catch-hero">
-            <FishIcon fish={f} size={560} height={280} variant={c.item.variant} animate />
+            <FishIcon fish={f} size={560} height={360} variant={c.item.variant} animate />
           </div>
           {badges.length > 0 && (
             <ul className="catch-badges">

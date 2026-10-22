@@ -51,6 +51,8 @@ export class LandRenderer {
   private mats: { x: number; y: number; w: number }[] = [];
   seaRocks: { x: number; y: number; w: number; h: number }[] = [];
   private cliffBase: { x0: number; x1: number } | null = null;
+  /** Индекс слоя обрыва: к нему клипуется текстура породы. */
+  private cliffLayer = -1;
 
   private foliage(f: Frame, c: string, x: number, kind: "pine" | "round") {
     const se = f.e.season;
@@ -117,6 +119,7 @@ export class LandRenderer {
     this.mats = [];
     this.seaRocks = [];
     this.cliffBase = null;
+    this.cliffLayer = -1;
     const r = rng(spot.seed * 31);
     const band = sY - hY;
     const winter = f.atmo.snowCover > 0.18;
@@ -164,20 +167,32 @@ export class LandRenderer {
           pts.push(cx0 + faceW * q + (hash1(k * 3.3 + spot.seed) - 0.5) * 10, hY - (hY - top) * sstep(0, 1, q) + (hash1(k * 7.1) - 0.5) * 8);
         }
         const topLine: number[] = [];
-        for (let x = cx0 + faceW; x <= W * 1.06; x += 8) {
-          const y = top + (fbm(x * 0.01, 4.4) - 0.5) * H * 0.04 + ((x - cx0) / W) * H * 0.02;
+        const edgeX = W * 1.06;
+        const topY = (x: number) => top + (fbm(x * 0.01, 4.4) - 0.5) * H * 0.04 + ((x - cx0) / W) * H * 0.02;
+        for (let x = cx0 + faceW; x < edgeX; x += 8) {
+          const y = topY(x);
           pts.push(x, y);
           topLine.push(x, y);
         }
+        // Ровно на краю кадра: иначе последний отрезок кромки уходил по диагонали
+        // вниз, и текстура справа оказывалась вне силуэта.
+        pts.push(edgeX, topY(edgeX));
+        topLine.push(edgeX, topY(edgeX));
         pts.push(W * 1.06, hY + 2);
         this.layers.push({ pts, base: "#57504a", haze: 0.2, reflect: true, x0: cx0, x1: W * 1.06 });
+        this.cliffLayer = this.layers.length - 1;
         const gl: number[] = [...topLine];
         for (let i = topLine.length - 2; i >= 0; i -= 2) gl.push(topLine[i], topLine[i + 1] + 5 + hash1(i) * 4);
         this.grass = { pts: gl, haze: 0.2 };
         for (let j = 0; j < 7; j++) {
           const y0 = top + (hY - top) * (0.14 + j * 0.12);
-          const q = 1 - (y0 - top) / (hY - top);
-          const xs = cx0 + faceW * (1 - q) + 6;
+          // Кромка обрыва идёт по smoothstep, поэтому её x на высоте y0 ищем
+          // обратной функцией: иначе линия породы начиналась левее камня и
+          // висела в воздухе над морем.
+          const sv = clamp((hY - y0) / (hY - top), 0, 1);
+          let lo = 0, hi = 1;
+          for (let it = 0; it < 18; it++) { const mid = (lo + hi) * 0.5; if (sstep(0, 1, mid) < sv) lo = mid; else hi = mid; }
+          const xs = cx0 + faceW * ((lo + hi) * 0.5) + 8;
           const sp: number[] = [];
           for (let x = xs; x <= W * 1.06; x += 16) sp.push(x, y0 + Math.sin(x * 0.03 + j) * 2.5 + (x - xs) * 0.02);
           this.strata.push({ pts: sp, haze: 0.2 });
@@ -368,14 +383,23 @@ export class LandRenderer {
       if (this.grassPath) ctx.fill(this.grassPath);
       else { tracePoly(ctx, this.grass.pts); ctx.fill(); }
     }
-    if (this.strata.length) {
-      ctx.strokeStyle = hexA(this.colorOf(f, "#2e2a26", 0.2), 0.6);
-      ctx.lineWidth = 1;
-      if (!this.strataPaths.length) this.strataPaths = this.strata.map(s => polygonPath(s.pts, false));
-      for (let i = 0; i < this.strata.length; i++) {
-        const path = this.strataPaths[i];
-        if (path) ctx.stroke(path);
-        else { tracePoly(ctx, this.strata[i].pts, false); ctx.stroke(); }
+    if (this.strata.length && this.cliffLayer >= 0) {
+      const rock = this.layers[this.cliffLayer];
+      // Линии породы — только по камню: клип по силуэту обрыва, чтобы ни одна
+      // не выходила в небо и не уходила под воду за краем скалы.
+      if (rock && !(rock.x1 < view.left || rock.x0 > view.right)) {
+        if (rock.path === undefined) rock.path = polygonPath(rock.pts) ?? undefined;
+        ctx.save();
+        if (rock.path) ctx.clip(rock.path);
+        ctx.strokeStyle = hexA(this.colorOf(f, "#2e2a26", 0.2), 0.6);
+        ctx.lineWidth = 1;
+        if (!this.strataPaths.length) this.strataPaths = this.strata.map(s => polygonPath(s.pts, false));
+        for (let i = 0; i < this.strata.length; i++) {
+          const path = this.strataPaths[i];
+          if (path) ctx.stroke(path);
+          else { tracePoly(ctx, this.strata[i].pts, false); ctx.stroke(); }
+        }
+        ctx.restore();
       }
     }
     if (this.lighthouse && overlapsHorizontal(f, this.lighthouse.x - W * 0.55, this.lighthouse.x + W * 0.55)) this.drawLighthouse(f);
