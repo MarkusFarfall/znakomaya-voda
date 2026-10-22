@@ -81,69 +81,111 @@ function event(id: FxId, seed: number): VisibleEvent {
   } as unknown as VisibleEvent;
 }
 
-interface Probe { x: number[]; y: number[] }
+interface Probe { x: number[]; y: number[]; raw: number[] }
 
+/** Уникальный uid на каждый зонд: якорь события кешируется по uid. */
+let probeUid = 1;
 function probe(id: FxId, layer: Layer, t: number, seed = 424242): Probe | null {
   const draw = FX_TABLE[id][layer];
   if (!draw) return null;
   const a = recorder(), b = recorder();
   const spec: FxSpec = { id };
-  draw(scene(a.ctx, X0, t, a.xs), { e: event(id, seed), spec, age: 3.2 });
-  draw(scene(b.ctx, X0 + DELTA, t, b.xs), { e: event(id, seed), spec, age: 3.2 });
+  const ev = { ...event(id, seed), uid: ++probeUid } as VisibleEvent;
+  draw(scene(a.ctx, X0, t, a.xs), { e: ev, spec, age: 3.2 });
+  draw(scene(b.ctx, X0 + DELTA, t, b.xs), { e: ev, spec, age: 3.2 });
   if (!a.xs.length || a.xs.length !== b.xs.length) return null;
   const x: number[] = [], y: number[] = [];
   a.xs.forEach((va, i) => {
     const vb = b.xs[i];
-    // Перенос по кругу даёт скачок на длину «мира события» — такие координаты
-    // всё равно x, если хоть в одном окне лежат в окрестности лодки.
     const near =
       Math.abs(va - VIEW_MID) <= NEAR || Math.abs(vb - (VIEW_MID + DELTA)) <= NEAR;
     if (Math.abs(vb - va - DELTA) < 2 || near) x.push(va);
     else y.push(va);
   });
-  return { x, y };
+  return { x, y, raw: a.xs };
 }
 
-test("event effects live in the player's neighbourhood, not on the whole aquatory", () => {
-  for (const id of Object.keys(FX_TABLE) as FxId[]) {
+/**
+ * События привязаны к воде, а не к камере.
+ *
+ * Раньше фаза считалась от лодки (`boatX + wrap(...)`) — эффект стоял на месте
+ * относительно экрана и казался размазанным по всей акватории. Теперь мировой
+ * якорь фиксируется при первом кадре события: при сдвиге окна координата
+ * остаётся той же. Эффекты, прикреплённые к лодке (поплавок, снасть), едут
+ * вместе с ней — это тоже допустимо, но не для фоновых явлений.
+ */
+test("background events keep their world anchor instead of riding the camera", () => {
+  const anchored: FxId[] = [
+    "dolphins", "orcas", "whale", "boil", "jumpers", "flyingfish", "sails",
+    "petrels", "current", "bioglow", "jellies", "eels", "ghostship", "wisps",
+    "seals", "fins", "turtle", "deeplights", "squid", "spawn",
+  ];
+  for (const id of anchored) {
     for (const layer of LAYERS) {
-      for (const t of [0.7, 3.1, 11.3, 27.5]) {
-        const p = probe(id, layer, t);
-        if (!p) continue;
-        for (const v of p.x) {
+      if (!FX_TABLE[id]?.[layer]) continue;
+      for (const t of [0.4, 3.1, 11.3]) {
+        const draw = FX_TABLE[id][layer]!;
+        const spec: FxSpec = { id };
+        const a = recorder(), b = recorder();
+        const ev = { ...event(id, 424242), uid: 900000 + probeUid++ } as VisibleEvent;
+        draw(scene(a.ctx, X0, t, a.xs), { e: ev, spec, age: 3.2 });
+        draw(scene(b.ctx, X0 + DELTA, t, b.xs), { e: ev, spec, age: 3.2 });
+        if (!a.xs.length || a.xs.length !== b.xs.length) continue;
+        let fixed = 0;
+        a.xs.forEach((va, i) => {
+          const vb = b.xs[i];
+          const worldFixed = Math.abs(vb - va) < 1.5;
+          const ridesCamera = Math.abs(vb - va - DELTA) < 1.5;
           assert.ok(
-            Math.abs(v - VIEW_MID) <= NEAR,
-            `${id}/${layer} @t=${t}: x=${Math.round(v)} вне окрестности лодки [${Math.round(VIEW_MID - NEAR)}, ${Math.round(VIEW_MID + NEAR)}]`,
+            worldFixed || ridesCamera,
+            `${id}/${layer} @t=${t}: x=${Math.round(va)} не привязан ни к воде, ни к камере`,
           );
-        }
-        // Всё, что не сдвинулось вместе с окном, обязано быть ординатой.
-        for (const v of p.y) {
-          assert.ok(
-            v >= -PAD && v <= H + PAD,
-            `${id}/${layer} @t=${t}: «y»=${Math.round(v)} не похоже ни на ординату, ни на x в кадре`,
-          );
-        }
+          if (worldFixed) fixed++;
+        });
+        assert.ok(
+          fixed >= a.xs.length * 0.75,
+          `${id}/${layer} @t=${t}: ${fixed} из ${a.xs.length} координат привязаны к воде — событие едет вместе с камерой`,
+        );
       }
     }
   }
 });
 
-test("movable effects appear inside the strict viewport at some point in their cycle", () => {
-  const ids: FxId[] = ["dolphins", "orcas", "ghostship", "jellies", "deeplights", "wisps", "boil", "sails", "boat", "fallenstar"];
+test("a fresh event starts inside the player's viewport", () => {
+  const ids: FxId[] = ["dolphins", "orcas", "whale", "ghostship", "jellies", "deeplights", "wisps", "boil", "sails", "boat", "fallenstar", "current"];
   for (const id of ids) {
     let seen = false;
     for (let seed = 1; seed <= 25 && !seen; seed++) {
-      for (let t = 0; t < 30 && !seen; t += 0.9) {
-        for (const layer of LAYERS) {
-          const p = probe(id, layer, t, seed * 7919);
-          if (!p) continue;
-          // Эффект виден, если хоть одна его координата попала в кадр: x —
-          // по горизонтали, y — для приёма «экранных» эффектов (молния, левиафан).
-          if (p.x.some((v) => v >= X0 && v <= X0 + VIEW_W) || p.y.some((v) => v >= X0 && v <= X0 + VIEW_W)) { seen = true; break; }
-        }
+      for (const layer of LAYERS) {
+        if (!FX_TABLE[id]?.[layer]) continue;
+        const draw = FX_TABLE[id][layer]!;
+        const spec: FxSpec = { id };
+        const r = recorder();
+        const ev = { ...event(id, seed * 7919), uid: 800000 + seed } as VisibleEvent;
+        draw(scene(r.ctx, X0, 0.35, r.xs), { e: ev, spec, age: 0.5 });
+        if (r.xs.some((v) => v >= X0 - 40 && v <= X0 + VIEW_W + 40)) seen = true;
       }
     }
-    assert.ok(seen, `${id} никогда не попадает в кадр`);
+    assert.ok(seen, `${id} не появляется в кадре игрока`);
+  }
+});
+
+/**
+ * Эффект не «размазан по всей акватории»: при рождении он занимает не больше
+ * половины кадра по ширине — локальное пятно воды, а не вся видимая вода.
+ */
+test("a fresh event is a local patch of water, not the whole aquatory", () => {
+  const ids: FxId[] = ["jellies", "bioglow", "current", "petrels", "sails", "wisps", "eels"];
+  for (const id of ids) {
+    for (const layer of LAYERS) {
+      const p = probe(id, layer, 0.35);
+      if (!p || p.x.length < 2) continue;
+      const span = Math.max(...p.x) - Math.min(...p.x);
+      assert.ok(
+        span <= VIEW_W * 0.5,
+        `${id}/${layer}: событие растянуто на ${Math.round(span)} px при кадре ${VIEW_W} — это «на всю воду сразу»`,
+      );
+    }
   }
 });
 

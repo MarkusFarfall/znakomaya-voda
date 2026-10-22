@@ -147,7 +147,7 @@ export class Scene {
       // Событийная анимация — только представление: замедляем визуальный дрейф,
       // не трогая возраст/таймеры в EventFxBuffer и EventDirector.
       c: ctx, t: t * EVENT_FX_MOTION_SCALE, W, H, s: sc, q: Math.max(0, Math.min(2, this.quality)) as 0 | 1 | 2,
-      horizon: hY, surface: sY, seabed: sY + f.depthPx(f.spot.maxDepth), visW: viewW, viewX0, cam,
+      horizon: hY, surface: sY, seabed: sY + f.depthPx(f.spot.maxDepth), visW: viewW, worldW: f.W, viewX0, cam,
       windPx: atmo.wind * atmo.windDir * 26 * sc,
       sAt: f.waveY,
       // Реальная кромка грунта: подводные события не должны уходить «внутрь» дна.
@@ -636,6 +636,20 @@ export class Scene {
       });
       this.schools.push({ x: dir > 0 ? left - 260 : right + 260, depth, dir, n, speed, phase, offsets, col, size });
     }
+    // Стая: раньше каждая рыба давала два fill и свою строку цвета (до сотни
+    // вызовов на стаю). Теперь тела и хвосты собираются в пути по группам
+    // блика — та же картинка, но единицы вызовов на кадр.
+    const buckets = new Map<string, Path2D | null>();
+    const bucketOrder: string[] = [];
+    const bucketFor = (key: string) => {
+      let path = buckets.get(key);
+      if (path === undefined) {
+        path = typeof Path2D === "undefined" ? null : new Path2D();
+        buckets.set(key, path);
+        bucketOrder.push(key);
+      }
+      return path;
+    };
     for (const sch of this.schools) {
       sch.x += sch.dir * sch.speed * f.dt;
       sch.phase += f.dt;
@@ -648,16 +662,41 @@ export class Scene {
         const glint = Math.max(0, Math.sin(sch.phase * 3 + i * 0.9 + ox * 0.05));
         const L = 8 * sch.size;
         if(y-L*.4<sY || y+L*.4>Math.min(this.bottomAt(f,x-L),this.bottomAt(f,x+L)))continue;
-        ctx.fillStyle = glint > 0.85 ? "#ffffff" : mix(sch.col, "#203040", 0.25 - glint * 0.25);
-        ctx.beginPath();
-        ctx.ellipse(x, y, L, L * 0.32, Math.cos(sch.phase * 1.4 + ox * 0.02) * 0.25, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(x - sch.dir * L * 0.9, y);
-        ctx.lineTo(x - sch.dir * L * 1.5, y - L * 0.35);
-        ctx.lineTo(x - sch.dir * L * 1.5, y + L * 0.35);
-        ctx.fill();
+        // Пять ступеней блика вместо непрерывного смешивания: разницы не видно,
+        // зато цвет — константа и путь можно объединить.
+        const step = glint > 0.85 ? 4 : Math.min(3, Math.floor(glint * 4));
+        const key = `${sch.col}|${step}`;
+        const path = bucketFor(key);
+        const rot = Math.cos(sch.phase * 1.4 + ox * 0.02) * 0.25;
+        if (path) {
+          path.moveTo(x + L * Math.cos(rot), y + L * Math.sin(rot));
+          path.ellipse(x, y, L, L * 0.32, rot, 0, Math.PI * 2);
+          path.moveTo(x - sch.dir * L * 0.9, y);
+          path.lineTo(x - sch.dir * L * 1.5, y - L * 0.35);
+          path.lineTo(x - sch.dir * L * 1.5, y + L * 0.35);
+          path.closePath();
+        } else {
+          ctx.fillStyle = glint > 0.85 ? "#ffffff" : mix(sch.col, "#203040", 0.25 - glint * 0.25);
+          ctx.beginPath();
+          ctx.ellipse(x, y, L, L * 0.32, rot, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(x - sch.dir * L * 0.9, y);
+          ctx.lineTo(x - sch.dir * L * 1.5, y - L * 0.35);
+          ctx.lineTo(x - sch.dir * L * 1.5, y + L * 0.35);
+          ctx.fill();
+        }
       }
+    }
+    for (const key of bucketOrder) {
+      const path = buckets.get(key);
+      if (!path) continue;
+      const [col, stepS] = key.split("|");
+      const step = Number(stepS);
+      // Блик в середине ступени — так оттенок совпадает с прежним сглаженным.
+      const glintRep = (step + 0.5) / 4;
+      ctx.fillStyle = step === 4 ? "#ffffff" : mix(col, "#203040", 0.25 - glintRep * 0.25);
+      ctx.fill(path);
     }
     let keepSchool = 0;
     for (let i = 0; i < this.schools.length; i++) {
@@ -1122,7 +1161,11 @@ export class Scene {
   private drawMarineSnow(f: Frame) {
     const { ctx, sY, cam, H, W, t, e } = f;
     const plankton = hasActiveEvent(f, "plankton");
-    ctx.fillStyle = plankton ? "rgba(120,255,230,0.8)" : "rgba(220,235,255,0.4)";
+    // «Морской снег»: раньше каждая частица ставила globalAlpha и делала свой
+    // fillRect. Теперь частицы раскладываются по пяти ступеням прозрачности и
+    // рисуются одним путём на ступень — тех же ~130 точек за пять вызовов.
+    const base = plankton ? "120,255,230" : "220,235,255";
+    const buckets: number[][] = [[], [], [], [], []];
     for (const p of this.snow) {
       p[1] -= f.dt * 6 * p[2];
       p[0] += Math.sin(t * 0.5 + p[1] * 0.01) * f.dt * 4;
@@ -1132,10 +1175,19 @@ export class Scene {
       const width=f.viewWidth??W,left=f.viewLeft??0;
       const xx = left+(((p[0]-left)%width)+width)%width;
       if (yy > this.bottomAt(f,xx) - 2) continue;
-      ctx.globalAlpha = clamp((yy - sY) / (H * 0.5), 0.15, 1) * 0.6;
-      ctx.fillRect(xx, yy, p[2], p[2]);
+      const a = clamp((yy - sY) / (H * 0.5), 0.15, 1) * 0.6;
+      const gi = Math.min(4, Math.max(0, Math.round(((a / 0.6) - 0.15) / 0.85 * 4)));
+      buckets[gi].push(xx, yy, p[2]);
     }
-    ctx.globalAlpha = 1;
+    for (let gi = 0; gi < 5; gi++) {
+      const list = buckets[gi];
+      if (!list.length) continue;
+      const a = (0.15 + (gi / 4) * 0.85) * 0.6;
+      ctx.fillStyle = `rgba(${base},${a.toFixed(3)})`;
+      ctx.beginPath();
+      for (let i = 0; i < list.length; i += 3) ctx.rect(list[i], list[i + 1], list[i + 2], list[i + 2]);
+      ctx.fill();
+    }
   }
 
   private drawBubbles(f: Frame) {

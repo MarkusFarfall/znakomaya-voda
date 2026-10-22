@@ -31,6 +31,8 @@ export interface FxScene {
   seabed: number;
   /** Ширина кадра игрока (не мира): эффекты живут в окне, а не на всей карте. */
   visW: number;
+  /** Ширина мира: перенос событий по кругу только на её границе. */
+  worldW?: number;
   /** Мировая координата левого края кадра. */
   viewX0: number;
   cam: number;
@@ -109,19 +111,52 @@ const sd = (e: VisibleEvent, n = 0) => h((e.seed % 9973) * 0.137 + n);
 const farY = (S: FxScene, p: number) => S.horizon + (S.surface - S.horizon) * p * p;
 const zAt = (S: FxScene, p: number) => S.s * (0.18 + 0.82 * p);
 /**
- * Ширина «мира» события. Эффекты живут не в кадре, а в воде: их координаты
- * мировые и тянутся за лодкой, поэтому при движении камеры дрейф виден честно,
- * а не «приклеен» к экрану (раньше якорь считался от viewX0 и всё ехало вместе
- * с камерой — отсюда кривые скорости).
+ * Мировой якорь события.
+ *
+ * Событие живёт в одной точке воды, а не «на всей акватории». Раньше фаза
+ * считалась от лодки с переносом по кругу, и эффект стоял на месте
+ * относительно камеры: при любом ходе лодки он оставался в кадре и выглядел
+ * размазанным по всей воде, а скорость его дрейфа ничего не значила.
+ *
+ * Теперь якорь выбирается один раз — когда событие впервые появляется, — в
+ * окрестности лодки, и дальше остаётся в мировых координатах. При ходе лодки
+ * событие честно уплывает за край, и его видно только рядом.
  */
-const worldSpan = (S: FxScene) => S.visW * 2.4;
-const worldX = (S: FxScene, phase: number, span = 1) => {
-  const L = worldSpan(S) * span;
-  return S.boatX + wrap(phase - S.boatX, L) - L * 0.5;
+const anchorCache = new Map<number, number>();
+const cacheLimit = 256;
+
+function eventAnchor(S: FxScene, e: VisibleEvent) {
+  const hit = anchorCache.get(e.uid);
+  if (hit !== undefined) return hit;
+  // ±0.3 кадра вокруг лодки: событие рядом, но не «под килем» наверняка.
+  const r = h((e.seed % 9973) * 0.137 + 5);
+  const x = S.boatX + (r - 0.5) * S.visW * 0.6;
+  if (anchorCache.size > cacheLimit) anchorCache.clear();
+  anchorCache.set(e.uid, x);
+  return x;
+}
+
+/**
+ * Полуширина кластера события в мировых px.
+ *
+ * Событие занимает участок воды примерно в треть кадра, а не всю акваторию:
+ * раньше частицы раскладывались на ±0.5–0.75 кадра, и явление читалось как
+ * одновременное по всей воде.
+ */
+const CLUSTER = 0.34;
+const spreadX = (S: FxScene, r: number, span = 1) => (r - 0.5) * S.visW * CLUSTER * span;
+
+/** Ширина мира: события переносятся по кругу только на её границе.
+ *  Если рендерер её не сообщил (порт, тесты) — круга нет, координаты прямые. */
+const worldW = (S: FxScene) => (S.worldW && S.worldW > 0 ? S.worldW : Infinity);
+const wrapW = (S: FxScene, x: number) => {
+  const L = worldW(S);
+  return Number.isFinite(L) ? ((x % L) + L) % L : x;
 };
-/** Мировой якорь по сиду события — стоит на месте относительно воды. */
-const anchor = (S: FxScene, e: VisibleEvent, lo = 0.3, hi = 0.85) =>
-  worldX(S, sd(e) * worldSpan(S) * 0.9 + (lo + (hi - lo) * 0.5) * S.visW);
+
+/** Мировая координата элемента события: якорь + смещение в пикселях. */
+const worldX = (S: FxScene, e: VisibleEvent, offset = 0) => wrapW(S, eventAnchor(S, e) + offset);
+
 /** Глубина как доля от поверхности до дна: 0 — поверхность, 1 — грунт.
  *  Подводные существа не могут оказаться ниже дна или выше воды. */
 const depthY = (S: FxScene, q: number, x = S.boatX) => {
@@ -182,7 +217,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
     surface: (S, { e, spec }) => {
       const { c, t } = S;
       const n = spec.n ?? 1;
-      const cx = anchor(S, e);
+      const cx = eventAnchor(S, e);
       const p = 0.32 + 0.25 * sd(e, 1);
       const y = farY(S, p);
       const z = zAt(S, p);
@@ -219,7 +254,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
     surface: (S, { e, spec }) => {
       const { c, t, s } = S;
       const n = Math.round(8 * (spec.n ?? 1));
-      const cx = anchor(S, e);
+      const cx = eventAnchor(S, e);
       const baseY = S.horizon - 26 * s;
       const R = 60 * s;
       const col: RGB = mix([235, 238, 242], [40, 44, 52], clamp(S.A.daylight * 1.4 - 0.2, 0, 1));
@@ -257,7 +292,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const y = farY(S, p);
       const z = zAt(S, p);
       // Дельфины идут по воде своим ходом: 64 px/с на масштабе дальнего плана.
-      const bx = worldX(S, sd(e) * worldSpan(S) + t * 64 * z);
+      const bx = worldX(S, e, t * 64 * z);
       c.fillStyle = css(mix([62, 76, 92], S.pal.land1, 0.35));
       c.strokeStyle = '#eef6ff';
       c.lineWidth = 1;
@@ -280,7 +315,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const p = 0.24;
       const y = farY(S, p);
       const z = zAt(S, p) * 1.5;
-      const cx = anchor(S, e, 0.4, 0.85);
+      const cx = eventAnchor(S, e);
       const cyc = (t / 13 + sd(e, 2)) % 1;
       const dark = css(mix(S.pal.land1, [18, 24, 32], 0.5));
       if (cyc < 0.24) {
@@ -332,7 +367,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const p = 0.5;
       const y = farY(S, p);
       const z = zAt(S, p);
-      const bx = worldX(S, sd(e) * worldSpan(S) - t * 46 * z);
+      const bx = worldX(S, e, -t * 46 * z);
       for (let j = 0; j < 3; j++) {
         const up = Math.max(0, Math.sin(t * 0.9 + j * 1.3));
         if (up <= 0.02) continue;
@@ -367,7 +402,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
     surface: (S, { e }) => {
       const { c, t } = S;
       const p = 0.78;
-      const cx = anchor(S, e, 0.45, 0.75);
+      const cx = eventAnchor(S, e);
       const z = zAt(S, p);
       for (let j = 0; j < 3; j++) {
         const a = t * 0.38 + (j * TAU) / 3;
@@ -474,7 +509,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const { c, t, s } = S;
       const n = Math.round(12 * (spec.n ?? 1) * (S.q === 0 ? 0.5 : 1));
       for (let i = 0; i < n; i++) {
-        const x = worldX(S, h(i + 60) * worldSpan(S) * 0.62 + Math.sin(t * 0.1 + i) * 30, 0.62);
+        const x = worldX(S, e, spreadX(S, h(i + 60), 0.62) + Math.sin(t * 0.1 + i) * 30);
         const y = depthY(S, 0.04 + h(i + 61) * 0.6, x) + Math.sin(t * 0.3 + i) * 12 * s;
         if (y < S.cam - 40 || y > S.cam + S.H + 40) continue;
         const r = (5 + h(i + 62) * 7) * s;
@@ -502,25 +537,29 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const pj = j / 14;
         const y = farY(S, pj) + 1;
         for (let i = 0; i < 5; i++) {
-          const x = worldX(S, h(j * 7 + i) * worldSpan(S) + t * (8 + pj * 20) * s);
+          const x = worldX(S, e, spreadX(S, h(j * 7 + i)) + t * (8 + pj * 20) * s);
           c.globalAlpha = a * (0.25 + 0.6 * Math.max(0, Math.sin(t * 2 + i + j * 1.3)));
           c.fillRect(x, y, (6 + pj * 50) * s, Math.max(0.8, pj * 1.8 * s));
         }
       }
       c.globalAlpha = 1;
+      // Свечение идёт по воде только там, где «пятно» события: раньше линия
+      // тянулась через весь кадр и читалась как явление на всю акваторию.
       c.strokeStyle = 'rgb(120,255,235)';
       c.lineWidth = 2.2 * s;
       c.globalAlpha = a * (0.45 + 0.25 * Math.sin(t * 3));
+      const fx0 = eventAnchor(S, e) - S.visW * CLUSTER * 0.55;
+      const fx1 = eventAnchor(S, e) + S.visW * CLUSTER * 0.55;
       c.beginPath();
-      for (let x = S.viewX0; x <= S.viewX0 + S.visW; x += 10) {
+      for (let x = fx0; x <= fx1; x += 10) {
         const y = S.sAt(x) + 1;
-        if (x === S.viewX0) c.moveTo(x, y);
+        if (x === fx0) c.moveTo(x, y);
         else c.lineTo(x, y);
       }
       c.stroke();
       c.fillStyle = 'rgb(160,255,240)';
       for (let i = 0; i < 40; i++) {
-        const x = worldX(S, h(i + 80) * worldSpan(S) + t * 6 * s);
+        const x = worldX(S, e, spreadX(S, h(i + 80)) + t * 6 * s);
         const tw = Math.max(0, Math.sin(t * (2 + h(i) * 3) + i * 2));
         c.globalAlpha = a * tw;
         c.fillRect(x, S.sAt(x) + (2 + h(i + 81) * 20) * s, 1.6 * s, 1.6 * s);
@@ -696,7 +735,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
     horizon: (S, { e }) => {
       const { c, t, s } = S;
       const col = css(mix(S.pal.land2, S.pal.skyHor, 0.35), e.k * 0.55);
-      const cx = anchor(S, e, 0.5, 0.85);
+      const cx = eventAnchor(S, e);
       const w = 130 * s;
       c.fillStyle = col;
       // настоящий остров и его перевёрнутое, вытянутое отражение
@@ -739,7 +778,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   waterspout: {
     surface: (S, { e }) => {
       const { c, t, s } = S;
-      const cx = anchor(S, e, 0.45, 0.85);
+      const cx = eventAnchor(S, e);
       const base = farY(S, 0.3);
       const top = S.horizon * 0.3;
       const sway = Math.sin(t * 0.7) * 22 * s;
@@ -801,7 +840,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const { c, t } = S;
       const p = 0.32;
       const z = zAt(S, p) * 2.0;
-      const x = worldX(S, sd(e) * worldSpan(S) + t * 9 * z);
+      const x = worldX(S, e, t * 9 * z);
       const y = farY(S, p);
       const a = e.k * (0.45 + S.A.fog * 0.4) * (0.75 + 0.25 * Math.sin(t * 0.8));
       const col = css([150, 186, 180], a);
@@ -853,7 +892,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       for (let i = 0; i < n; i++) {
         const per = 9 + h(i) * 6;
         const ph = ((t + h(i + 1) * 20) / per) % 1;
-        const x = worldX(S, h(i + 2) * worldSpan(S) * 0.62 + Math.sin(t * 0.3 + i) * 20, 0.62);
+        const x = worldX(S, e, spreadX(S, h(i + 2), 0.62) + Math.sin(t * 0.3 + i) * 20);
         // Огни поднимаются от грунта к поверхности, а не «из ниоткуда».
         const y = depthY(S, 0.96 - ph * 0.86, x);
         if (y < S.cam - 40 || y > S.cam + S.H + 40) continue;
@@ -873,7 +912,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
   fallenstar: {
     sky: (S, { e, age }) => {
       const { c, s } = S;
-      const lx = anchor(S, e, 0.5, 0.82);
+      const lx = eventAnchor(S, e);
       const ly = farY(S, 0.42);
       const fall = 3;
       if (age < fall) {
@@ -903,7 +942,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
     under: (S, { e, age }) => {
       if (age < 3) return;
       const { c, t, s } = S;
-      const lx = anchor(S, e, 0.5, 0.82);
+      const lx = eventAnchor(S, e);
       const y = S.surface + Math.min(age - 3, 25) * 5 * s + 20 * s;
       const a = e.k * (e.done ? 0.4 : 1) * (0.8 + 0.2 * Math.sin(t * 5));
       c.globalCompositeOperation = 'lighter';
@@ -969,7 +1008,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const { c, s } = S;
       const per = 24;
       const ph = (age / per) % 1;
-      const lx = anchor(S, e, 0.55, 0.9);
+      const lx = eventAnchor(S, e);
       const base = farY(S, 0.3);
       const peak = base - S.horizon * 0.62;
       let x = lx;
@@ -1049,7 +1088,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       for (let i = 0; i < 6; i++) {
         const p = 0.09 + h(i + 300) * 0.15;
         const z = zAt(S, p) * 2.0;
-        const x = worldX(S, h(i + 301) * worldSpan(S) + t * (7 + h(i + 302) * 4) * z * dir);
+        const x = worldX(S, e, spreadX(S, h(i + 301)) + t * (7 + h(i + 302) * 4) * z * dir);
         const y = farY(S, p);
         c.globalAlpha = e.k;
         c.fillStyle = hull;
@@ -1079,8 +1118,8 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const z = zAt(S, p) * (trader ? 1.5 : 1.3);
       // Лодка соперника не встаёт на игрока: держим её левее, у своего места.
       const x = trader
-        ? anchor(S, e, 0.58, 0.82) + Math.sin(t * 0.05) * 30 * z
-        : worldX(S, sd(e) * worldSpan(S) * 0.5 + t * z * 2, 0.5) + Math.sin(t * 0.05) * 20 * z;
+        ? eventAnchor(S, e) + Math.sin(t * 0.05) * 30 * z
+        : worldX(S, e, t * z * 2) + Math.sin(t * 0.05) * 20 * z;
       const y = farY(S, p) + Math.sin(t * 1.3) * 1.2 * z;
       c.globalAlpha = e.k;
       const hullCol = css(mix([100, 70, 44], S.pal.land1, 0.5 - S.A.daylight * 0.3));
@@ -1303,7 +1342,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const p = 0.55 + h(i + 402) * 0.35;
         const z = zAt(S, p);
         const cyc = Math.floor((t + h(i + 401) * 7) / per);
-        const x = worldX(S, h(i + 403 + cyc * 2.7) * worldSpan(S)) + q * 120 * z;
+        const x = worldX(S, e, spreadX(S, h(i + 403 + cyc * 2.7))) + q * 120 * z;
         const y = farY(S, p) - Math.sin(q * PI) * 9 * z - 4 * z * Math.min(1, q * 8, (1 - q) * 8);
         c.globalAlpha = e.k;
         tinyFish(c, x, y, 10 * z, 0);
@@ -1331,7 +1370,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const cyc = Math.floor(tt / per);
         const p = 0.25 + h(i + 502 + cyc) * 0.6;
         const z = zAt(S, p);
-        const x = worldX(S, h(i + 503 + cyc * 3.1) * worldSpan(S));
+        const x = worldX(S, e, spreadX(S, h(i + 503 + cyc * 3.1)));
         const y = farY(S, p);
         if (ph < 0.42) {
           const q = ph / 0.42;
@@ -1348,11 +1387,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       const { c, t, s } = S;
       c.lineCap = 'round';
       for (let i = 0; i < 9; i++) {
-        const x = worldX(
-          S,
-          h(i + 602) * worldSpan(S) * 0.7 + t * 30 * s * (0.6 + h(i + 601)),
-          0.7,
-        );
+        const x = worldX(S, e, spreadX(S, h(i + 602), 0.7) + t * 30 * s * (0.6 + h(i + 601)));
         const y = depthY(S, 0.14 + h(i + 600) * 0.5, x);
         if (y < S.cam - 30 || y > S.cam + S.H + 30) continue;
         // Тёмное тело на тёмной воде не читалось: сперва светлая обводка,
@@ -1411,7 +1446,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const z = zAt(S, p);
         // Птицы летят своим ходом и по ветру: скорость не зависит от камеры.
         const dir = Math.sign(S.windPx || 1);
-        const x = worldX(S, h(i + 802) * worldSpan(S) + t * (60 + h(i + 801) * 38) * z * dir);
+        const x = worldX(S, e, spreadX(S, h(i + 802)) + t * (60 + h(i + 801) * 38) * z * dir);
         const y = farY(S, p) - (3 + Math.abs(Math.sin(t * 3 + i)) * 6) * z * 2 + Math.sin(t * 9 + i) * z;
         const w = 4 * z;
         const fl = Math.sin(t * 14 + i) * 2 * z;
@@ -1437,7 +1472,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const th = Math.max(0.9, pj * 1.4 * s);
         c.lineWidth = th;
         for (let i = 0; i < 3; i++) {
-          const x = worldX(S, t * (18 + pj * 46) * s + h(j * 5 + i + 900) * worldSpan(S));
+          const x = worldX(S, e, t * (18 + pj * 46) * s + spreadX(S, h(j * 5 + i + 900)));
           const len = (20 + pj * 140) * s;
           c.globalAlpha = e.k * 0.28 * (0.65 + h(i + j * 9 + 903) * 0.35);
           c.beginPath();
@@ -1457,7 +1492,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
         const y = S.surface + h(i + 950) * S.H * 0.8;
         if (y < S.cam - 10 || y > S.cam + S.H + 10) continue;
         // Под водой течение медленнее и короче: те же штрихи, но вполовину хода.
-        const x = worldX(S, t * (40 + h(i + 951) * 30) * s + h(i + 952) * worldSpan(S));
+        const x = worldX(S, e, t * (40 + h(i + 951) * 30) * s + spreadX(S, h(i + 952)));
         c.globalAlpha = e.k * 0.22;
         c.beginPath();
         c.moveTo(x, y);
@@ -1476,7 +1511,7 @@ const FX: Record<FxId, Partial<Record<Layer, Draw>>> = {
       for (let i = 0; i < n; i++) {
         const p = 0.2 + h(i + 1000) * 0.7;
         const z = zAt(S, p) * 2;
-        const x = worldX(S, h(i + 1001) * worldSpan(S) * 0.7 + Math.sin(t * 0.3 + i) * 40, 0.7);
+        const x = worldX(S, e, spreadX(S, h(i + 1001), 0.7) + Math.sin(t * 0.3 + i) * 40);
         const y = farY(S, p) - (10 + Math.sin(t * 0.8 + i * 1.3) * 8) * z;
         S.glow(x, y, (10 + 4 * Math.sin(t * 2 + i)) * z, [190, 240, 225], e.k * 0.6 * (0.5 + 0.5 * Math.sin(t * 1.5 + i)));
       }

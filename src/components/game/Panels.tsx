@@ -232,7 +232,7 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
   const say = (m: string) => { setFlash(m); setTimeout(() => setFlash(null), 2400); };
   const quote = engine.coolerQuote();
   const coolerValue = [...quote.values()].reduce((a, b) => a + b, 0);
-  const readyOrders = s.orders.filter((o) => engine.orderMatches(o).length >= o.count).length;
+  const readyOrders = s.orders.filter((o) => engine.orderMatches(o).length >= engine.orderCount(o)).length;
   const tabs: [PortTab, string, string][] = [
     ["market", "Рынок", s.cooler.length ? `${s.cooler.length}` : ""],
     ["orders", "Заказы", readyOrders ? `${readyOrders} готов` : `${s.orders.length}`],
@@ -367,9 +367,10 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
               {s.orders.map((o) => {
                 const f = FISH_BY_ID[o.fishId];
                 const have = engine.orderMatches(o).length;
+                const need = engine.orderCount(o);
                 const known = !!s.codex[o.fishId];
                 const left = o.expiresDay - engine.day;
-                const ready = have >= o.count;
+                const ready = have >= need;
                 const payout = engine.orderReward(o);
                 return (
                   <div key={o.id} className={`cell flex flex-col p-5 ${ready ? "!border-[rgba(134,180,148,0.45)]" : ""}`}>
@@ -378,7 +379,7 @@ export function PortModal({ engine, onClose, onTravel, onRest, onReset, cloud, i
                     <div className="font-serif text-[22px] text-[#f1ebdd]">{known ? f.name : "Неизвестный вид"}</div>
                     <div className="text-[11px] dim">{known ? f.latin : LOC_BY_ID[f.loc[0]].name}</div>
                     <dl className="mt-3">
-                      <Row k="Количество" v={<span className={ready ? "text-[var(--color-ok)]" : ""}>{have} / {o.count}</span>} />
+                      <Row k="Количество" v={<span className={ready ? "text-[var(--color-ok)]" : ""}>{have} / {need}</span>} />
                       {o.minWeight > 0 && <Row k="Масса от" v={fmtW(o.minWeight)} />}
                       <Row k={ready ? "Оплата · бонус к рынку" : "Базовая оплата"} v={<span className="text-[var(--brass-2,#e3c996)]">{fmt(payout)} ₽</span>} strong />
                     </dl>

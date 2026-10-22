@@ -91,7 +91,7 @@ export function PortHub({ engine, hot, compact, onOpen, onTravel, onJournal, onC
   const atmo = engine.atmosphere.summary();
   const hh = String(Math.floor(engine.hour)).padStart(2, "0");
   const mm = String(Math.floor(engine.s.minutes % 60)).padStart(2, "0");
-  const ready = s.orders.filter((o) => engine.orderMatches(o).length >= o.count).length;
+  const ready = s.orders.filter((o) => engine.orderMatches(o).length >= engine.orderCount(o)).length;
   const coolerValue = [...engine.coolerQuote().values()].reduce((a, b) => a + b, 0);
   const badges: Partial<Record<Building, string>> = {
     market: s.cooler.length ? `${s.cooler.length} · ${fmt(coolerValue)} ₽` : "",

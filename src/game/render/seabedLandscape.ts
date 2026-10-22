@@ -1,5 +1,5 @@
 import { horizontalRange, type Frame } from "./frame";
-import { clamp, hash1, hexA, mix, rng } from "./util";
+import { clamp, hash1, hexA, mix, rng, gradMemo } from "./util";
 
 export interface BedFormation {
   x: number;
@@ -335,17 +335,26 @@ export class SeabedLandscape {
       // грунта: широкий рассеянный слой + узкое ядро у самой кромки, оба плавно
       // сходят в ноль (два радиальных градиента, без резкого эллипса).
       const shadeCol = mix(f.loc.bed, "#0a1a20", 0.72);
-      const softShade = ctx.createRadialGradient(0, 0, 0, 0, 0, half * 1.55);
-      softShade.addColorStop(0, hexA(shadeCol, 0.34));
-      softShade.addColorStop(0.45, hexA(shadeCol, 0.2));
-      softShade.addColorStop(1, hexA(shadeCol, 0));
+      // Градиент тени зависит только от радиуса и цвета грунта: кешируем,
+      // иначе на каждый объект каждый кадр создавались два новых градиента.
+      const halfKey = Math.round(half * 2) / 2;
+      const softShade = gradMemo(ctx, `soft|${shadeCol}|${halfKey}`, () => {
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, halfKey * 1.55);
+        g.addColorStop(0, hexA(shadeCol, 0.34));
+        g.addColorStop(0.45, hexA(shadeCol, 0.2));
+        g.addColorStop(1, hexA(shadeCol, 0));
+        return g;
+      });
       ctx.fillStyle = softShade;
       ctx.beginPath();
       ctx.ellipse(0, 0, half * 1.55, Math.max(3, 10 * sc), 0, 0, Math.PI * 2);
       ctx.fill();
-      const core = ctx.createRadialGradient(0, 0, 0, 0, 0, half * 0.72);
-      core.addColorStop(0, hexA(shadeCol, 0.42));
-      core.addColorStop(1, hexA(shadeCol, 0));
+      const core = gradMemo(ctx, `core|${shadeCol}|${halfKey}`, () => {
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, halfKey * 0.72);
+        g.addColorStop(0, hexA(shadeCol, 0.42));
+        g.addColorStop(1, hexA(shadeCol, 0));
+        return g;
+      });
       ctx.fillStyle = core;
       ctx.beginPath();
       ctx.ellipse(0, 0, half * 0.72, Math.max(1.6, 4 * sc), 0, 0, Math.PI * 2);
@@ -415,11 +424,15 @@ export class SeabedLandscape {
           kind === "polar" ? "#a9bdc0" : "#82958d",
           0.42,
         );
-        const g = ctx.createLinearGradient(-rockW, -rockH, rockW, 5 * sc);
-        g.addColorStop(0, mix(base, "#c3d0be", 0.2));
-        g.addColorStop(0.44, base);
-        g.addColorStop(1, mix(base, "#183541", 0.7));
-        ctx.fillStyle = g;
+        // Камень зависит только от размеров и цвета — градиент кешируется.
+        const rockKey = `bed|${Math.round(rockW)}|${Math.round(rockH)}|${base}`;
+        ctx.fillStyle = gradMemo(ctx, rockKey, () => {
+          const g = ctx.createLinearGradient(-rockW, -rockH, rockW, 5 * sc);
+          g.addColorStop(0, mix(base, "#c3d0be", 0.2));
+          g.addColorStop(0.44, base);
+          g.addColorStop(1, mix(base, "#183541", 0.7));
+          return g;
+        });
         ctx.beginPath();
         ctx.moveTo(-rockW, 3 * sc);
         ctx.lineTo(-rockW * 0.92, -rockH * 0.38);
@@ -591,6 +604,14 @@ export class SeabedLandscape {
     }
   }
 
+  /**
+   * Веер-горгонария.
+   *
+   * Раньше каждый луч и каждая веточка рисовались отдельным `beginPath/stroke` —
+   * до 36 обводок на куст. При десятках вееров на дне это была самая дорогая
+   * часть кадра (по счётчику canvas — четверть всех вызовов). Теперь геометрия
+   * собирается в три пути на веер: лучи, центральный (толще) и веточки.
+   */
   private fan(
     f: Frame,
     x: number,
@@ -607,27 +628,40 @@ export class SeabedLandscape {
     ctx.strokeStyle = hexA(color, 0.85);
     ctx.lineCap = "round";
     const rays = f.quality === 0 ? 5 : 9;
+    const mid = Math.floor(rays / 2);
+    ctx.beginPath();
     for (let k = 0; k < rays; k++) {
       const a = (k / (rays - 1) - 0.5) * 1.7,
         tx = Math.sin(a) * height * 0.55 + bend,
         ty = -Math.cos(a) * height;
-      ctx.lineWidth = (k === Math.floor(rays / 2) ? 1.6 : 0.9) * sc;
-      ctx.beginPath();
       ctx.moveTo(0, 0);
       ctx.quadraticCurveTo(tx * 0.3, -height * 0.5, tx, ty);
+    }
+    ctx.lineWidth = 0.9 * sc;
+    ctx.stroke();
+    if (f.quality > 0) {
+      // центральный луч толще остальных — отдельная короткая обводка
+      const a0 = (mid / (rays - 1) - 0.5) * 1.7;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(Math.sin(a0) * height * 0.165 + bend, -height * 0.5, Math.sin(a0) * height * 0.55 + bend, -Math.cos(a0) * height);
+      ctx.lineWidth = 1.6 * sc;
       ctx.stroke();
-      if (f.quality > 0)
+      // веточки всех лучей — один путь
+      ctx.beginPath();
+      for (let k = 0; k < rays; k++) {
+        const a = (k / (rays - 1) - 0.5) * 1.7,
+          tx = Math.sin(a) * height * 0.55 + bend,
+          ty = -Math.cos(a) * height;
+        const side = k < rays / 2 ? -1 : 1;
         for (let j = 1; j < 4; j++) {
           const q = j / 4;
-          ctx.lineWidth = 0.65 * sc;
-          ctx.beginPath();
           ctx.moveTo(tx * q * q, ty * q);
-          ctx.lineTo(
-            tx * q * q + (k < rays / 2 ? -1 : 1) * height * 0.13,
-            ty * q - height * 0.12,
-          );
-          ctx.stroke();
+          ctx.lineTo(tx * q * q + side * height * 0.13, ty * q - height * 0.12);
         }
+      }
+      ctx.lineWidth = 0.65 * sc;
+      ctx.stroke();
     }
     ctx.restore();
   }

@@ -11,7 +11,7 @@ import {
   targetPoint,
   zoomAtlas,
 } from "../src/game/atlas";
-import { DEFAULT_SETTINGS, normalizeSettings } from "../src/game/settings";
+import { DEFAULT_SETTINGS, SETTINGS_VERSION, normalizeSettings } from "../src/game/settings";
 import { distantRain } from "../src/game/render/portHorizon";
 import { cloudBank } from "../src/game/render/cloudBank";
 import { cloudBaseY } from "../src/game/render/sky";
@@ -117,6 +117,18 @@ test("a zero balance does not block a free own-power inter-location route", () =
   assert.equal(r.sail.fuel, 0);
   assert.ok(e.tripBlock(r.trip, "motor"));
 });
+test("legacy settings without version reset the 3D model to off, keeping the rest", () => {
+  // До версии 2 схемы `model3d: true` записывалось по умолчанию, поэтому у всех
+  // старых сохранений 3D был включён. Один раз сбрасываем, дальше — выбор игрока.
+  const legacy = normalizeSettings({ model3d: true, volume: 0.5, quality: 1 });
+  assert.equal(legacy.model3d, false);
+  assert.equal(legacy.volume, 0.5);
+  assert.equal(legacy.quality, 1);
+  // Явный выбор уже в актуальной схеме не теряется.
+  const explicit = normalizeSettings({ ...DEFAULT_SETTINGS, model3d: true });
+  assert.equal(explicit.model3d, true);
+});
+
 test("settings migration preserves false and zero, fills missing fields and never mutates defaults", () => {
   assert.deepEqual(normalizeSettings(null), DEFAULT_SETTINGS);
   assert.deepEqual(
@@ -125,6 +137,7 @@ test("settings migration preserves false and zero, fills missing fields and neve
       zoom: 2,
       sound: false,
       model3d: false,
+      version: SETTINGS_VERSION,
       gfx: { precip: false },
     }),
     {

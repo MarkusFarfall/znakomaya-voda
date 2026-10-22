@@ -195,7 +195,20 @@ export function migrateSave(raw: unknown): SaveData | null {
   } else if (rawDirector !== undefined) {
     delete s.eventDirector;
   }
-  s.orders = Array.isArray(s.orders) ? s.orders.filter((o) => FISH_BY_ID[o.fishId]) : [];
+  const dayOf = Number.isFinite(s.minutes) ? Math.floor(s.minutes / 1440) + 1 : 1;
+  // Заказы из старых сохранений приходили без count/minWeight: сравнение
+  // «вес >= undefined» всегда ложь, поэтому рыба в садке не засчитывалась.
+  s.orders = Array.isArray(s.orders)
+    ? s.orders
+        .filter((o) => o && FISH_BY_ID[o.fishId])
+        .map((o) => ({
+          ...o,
+          count: Number.isFinite(o.count) && o.count > 0 ? Math.min(99, Math.round(o.count)) : 1,
+          minWeight: Number.isFinite(o.minWeight) && o.minWeight > 0 ? Math.round(o.minWeight * 100) / 100 : 0,
+          reward: Number.isFinite(o.reward) && o.reward > 0 ? Math.round(o.reward) : 50,
+          expiresDay: Number.isFinite(o.expiresDay) ? o.expiresDay : dayOf + 3,
+        }))
+    : [];
   s.flags = Array.isArray(s.flags) ? s.flags : [];
   s.hints = Array.isArray(s.hints) ? s.hints : [];
   s.milestones = Array.isArray(s.milestones) ? s.milestones : [];
@@ -1420,7 +1433,7 @@ export class Engine {
     this.lastCatch = null;
     this.phase = "idle";
     const order = this.s.orders.find((o) => o.fishId === this.s.cooler[this.s.cooler.length - 1].fishId);
-    if (order && this.orderMatches(order).length >= order.count) this.toast("Заказ собран", "good", `${order.client} — сдать в порту`);
+    if (order && this.orderMatches(order).length >= this.orderCount(order)) this.toast("Заказ собран", "good", `${order.client} — сдать в порту`);
     this.markDirty();
   }
 
@@ -1849,8 +1862,19 @@ export class Engine {
     return { id: rid(), fishId: f.id, count, minWeight, reward, expiresDay: this.day + 2 + ri(3), client: this.port.clients[ri(this.port.clients.length)] ?? ORDER_CLIENTS[ri(ORDER_CLIENTS.length)] };
   }
 
+  /** Сколько рыбы из садка подходит под заказ. Поля заказа могут прийти из
+   *  старого сохранения пустыми — тогда трактуем их как 0 и 1, иначе заказ
+   *  «не видит» ни одной рыбы. */
   orderMatches(o: Order) {
-    return this.s.cooler.filter((c) => c.fishId === o.fishId && c.weight >= o.minWeight).sort((a, b) => a.weight - b.weight);
+    const minWeight = Number.isFinite(o.minWeight) ? o.minWeight : 0;
+    return this.s.cooler
+      .filter((c) => c.fishId === o.fishId && Number.isFinite(c.weight) && c.weight + 1e-9 >= minWeight)
+      .sort((a, b) => a.weight - b.weight);
+  }
+
+  /** Требуемое количество с защитой от битого сохранения. */
+  orderCount(o: Order) {
+    return Number.isFinite(o.count) && o.count > 0 ? Math.round(o.count) : 1;
   }
 
   /**
@@ -1859,8 +1883,9 @@ export class Engine {
    * минимум 15% (не меньше 20 ₽), сохраняя при этом базовую награду заказа.
    */
   orderReward(o: Order) {
-    const selected = this.orderMatches(o).slice(0, o.count);
-    if (selected.length < o.count) return o.reward;
+    const need = this.orderCount(o);
+    const selected = this.orderMatches(o).slice(0, need);
+    if (selected.length < need) return o.reward;
 
     // Сначала продаём наиболее дорогие экземпляры, чтобы скидка насыщения
     // применялась так же выгодно, как при продаже садка по отдельности.
@@ -1882,10 +1907,11 @@ export class Engine {
   fulfillOrder(id: string) {
     const o = this.s.orders.find((x) => x.id === id);
     if (!o) return false;
+    const need = this.orderCount(o);
     const m = this.orderMatches(o);
-    if (m.length < o.count) return false;
+    if (m.length < need) return false;
     const reward = this.orderReward(o);
-    const use = new Set(m.slice(0, o.count).map((c) => c.uid));
+    const use = new Set(m.slice(0, need).map((c) => c.uid));
     this.s.cooler = this.s.cooler.filter((c) => !use.has(c.uid));
     this.s.orders = this.s.orders.filter((x) => x.id !== id);
     this.s.money += reward;

@@ -1,6 +1,6 @@
 import { hasActiveEvent, horizontalRange, overlapsHorizontal, shoreEnvelope, type Frame } from "./frame";
 import type { LandRenderer } from "./land";
-import { clamp, fbm, glow, hash1, hexA, mix, rng, af } from "./util";
+import { clamp, ctx2d, fbm, glow, hash1, hexA, makeCanvas, mix, rng, af } from "./util";
 
 interface BandObj { x: number; p: number; w: number; h: number; seed: number }
 interface Island extends BandObj { pines: number; cottage: boolean; boathouse: boolean; lighthouse: boolean }
@@ -652,6 +652,22 @@ export class ExtraLand {
     ctx.fill();
   }
 
+  /** Спрайт «пятна тумана»: радиальный градиент рисуется один раз, а не 7 раз за кадр. */
+  private fogSprite: { canvas: ReturnType<typeof makeCanvas>; color: string; a: number } | null = null;
+  private fogPuff(fc: string, a: number) {
+    const key = Math.round(a * 40) / 40;
+    if (this.fogSprite && this.fogSprite.color === fc && Math.abs(this.fogSprite.a - key) < 1e-3) return this.fogSprite.canvas;
+    const c = makeCanvas(340, 340);
+    const g2 = ctx2d(c).createRadialGradient(170, 170, 0, 170, 170, 170);
+    g2.addColorStop(0, hexA(fc, key));
+    g2.addColorStop(1, hexA(fc, 0));
+    const c2 = ctx2d(c);
+    c2.fillStyle = g2;
+    c2.fillRect(0, 0, 340, 340);
+    this.fogSprite = { canvas: c, color: fc, a: key };
+    return c;
+  }
+
   private drawKelpCliffs(L: LandRenderer, f: Frame) {
     const { ctx, hY, H, W, t, night, e } = f;
     if (!this.cliff) return;
@@ -688,28 +704,37 @@ export class ExtraLand {
     ctx.restore();
     // кипарисы
     for (const cy of this.cypress) this.drawCypress(L, f, cy);
-    // прибой у подножия
+    // прибой у подножия: штрихи собраны в пять групп по прозрачности —
+    // раньше на каждый столбик шёл свой fillStyle и fillRect (около сотни
+    // вызовов за кадр при неподвижной картинке).
+    const surfK = 1 - night * 0.6;
+    const groups: number[][] = [[], [], [], [], []];
     for (let x = p[0]; x < W; x += 12) {
       const q = (Math.sin(t * 1.3 + x * 0.04) + 1) / 2;
-      ctx.fillStyle = hexA("#ffffff", (0.3 + q * 0.4) * (1 - night * 0.6));
-      ctx.fillRect(x, hY + 1 + q * 2, 9 + q * 6, 1.6);
+      const gi = Math.min(4, Math.max(0, Math.round(q * 4)));
+      groups[gi].push(x, hY + 1 + q * 2, 9 + q * 6);
+    }
+    for (let gi = 0; gi < 5; gi++) {
+      const list = groups[gi];
+      if (!list.length) continue;
+      ctx.fillStyle = hexA("#ffffff", (0.3 + (gi / 4) * 0.4) * surfK);
+      ctx.beginPath();
+      for (let i = 0; i < list.length; i += 3) ctx.rect(list[i], list[i + 1], list[i + 2], 1.6);
+      ctx.fill();
     }
     // полосы тумана
     const fogA = 0.22 + f.fogK * 0.35 + (f.weather === "clear" ? -0.08 : 0);
     const fc = mix(mix("#dfe4e6", f.hor, 0.35), "#0e1620", night * 0.85);
+    // Полосы тумана: вместо семи радиальных градиентов за кадр — один
+    // закешированный спрайт, растянутый по горизонтали.
+    const puff = this.fogPuff(fc, fogA);
     for (let k = 0; k < 7; k++) {
       const x = ((t * (5 + k * 2) + k * 260) % (W + 800)) - 400;
       const y = hY - H * 0.03 + (k % 3) * H * 0.018;
       ctx.save();
       ctx.translate(x, y);
       ctx.scale(1, 0.12);
-      const g2 = ctx.createRadialGradient(0, 0, 0, 0, 0, 340);
-      g2.addColorStop(0, hexA(fc, fogA));
-      g2.addColorStop(1, hexA(fc, 0));
-      ctx.fillStyle = g2;
-      ctx.beginPath();
-      ctx.arc(0, 0, 340, 0, TAU);
-      ctx.fill();
+      ctx.drawImage(puff as CanvasImageSource, -340, -340);
       ctx.restore();
     }
   }

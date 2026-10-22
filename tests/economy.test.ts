@@ -74,3 +74,32 @@ test("bottle discoveries remain in migrated saves", () => {
 
   assert.deepEqual(migrateSave(save)?.hints, ["goby"]);
 });
+
+test("legacy order without count/minWeight still counts fish in the cooler", () => {
+  // Старые сохранения хранили заказы без count и minWeight. Сравнение
+  // «вес >= undefined» всегда ложно, поэтому сданная рыба не засчитывалась.
+  const save = newSave();
+  save.orders = [{ id: "legacy", fishId: "goby", reward: 120, expiresDay: 9, client: "Трактир" } as unknown as Order];
+  const migrated = migrateSave(JSON.parse(JSON.stringify(save)));
+  assert.ok(migrated);
+  const engine = new Engine(migrated);
+  engine.s.atPort = true;
+  engine.s.cooler = [catchOf("a", 0.2, 100), catchOf("b", 0.35, 160)];
+
+  const order = engine.s.orders[0];
+  assert.equal(engine.orderCount(order), 1);
+  assert.equal(order.minWeight, 0);
+  assert.equal(engine.orderMatches(order).length, 2);
+  assert.equal(engine.fulfillOrder(order.id), true);
+  assert.equal(engine.s.cooler.length, 1);
+});
+
+test("order weight floor ignores nothing when minWeight is missing", () => {
+  const engine = new Engine(newSave());
+  engine.s.atPort = true;
+  engine.s.cooler = [catchOf("a", 0.2, 100)];
+  const order = { id: "x", fishId: "goby", count: 1, reward: 80, expiresDay: 5, client: "Бар" } as Order;
+  engine.s.orders = [order];
+  assert.equal(engine.orderMatches(order).length, 1);
+  assert.equal(engine.fulfillOrder(order.id), true);
+});

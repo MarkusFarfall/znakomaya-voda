@@ -73,7 +73,7 @@ export function TravelChoice({ engine, trip, onCancel, onGo }: { engine: Engine;
   );
 }
 
-export function TravelOverlay({ engine, trip, mode, onDone, quality = 1, model3d = true }: { engine: Engine; trip: Trip; mode: TravelMode; onDone: () => void; quality?: number; model3d?: boolean }) {
+export function TravelOverlay({ engine, trip, mode, onDone, quality = 1, model3d = false }: { engine: Engine; trip: Trip; mode: TravelMode; onDone: () => void; quality?: number; model3d?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const [p, setP] = useState(0);
   const doneRef = useRef(false);

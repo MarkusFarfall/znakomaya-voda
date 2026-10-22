@@ -19,7 +19,15 @@ export interface Settings {
     precip: boolean;
   };
   model3d: boolean;
+  /**
+   * Версия схемы настроек. Нужна для одноразовых миграций значений по
+   * умолчанию: у старых сохранений `model3d: true` записывалось как дефолт,
+   * поэтому без версии его нельзя отличить от осознанного выбора игрока.
+   */
+  version: number;
 }
+/** Текущая версия схемы настроек. */
+export const SETTINGS_VERSION = 2;
 export const DEFAULT_SETTINGS: Settings = {
   controls: {
     sailing: "arrows",
@@ -34,7 +42,10 @@ export const DEFAULT_SETTINGS: Settings = {
   volume: 0.8,
   zoom: 1,
   gfx: { refl: true, shafts: true, caustics: true, foam: true, precip: true },
-  model3d: true,
+  // 3D-модель лодки — эффектная, но дорогая: по умолчанию выключена,
+  // включается в настройках графики.
+  model3d: false,
+  version: SETTINGS_VERSION,
 };
 const record = (v: unknown): Record<string, unknown> =>
   v !== null && typeof v === "object" && !Array.isArray(v)
@@ -52,6 +63,10 @@ export function normalizeSettings(value: unknown): Settings {
     g = record(a.gfx),
     c = record(a.controls),
     d = DEFAULT_SETTINGS;
+  // Настройки из версии 1 (и любые, где версии нет) писали model3d: true по
+  // умолчанию. Отличить это от осознанного выбора нельзя, поэтому один раз
+  // сбрасываем 3D в «выключено»; дальше выбор игрока сохраняется.
+  const version = typeof a.version === "number" && Number.isFinite(a.version) ? a.version : 1;
   return {
     controls: {
       sailing: c.sailing === "point" ? "point" : "arrows",
@@ -65,7 +80,7 @@ export function normalizeSettings(value: unknown): Settings {
     music: bool(a.music, d.music),
     volume: num(a.volume, d.volume, 0, 1),
     zoom: num(a.zoom, d.zoom, 1, 2),
-    model3d: bool(a.model3d, d.model3d),
+    model3d: version < SETTINGS_VERSION ? d.model3d : bool(a.model3d, d.model3d),
     gfx: {
       refl: bool(g.refl, true),
       shafts: bool(g.shafts, true),
@@ -73,5 +88,6 @@ export function normalizeSettings(value: unknown): Settings {
       foam: bool(g.foam, true),
       precip: bool(g.precip, true),
     },
+    version: SETTINGS_VERSION,
   };
 }

@@ -74,6 +74,34 @@ export function makeCanvas(w: number, h: number): AnyCanvas {
 }
 export const ctx2d = (c: AnyCanvas) => c.getContext("2d") as CanvasRenderingContext2D;
 
+/**
+ * Кеш градиентов.
+ *
+ * Градиент в Canvas 2D — это объект сцены: создание стоит денег, а на кадре их
+ * бывает по нескольку десятков (силуэты дальнего плана, контактные тени, камни).
+ * Если градиент зависит только от нескольких округлённых чисел и цвета, его
+ * можно переиспользовать. Кеш привязан к контексту (градиент нельзя рисовать
+ * чужим контекстом) и ограничен, чтобы не расти бесконечно.
+ */
+const gradCaches = new WeakMap<CanvasRenderingContext2D, Map<string, CanvasGradient>>();
+export function gradMemo(
+  ctx: CanvasRenderingContext2D,
+  key: string,
+  make: () => CanvasGradient,
+): CanvasGradient {
+  let cache = gradCaches.get(ctx);
+  if (!cache) {
+    cache = new Map();
+    gradCaches.set(ctx, cache);
+  }
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const g = make();
+  if (cache.size > 240) cache.clear();
+  cache.set(key, g);
+  return g;
+}
+
 export function tracePoly(ctx: CanvasRenderingContext2D, pts: number[], close = true) {
   ctx.beginPath();
   ctx.moveTo(pts[0], pts[1]);

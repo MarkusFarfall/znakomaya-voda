@@ -2,7 +2,7 @@ import { SeabedLandscape } from "./seabedLandscape";
 import { bedFrac } from "../world";
 import { horizontalRange, shoreEnvelope, type Frame } from "./frame";
 import { tileCaustics } from "./water";
-import { clamp, glow, hash1, hexA, mix, rng, tracePoly } from "./util";
+import { clamp, gradMemo, glow, hash1, hexA, mix, rng, tracePoly } from "./util";
 
 interface Decor { x: number; y: number; kind: string; s: number; c: string; seed: number }
 
@@ -207,10 +207,15 @@ export class SeabedRenderer {
       // Чем ниже силуэт в кадре (ближе к игроку) — тем он плотнее.
       const depthFade = clamp((o.y - (cam + H * 0.35)) / (H * 0.75), 0, 1);
       const a = 0.3 + 0.3 * depthFade;
-      const g = ctx.createLinearGradient(0, -o.h * 1.25, 0, 6 * f.sc);
-      g.addColorStop(0, hexA(farTop, a * 0.92));
-      g.addColorStop(0.62, hexA(farBase, a));
-      g.addColorStop(1, hexA(farBase, a * 0.86));
+      // Силуэт зависит только от высоты и прозрачности — градиент кешируется.
+      const key = `far|${Math.round(o.h)}|${Math.round(f.sc * 4)}|${Math.round(a * 20)}|${farTop}|${farBase}`;
+      const g = gradMemo(ctx, key, () => {
+        const gg = ctx.createLinearGradient(0, -o.h * 1.25, 0, 6 * f.sc);
+        gg.addColorStop(0, hexA(farTop, a * 0.92));
+        gg.addColorStop(0.62, hexA(farBase, a));
+        gg.addColorStop(1, hexA(farBase, a * 0.86));
+        return gg;
+      });
       ctx.save();
       ctx.translate(o.x, o.y);
       ctx.globalAlpha = 1;
@@ -356,6 +361,9 @@ export class SeabedRenderer {
     }
 
     this.drawFeatures(f);
+    // Тени всех предметов — одним путём: раньше каждый предмет давал свой
+    // beginPath/fill под собой (до сотни лишних вызовов за кадр).
+    this.drawDecorShadows(f);
     for (const d of this.decor) this.drawDecor(f, d);
   }
 
@@ -507,30 +515,44 @@ export class SeabedRenderer {
         ctx.beginPath();
         pts.forEach(([px, py], k) => (k ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
         ctx.stroke();
+        // Листья и крапинки — по одному пути на цвет. Раньше на каждый сегмент
+        // шло save/translate/rotate/restore и отдельные fill: до двухсот вызовов
+        // на растение. Поворот листа теперь задаётся параметром ellipse().
+        for (const [leafCol, mod] of [["#8a6a2a", 0], ["#7a5e22", 1]] as const) {
+          ctx.fillStyle = leafCol;
+          ctx.beginPath();
+          for (let k = 1; k < segs; k++) {
+            if ((k % 3 === 0 ? 1 : 0) !== mod) continue;
+            const [px, py] = pts[k];
+            const side = k % 2 ? 1 : -1;
+            const sw = Math.sin(t * 0.8 + phase + k) * 0.25;
+            const rot = side * (0.9 + sw) - Math.PI / 2;
+            const cx = px + 10 * sc * Math.sin(rot);
+            const cy = py - 10 * sc * Math.cos(rot);
+            ctx.moveTo(cx + 3 * sc * Math.cos(rot), cy + 3 * sc * Math.sin(rot));
+            ctx.ellipse(cx, cy, 3 * sc, 11 * sc, rot, 0, Math.PI * 2);
+          }
+          ctx.fill();
+        }
+        ctx.fillStyle = "#a88a3a";
+        ctx.beginPath();
         for (let k = 1; k < segs; k++) {
           const [px, py] = pts[k];
           const side = k % 2 ? 1 : -1;
-          const sw = Math.sin(t * 0.8 + phase + k) * 0.25;
-          ctx.fillStyle = k % 3 ? "#8a6a2a" : "#7a5e22";
-          ctx.save();
-          ctx.translate(px, py);
-          ctx.rotate(side * (0.9 + sw) - Math.PI / 2);
-          ctx.beginPath();
-          ctx.ellipse(0, -10 * sc, 3 * sc, 11 * sc, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-          ctx.fillStyle = "#a88a3a";
-          ctx.beginPath();
+          ctx.moveTo(px + side * 2 * sc + 1.6 * sc, py);
           ctx.arc(px + side * 2 * sc, py, 1.6 * sc, 0, Math.PI * 2);
-          ctx.fill();
         }
-        // полог у поверхности
+        ctx.fill();
+        // полог у поверхности — один путь
         ctx.fillStyle = "rgba(122,94,34,0.8)";
+        ctx.beginPath();
         for (let k = 0; k < 4; k++) {
-          ctx.beginPath();
-          ctx.ellipse(pts[segs][0] + (k - 1.5) * 9 * sc + Math.sin(t * 0.5 + k + phase) * 3, top + 2 + k % 2, 11 * sc, 2.5 * sc, 0.1, 0, Math.PI * 2);
-          ctx.fill();
+          const cx = pts[segs][0] + (k - 1.5) * 9 * sc + Math.sin(t * 0.5 + k + phase) * 3;
+          const cy = top + 2 + k % 2;
+          ctx.moveTo(cx + 11 * sc * Math.cos(0.1), cy + 11 * sc * Math.sin(0.1));
+          ctx.ellipse(cx, cy, 11 * sc, 2.5 * sc, 0.1, 0, Math.PI * 2);
         }
+        ctx.fill();
       }
     }
     // корни мангров под водой
@@ -742,6 +764,37 @@ export class SeabedRenderer {
     ctx.fill();
   }
 
+  /** Тени предметов дна: один путь и один fill на весь кадр. */
+  private drawDecorShadows(f: Frame) {
+    const { ctx } = f;
+    const view = horizontalRange(f, 60 * f.sc);
+    const shadows: number[] = [];
+    for (const d of this.decor) {
+      if (d.x < view.left || d.x > view.right) continue;
+      if (d.y - 290 * f.sc > f.cam + f.H || d.y + 20 < f.cam) continue;
+      if (!["boulder", "rock", "brain", "table", "tube", "sponge", "anemone", "coralB"].includes(d.kind)) continue;
+      const s = d.s * f.sc;
+      shadows.push(d.x, d.y + 3, (d.kind === "boulder" ? 26 : 12) * s, 3 * s);
+    }
+    if (!shadows.length) return;
+    ctx.fillStyle = "rgba(4,20,26,0.23)";
+    if (typeof Path2D !== "undefined") {
+      const path = new Path2D();
+      for (let i = 0; i < shadows.length; i += 4) {
+        path.moveTo(shadows[i] + shadows[i + 2], shadows[i + 1]);
+        path.ellipse(shadows[i], shadows[i + 1], shadows[i + 2], shadows[i + 3], 0, 0, Math.PI * 2);
+      }
+      ctx.fill(path);
+    } else {
+      ctx.beginPath();
+      for (let i = 0; i < shadows.length; i += 4) {
+        ctx.moveTo(shadows[i] + shadows[i + 2], shadows[i + 1]);
+        ctx.ellipse(shadows[i], shadows[i + 1], shadows[i + 2], shadows[i + 3], 0, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+  }
+
   private drawDecor(f: Frame, d: Decor) {
     const { ctx, t } = f;
     const view = horizontalRange(f, 50 * f.sc);
@@ -751,10 +804,7 @@ export class SeabedRenderer {
     const sway = Math.sin(t * 0.8 + d.seed) * 6 * s;
     ctx.save();
     ctx.translate(d.x, d.y + 2);
-    if (["boulder", "rock", "brain", "table", "tube", "sponge", "anemone", "coralB"].includes(d.kind)) {
-      ctx.fillStyle = "rgba(4,20,26,0.23)";
-      ctx.beginPath(); ctx.ellipse(0, 1, (d.kind === "boulder" ? 26 : 12) * s, 3 * s, 0, 0, Math.PI * 2); ctx.fill();
-    }
+    // тень нарисована заранее, общим путём (drawDecorShadows)
     switch (d.kind) {
       case "grass":
         // Шесть травинок — один путь: та же геометрия и цвет, но один вызов вместо шести.
@@ -847,10 +897,15 @@ export class SeabedRenderer {
       case "rock":
       case "boulder": {
         const r = (d.kind === "rock" ? 8 : 22) * s;
-        const g = ctx.createRadialGradient(-r * 0.4, -r * 0.9, r * 0.1, 0, -r * 0.3, r * 1.4);
-        g.addColorStop(0, "#8e8880");
-        g.addColorStop(1, "#3e3a36");
-        ctx.fillStyle = g;
+        // Градиент камня не зависит от места: кешируем по радиусу, а не создаём
+        // новый объект на каждый валун каждый кадр.
+        const key = Math.round(r * 2) / 2;
+        ctx.fillStyle = gradMemo(ctx, `rock|${key}`, () => {
+          const g = ctx.createRadialGradient(-r * 0.4, -r * 0.9, r * 0.1, 0, -r * 0.3, r * 1.4);
+          g.addColorStop(0, "#8e8880");
+          g.addColorStop(1, "#3e3a36");
+          return g;
+        });
         ctx.beginPath();
         ctx.moveTo(-r * 1.3, 2);
         ctx.quadraticCurveTo(-r * 1.2, -r * 0.9, -r * 0.2, -r * 1.05);
