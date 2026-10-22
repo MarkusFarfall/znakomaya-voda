@@ -330,10 +330,25 @@ export class SeabedLandscape {
       const y = contact.foot + 2 * sc;
       ctx.save();
       ctx.translate(o.x, y);
-      // Contact shadow is beneath the object, not an ellipse floating beside it.
-      ctx.fillStyle = hexA("#071b24", 0.25);
+      // Контактная тень. Была плоской тёмной «тарелкой» под объектом — на светлом
+      // песке читалась как отдельный предмет. Теперь это мягкое пятно в тон
+      // грунта: широкий рассеянный слой + узкое ядро у самой кромки, оба плавно
+      // сходят в ноль (два радиальных градиента, без резкого эллипса).
+      const shadeCol = mix(f.loc.bed, "#0a1a20", 0.72);
+      const softShade = ctx.createRadialGradient(0, 0, 0, 0, 0, half * 1.55);
+      softShade.addColorStop(0, hexA(shadeCol, 0.34));
+      softShade.addColorStop(0.45, hexA(shadeCol, 0.2));
+      softShade.addColorStop(1, hexA(shadeCol, 0));
+      ctx.fillStyle = softShade;
       ctx.beginPath();
-      ctx.ellipse(0, 0, half * 1.12, Math.max(2, 7 * sc), 0, 0, Math.PI * 2);
+      ctx.ellipse(0, 0, half * 1.55, Math.max(3, 10 * sc), 0, 0, Math.PI * 2);
+      ctx.fill();
+      const core = ctx.createRadialGradient(0, 0, 0, 0, 0, half * 0.72);
+      core.addColorStop(0, hexA(shadeCol, 0.42));
+      core.addColorStop(1, hexA(shadeCol, 0));
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, half * 0.72, Math.max(1.6, 4 * sc), 0, 0, Math.PI * 2);
       ctx.fill();
       if (kind === "basalt" || kind === "vents") {
         const n = kind === "vents" ? 4 : 7;
@@ -507,10 +522,22 @@ export class SeabedLandscape {
 
   private reefMass(f: Frame, w: number, h: number, seed: number) {
     const { ctx, sc } = f;
-    const g = ctx.createLinearGradient(0, -h * 0.65, 0, 5 * sc);
-    g.addColorStop(0, "#a1afa0");
-    g.addColorStop(0.4, "#7c9788");
-    g.addColorStop(1, "#395b60");
+    // Песчаный «апрон» у подножия: раньше риф читался тёмной плитой с ровным
+    // нижним срезом. Теперь основание растворяется в грунте, как осадок.
+    const apron = ctx.createRadialGradient(0, 2 * sc, 0, 0, 2 * sc, w * 1.3);
+    apron.addColorStop(0, hexA(f.loc.bed, 0.7));
+    apron.addColorStop(0.5, hexA(f.loc.bed, 0.3));
+    apron.addColorStop(1, hexA(f.loc.bed, 0));
+    ctx.fillStyle = apron;
+    ctx.beginPath();
+    ctx.ellipse(0, 2 * sc, w * 1.3, Math.max(5 * sc, h * 0.26), 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Тело рифа: светлее кверху, у самой кромки — в тон песку, без «отреза».
+    const g = ctx.createLinearGradient(0, -h * 0.72, 0, 6 * sc);
+    g.addColorStop(0, "#aab6a5");
+    g.addColorStop(0.42, "#819686");
+    g.addColorStop(0.8, mix("#5f7a72", f.loc.bed, 0.4));
+    g.addColorStop(1, mix(f.loc.bed, "#5f7a72", 0.42));
     ctx.fillStyle = g;
     ctx.beginPath();
     ctx.moveTo(-w, 4 * sc);
@@ -531,8 +558,27 @@ export class SeabedLandscape {
       -h * 0.4,
     );
     ctx.bezierCurveTo(w * 0.8, -h * 0.58, w * 1.05, -h * 0.25, w, 4 * sc);
+    // Волнистая подошва вместо прямой линии.
+    ctx.bezierCurveTo(w * 0.7, 7.5 * sc, w * 0.28, 1.5 * sc, -w * 0.1, 5 * sc);
+    ctx.bezierCurveTo(-w * 0.45, 8 * sc, -w * 0.76, 1.2 * sc, -w, 4 * sc);
     ctx.closePath();
     ctx.fill();
+    // Камешки-обломки у подошвы: связывают массу с грунтом, чтобы мягкий торец
+    // не выглядел просто размытым пятном.
+    const rubble = f.quality === 0 ? 3 : 6;
+    for (let i = 0; i < rubble; i++) {
+      const x = (hash1(seed + i * 7.7) * 2 - 1) * w * 1.02,
+        r = (1.4 + hash1(seed + i * 3.1 + 5) * 2.6) * sc,
+        y = 4 * sc - r * 0.5 - hash1(seed + i + 41) * 2 * sc;
+      ctx.fillStyle = mix(f.loc.bed, "#3d5560", 0.45);
+      ctx.beginPath();
+      ctx.ellipse(x, y, r * 1.5, r * 0.85, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = hexA("#c9d3bb", 0.28);
+      ctx.beginPath();
+      ctx.ellipse(x - r * 0.3, y - r * 0.35, r * 0.6, r * 0.32, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     for (let i = 0; i < (f.quality === 0 ? 10 : 32); i++) {
       const x = (hash1(seed + i) * 1.6 - 0.8) * w,
         y = -h * (0.12 + hash1(seed + i + 33) * 0.3),

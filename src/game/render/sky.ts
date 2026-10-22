@@ -66,6 +66,22 @@ interface Cloud {
   anchorY: number;
 }
 
+/**
+ * Высота опорной точки облака (его нижней кромки) в пикселях кадра.
+ *
+ * Раньше дальние банки (`layer → 0`) опускались почти к ватерлинии и читались
+ * как облака, плывущие по морю. Здесь весь диапазон высот сжимается так, чтобы
+ * самая нижняя опора оставалась над горизонтом `horizon`, но сами банки не
+ * слипались в одну полосу: масштабируется весь разброс, а не отсекается край.
+ */
+export function cloudBaseY(layer: number, H: number, horizon: number, jitter = 0.5) {
+  const top = H * 0.16;
+  const nominal = H * (1 - layer) * 0.2 + H * jitter * 0.06;
+  const room = Math.max(H * 0.04, horizon - H * 0.05 - top);
+  const k = Math.min(1, room / (H * 0.26));
+  return top + nominal * k;
+}
+
 export class SkyRenderer {
   private W = 0;
   private H = 0;
@@ -119,7 +135,7 @@ export class SkyRenderer {
     this.clouds = Array.from({ length: 14 }, (_, i) => {
       const layer = i / 13;
       const w = (190 + r() * 240) * (0.7 + layer * 0.55) * (H / 720);
-      return { x: NaN, nx0: r(), anchorY: 0, y: H * (0.16 + (1 - layer) * 0.2 + r() * 0.06), w, h: w * (0.3 + r() * 0.16), speed: 3 + layer * 9, seed: r() * 1000, layer, sprite: null };
+      return { x: NaN, nx0: r(), anchorY: 0, y: cloudBaseY(layer, H, hy, r()), w, h: w * (0.3 + r() * 0.16), speed: 3 + layer * 9, seed: r() * 1000, layer, sprite: null };
     });
     this.gulls = Array.from({ length: 7 }, () => [r(), H * (0.1 + r() * 0.2), r() * 6.28, 0.7 + r() * 0.5]);
     this.gullsReady = false;
@@ -387,7 +403,10 @@ export class SkyRenderer {
       ctx.globalAlpha = wt === "fog" ? 0.55 : 0.95;
       const dw = c.sprite.width * big, dh = c.sprite.height * big;
       // c.y — линия основания облака: при смене погоды масштаб не «подпрыгивает».
-      ctx.drawImage(c.sprite, c.x, c.y - c.anchorY * big, dw, dh);
+      // Страховка на кадре: даже если облако «догнало» горизонт при смене
+      // масштаба, точка опоры остаётся над водой.
+      const baseY = Math.min(c.y, f.hY - f.H * 0.035);
+      ctx.drawImage(c.sprite, c.x, baseY - c.anchorY * big, dw, dh);
     }
     ctx.globalAlpha = 1;
 

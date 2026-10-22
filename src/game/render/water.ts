@@ -80,7 +80,9 @@ export function drawSeaBand(f: Frame, reflect: () => void) {
   const far = mix(f.loc.water.surface, rgbHex(f.atmo.palette.seaFar), 0.32);
   const near = mix(f.loc.water.shallow, rgbHex(f.atmo.palette.seaNear), 0.24);
   const g = ctx.createLinearGradient(0, hY, 0, sY + f.amp + 4);
-  g.addColorStop(0, mix(mix(f.hor, far, 0.35), water, 0.15));
+  // У самого горизонта полоса была почти белой (f.hor — цвет дымки) и давала
+  // светлый «шов» под скалами. Теперь дальний край уже вода, а не туман.
+  g.addColorStop(0, mix(mix(f.hor, far, 0.5), water, 0.3));
   g.addColorStop(0.35, mix(water, f.hor, 0.2));
   g.addColorStop(1, mix(water, mix(near, "#02050c", night * 0.8), 0.4));
   ctx.fillStyle = g;

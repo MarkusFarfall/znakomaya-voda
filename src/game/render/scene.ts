@@ -150,6 +150,8 @@ export class Scene {
       horizon: hY, surface: sY, seabed: sY + f.depthPx(f.spot.maxDepth), visW: viewW, viewX0, cam,
       windPx: atmo.wind * atmo.windDir * 26 * sc,
       sAt: f.waveY,
+      // Реальная кромка грунта: подводные события не должны уходить «внутрь» дна.
+      bedAt: f.bedDepth ? (x: number) => sY + f.depthPx(f.bedDepth!(x / W)) : undefined,
       glow: (x, y, r, col, a) => glow(ctx, x, y, r, rgbHex(col), a),
       sun: { x: f.sunX, y: f.sunY }, moon: { x: f.moonX, y: f.moonY },
       rocks, capeX: viewX0 + viewW * (f.loc.land === "cliffs" ? 0.88 : 0.82), capeTop: hY,

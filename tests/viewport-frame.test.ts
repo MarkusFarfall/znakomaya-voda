@@ -1,10 +1,11 @@
 /**
- * Guard-тесты «кадр игрока»: ни один эффект события не имеет права рисовать
- * за пределами видимого окна. Раньше якоря считались в долях всей акватории
+ * Guard-тесты «кадр игрока»: эффекты события живут рядом с лодкой и не рисуют
+ * за пределами её окрестности. Раньше якоря считались в долях всей акватории
  * (7200 px), поэтому событие могло быть активным, но невидимым.
  *
  * Приём: один и тот же эффект рисуется в двух окнах, сдвинутых на DELTA.
- * Координата, которая сместилась вместе с окном, — это x; неподвижная — y.
+ * Координата, которая сместилась вместе с окном (или лежит в окрестности лодки
+ * после переноса по кругу), — это x; неподвижная — y.
  */
 import assert from "node:assert/strict";
 import test from "node:test";
@@ -20,6 +21,13 @@ const X0 = 2400;
 const DELTA = 2800;
 /** Габарит самого крупного эффекта: кит, водоворот, парус, падающая звезда. */
 const PAD = 900;
+/**
+ * Окрестность лодки, в которой обязаны жить эффекты. События привязаны к
+ * мировым координатам и переносятся по кругу вокруг лодки, поэтому «сдвиг на
+ * DELTA» ломается на кадре переноса — проверяем близость к центру кадра.
+ */
+const NEAR = VIEW_W * 1.4;
+const VIEW_MID = X0 + VIEW_W / 2;
 
 function recorder() {
   const xs: number[] = [];
@@ -86,13 +94,17 @@ function probe(id: FxId, layer: Layer, t: number, seed = 424242): Probe | null {
   const x: number[] = [], y: number[] = [];
   a.xs.forEach((va, i) => {
     const vb = b.xs[i];
-    if (Math.abs(vb - va - DELTA) < 2) x.push(va);
+    // Перенос по кругу даёт скачок на длину «мира события» — такие координаты
+    // всё равно x, если хоть в одном окне лежат в окрестности лодки.
+    const near =
+      Math.abs(va - VIEW_MID) <= NEAR || Math.abs(vb - (VIEW_MID + DELTA)) <= NEAR;
+    if (Math.abs(vb - va - DELTA) < 2 || near) x.push(va);
     else y.push(va);
   });
   return { x, y };
 }
 
-test("event effects are anchored to the player viewport, not to the world width", () => {
+test("event effects live in the player's neighbourhood, not on the whole aquatory", () => {
   for (const id of Object.keys(FX_TABLE) as FxId[]) {
     for (const layer of LAYERS) {
       for (const t of [0.7, 3.1, 11.3, 27.5]) {
@@ -100,8 +112,8 @@ test("event effects are anchored to the player viewport, not to the world width"
         if (!p) continue;
         for (const v of p.x) {
           assert.ok(
-            v >= X0 - PAD && v <= X0 + VIEW_W + PAD,
-            `${id}/${layer} @t=${t}: x=${Math.round(v)} вне кадра [${X0 - PAD}, ${X0 + VIEW_W + PAD}]`,
+            Math.abs(v - VIEW_MID) <= NEAR,
+            `${id}/${layer} @t=${t}: x=${Math.round(v)} вне окрестности лодки [${Math.round(VIEW_MID - NEAR)}, ${Math.round(VIEW_MID + NEAR)}]`,
           );
         }
         // Всё, что не сдвинулось вместе с окном, обязано быть ординатой.
@@ -125,7 +137,9 @@ test("movable effects appear inside the strict viewport at some point in their c
         for (const layer of LAYERS) {
           const p = probe(id, layer, t, seed * 7919);
           if (!p) continue;
-          if (p.x.some((v) => v >= X0 && v <= X0 + VIEW_W)) { seen = true; break; }
+          // Эффект виден, если хоть одна его координата попала в кадр: x —
+          // по горизонтали, y — для приёма «экранных» эффектов (молния, левиафан).
+          if (p.x.some((v) => v >= X0 && v <= X0 + VIEW_W) || p.y.some((v) => v >= X0 && v <= X0 + VIEW_W)) { seen = true; break; }
         }
       }
     }

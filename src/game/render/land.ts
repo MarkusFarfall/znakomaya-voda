@@ -692,11 +692,20 @@ export class LandRenderer {
       ctx.fill();
     }
     if (this.cliffBase) {
-      const first = this.cliffBase.x0 + Math.max(0, Math.ceil((view.left - this.cliffBase.x0) / 14)) * 14;
-      for (let x = first; x < Math.min(W, view.right); x += 14) {
-        const p = (Math.sin(t * 1.4 + x * 0.05) + 1) / 2;
-        ctx.fillStyle = hexA(mix("#ffffff", "#40506a", night * 0.7), 0.35 + p * 0.4);
-        ctx.fillRect(x, hY + 1 + p * 2, 10 + p * 6, 1.5);
+      // Прибой у подножия скал. Ровная лента `fillRect` читалась светлым швом
+      // между камнем и водой — теперь это языки пены разной длины, которые
+      // набегают и отходят волнами.
+      const foamCol = mix("#ffffff", "#2e3c52", night * 0.6);
+      const first = this.cliffBase.x0 + Math.max(0, Math.ceil((view.left - this.cliffBase.x0) / 9)) * 9;
+      for (let x = first; x < Math.min(W, view.right); x += 9) {
+        const p = (Math.sin(t * 1.3 + x * 0.045) + 1) / 2;
+        const q = (Math.sin(t * 0.7 + x * 0.012 + 1.7) + 1) / 2;
+        const w = 6 + p * 9 + q * 4;
+        const hgt = 0.8 + p * 1.6;
+        ctx.fillStyle = hexA(foamCol, 0.18 + p * 0.3);
+        ctx.beginPath();
+        ctx.ellipse(x, hY + 1.5 + p * 1.6, w * 0.5, hgt, 0, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
     if (f.spot.feature === "arch") {
@@ -715,8 +724,17 @@ export class LandRenderer {
       ctx.fill();
       ctx.fillStyle = this.colorOf(f, "#5a7a42", 0.3);
       ctx.fillRect(ax - aw * 0.3, ay - ah * 1.02, aw * 0.5, 3);
-      ctx.fillStyle = foam;
-      ctx.fillRect(ax - aw * 0.55, ay - 1, aw * 1.1, 2);
+      // Пена у арки — языками разной длины, как у скал: ровная белая полоса
+      // читалась наклеенной поверх воды.
+      const arFoam = mix("#ffffff", "#2e3c52", night * 0.6);
+      for (let k = 0; k < 14; k++) {
+        const px = ax - aw * 0.55 + (k / 13) * aw * 1.1;
+        const p = (Math.sin(t * 1.3 + k * 0.8) + 1) / 2;
+        ctx.fillStyle = hexA(arFoam, 0.2 + p * 0.32);
+        ctx.beginPath();
+        ctx.ellipse(px, ay + 0.5 + p * 1.2, aw * 0.045, 0.8 + p * 1.1, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
     if (f.spot.feature === "current") {
       ctx.strokeStyle = hexA(mix("#ffffff", "#40506a", night * 0.7), 0.4);

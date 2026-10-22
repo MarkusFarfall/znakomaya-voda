@@ -129,7 +129,12 @@ export class SeabedRenderer {
     for (let i = 0; i < Math.round(W / 55); i++) {
       const x = f.chunkOffset!==undefined?100*f.sc+r()*(W-200*f.sc):r()*W;
       const bi = clamp(Math.round(x / this.step) * 2 + 1, 1, this.back.length - 1);
-      this.far.push({ x, y: this.back[bi] + 6, h: (40 + r() * 110) * f.sc, w: (14 + r() * 40) * f.sc, kind: kinds[Math.floor(r() * kinds.length)], seed: r() * 100 });
+      const kind = kinds[Math.floor(r() * kinds.length)];
+      // Высокие «башни» вдали превращаются в частокол из одинаковых грибов.
+      // Дальний план — это низкие холмы и кущи: одна высокая форма на десяток.
+      const tall = kind === "pillar" || kind === "spire" || kind === "chimney";
+      const hMul = tall ? (r() < 0.25 ? 0.5 + r() * 0.4 : 0.16 + r() * 0.16) : 0.2 + r() * 0.34;
+      this.far.push({ x, y: this.back[bi] + 6, h: (40 + r() * 110) * f.sc * hMul * 1.6, w: (14 + r() * 40) * f.sc * (tall ? 1 : 1.7), kind, seed: r() * 100 });
     }
   }
 
@@ -188,43 +193,67 @@ export class SeabedRenderer {
     };
     const bedC = mix(f.loc.bed, "#708980", f.loc.maxDepth > 100 ? .28 : .08);
     this.landscape.backdrop(f, this.bedSurface);
-    // дальние силуэты
-    const farC = mix(mix(bedC, f.loc.water.mid, 0.72), "#000000", 0.1);
-    ctx.fillStyle = farC;
-    ctx.strokeStyle = farC;
+    // Дальние силуэты. Раньше это были плоские чёрные наклейки: одинаковый цвет
+    // на всю высоту, рубленые многоугольники и жёсткий низ. Теперь дальний план
+    // строится как дымка — вертикальный градиент от цвета воды к цвету грунта,
+    // мягкие безье-гребни и прозрачность, растущая к переднему краю.
+    // Дальний план почти полностью уходит в воду: раньше силуэты были
+    // плотными и читались как грибы, растущие из дымки.
+    const farBase = mix(mix(bedC, f.loc.water.mid, 0.82), "#000000", 0.04);
+    const farTop = mix(mix(bedC, f.loc.water.mid, 0.95), f.loc.water.deep, 0.2);
     for (const o of this.far) {
-      if (o.x + o.w < view.left || o.x - o.w > view.right) continue;
+      if (o.x + o.w * 2 < view.left || o.x - o.w * 2 > view.right) continue;
       if (o.y - o.h > cam + H || o.y < cam - 50) continue;
+      // Чем ниже силуэт в кадре (ближе к игроку) — тем он плотнее.
+      const depthFade = clamp((o.y - (cam + H * 0.35)) / (H * 0.75), 0, 1);
+      const a = 0.3 + 0.3 * depthFade;
+      const g = ctx.createLinearGradient(0, -o.h * 1.25, 0, 6 * f.sc);
+      g.addColorStop(0, hexA(farTop, a * 0.92));
+      g.addColorStop(0.62, hexA(farBase, a));
+      g.addColorStop(1, hexA(farBase, a * 0.86));
       ctx.save();
       ctx.translate(o.x, o.y);
-      ctx.globalAlpha = 0.75;
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = g;
+      ctx.strokeStyle = hexA(farTop, a * 0.55);
+      ctx.lineCap = "round";
       if (o.kind === "kelp" || o.kind === "grass") {
-        ctx.lineWidth = o.kind === "kelp" ? 3 : 1.6;
+        ctx.lineWidth = o.kind === "kelp" ? 3 : 1.5;
         const hh = o.kind === "kelp" ? o.h * 1.4 : o.h * 0.3;
         for (let k = 0; k < (o.kind === "kelp" ? 3 : 7); k++) {
+          const bx = k * 6 - 6;
+          const sway = Math.sin(t * 0.5 + o.seed + k) * 12;
           ctx.beginPath();
-          ctx.moveTo(k * 6 - 6, 0);
-          ctx.quadraticCurveTo(k * 6 + Math.sin(t * 0.5 + o.seed + k) * 12, -hh * 0.5, k * 6 + Math.sin(t * 0.4 + o.seed + k) * 18, -hh * (0.7 + (k % 3) * 0.15));
+          ctx.moveTo(bx, 0);
+          ctx.bezierCurveTo(bx + sway * 0.4, -hh * 0.35, bx + sway, -hh * 0.65, bx + Math.sin(t * 0.4 + o.seed + k) * 18, -hh * (0.7 + (k % 3) * 0.15));
           ctx.stroke();
         }
       } else if (o.kind === "pillar" || o.kind === "spire" || o.kind === "chimney") {
+        // Скальные гребни: безье вместо прямых — край «выветренный», не пиленый.
         const ww = o.kind === "chimney" ? o.w * 0.5 : o.w;
+        const h = o.h * (o.kind === "spire" ? 1.12 : 1);
         ctx.beginPath();
-        ctx.moveTo(-ww, 2);
-        ctx.lineTo(-ww * 0.45, -o.h);
-        ctx.lineTo(ww * 0.2, -o.h * 1.08);
-        ctx.lineTo(ww * 0.55, -o.h * 0.7);
-        ctx.lineTo(ww, 2);
+        ctx.moveTo(-ww, 4 * f.sc);
+        ctx.bezierCurveTo(-ww * 0.92, -h * 0.24, -ww * 0.66, -h * 0.62, -ww * 0.42, -h * 0.94);
+        ctx.bezierCurveTo(-ww * 0.2, -h * 1.06, ww * 0.06, -h * 1.02, ww * 0.26, -h * 0.86);
+        ctx.bezierCurveTo(ww * 0.52, -h * 0.6, ww * 0.8, -h * 0.28, ww, 4 * f.sc);
+        ctx.closePath();
         ctx.fill();
       } else if (o.kind === "bommie" || o.kind === "dune") {
+        // Коралловые «бомми» вдали — низкие широкие холмы, а не грибы на ножке.
+        const hh = o.kind === "bommie" ? o.h * 0.34 : o.h * 0.14;
+        const w2 = o.w * (o.kind === "bommie" ? 2.0 : 1.7);
         ctx.beginPath();
-        ctx.ellipse(0, 2, o.w * 1.6, o.kind === "bommie" ? o.h * 0.45 : o.h * 0.14, 0, Math.PI, 0);
+        ctx.moveTo(-w2, 4 * f.sc);
+        ctx.bezierCurveTo(-w2 * 0.62, -hh * 1.05, -w2 * 0.2, -hh * 1.05, w2 * 0.05, -hh * 0.72);
+        ctx.bezierCurveTo(w2 * 0.42, -hh * 0.82, w2 * 0.7, -hh * 0.5, w2, 4 * f.sc);
+        ctx.closePath();
         ctx.fill();
       } else if (o.kind === "fan") {
         ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.quadraticCurveTo(-o.w * 1.5, -o.h * 0.6, -o.w * 0.4, -o.h * 0.9);
-        ctx.quadraticCurveTo(o.w, -o.h, o.w * 1.1, -o.h * 0.5);
+        ctx.moveTo(0, 2 * f.sc);
+        ctx.bezierCurveTo(-o.w * 1.7, -o.h * 0.55, -o.w * 0.9, -o.h * 0.98, -o.w * 0.2, -o.h);
+        ctx.bezierCurveTo(o.w * 0.6, -o.h, o.w * 1.2, -o.h * 0.6, o.w * 1.15, -o.h * 0.42);
         ctx.closePath();
         ctx.fill();
       }

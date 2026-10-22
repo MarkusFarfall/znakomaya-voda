@@ -14,6 +14,7 @@ import {
 import { DEFAULT_SETTINGS, normalizeSettings } from "../src/game/settings";
 import { distantRain } from "../src/game/render/portHorizon";
 import { cloudBank } from "../src/game/render/cloudBank";
+import { cloudBaseY } from "../src/game/render/sky";
 import type { PF } from "../src/game/render/portFrame";
 import type { WeatherId } from "../src/game/types";
 
@@ -240,4 +241,22 @@ test("a cloud is one merged silhouette with a single gradient and no luminous be
     r.calls.filter((x) => x === "save").length,
     r.calls.filter((x) => x === "restore").length,
   );
+});
+
+test("cloud bases never sink to the waterline", () => {
+  // Облака не должны висеть в воде: при любой высоте облака и любом кадре
+  // его опора остаётся выше горизонта (hY ≈ 0.365·H, но проверяем диапазон).
+  for (const H of [400, 540, 720, 900, 1200]) {
+    const horizon = H * 0.365;
+    for (const layer of [0, 0.25, 0.5, 0.75, 1]) {
+      for (const jitter of [0, 0.5, 1]) {
+        const y = cloudBaseY(layer, H, horizon, jitter);
+        assert.ok(
+          y <= horizon - H * 0.02,
+          `H=${H} layer=${layer}: основание ${y.toFixed(0)} ниже горизонта ${horizon.toFixed(0)}`,
+        );
+        assert.ok(y >= H * 0.1, `H=${H}: облако не должно уезжать под кромку неба`);
+      }
+    }
+  }
 });
