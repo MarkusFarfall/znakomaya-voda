@@ -582,7 +582,13 @@ export class Engine {
     const w = this.perk("weather");
     return 1 + base * (1 - this.boat.stability * 0.6) * (w >= 3 ? 0 : w >= 2 ? 0.5 : 1);
   }
-  get forecast() { return { w: this.s.weatherQueued, inMin: Math.max(0, this.s.weatherNext - this.s.minutes) }; }
+  get forecast() {
+    // Прогноз следует физике: в мороз «дождь» выпадет снегом, а «снег» в тепле — дождём.
+    const t = this.atmosphere.state.temp;
+    const q = this.s.weatherQueued;
+    const w = q === "rain" && t < 0.5 ? "snow" : q === "snow" && t > 2 ? "rain" : q;
+    return { w, inMin: Math.max(0, this.s.weatherNext - this.s.minutes) };
+  }
 
   /** Cast coordinates share the fixed world with the boat and canonical seabed. */
   castNX(d = this.castDist) { return Math.max(.025, Math.min(.975, this.navigation.nx + this.navigation.heading * (70 + Math.max(0, Math.min(1, d)) * 230) / this.navigation.worldWidth)); }
@@ -777,7 +783,12 @@ export class Engine {
     if (s.minutes >= s.weatherNext) {
       const prev = s.weather;
       s.weather = s.weatherQueued;
+      // Осадки следуют температуре: в мороз «дождь» выпадает снегом, в тепле «снег» — дождём.
+      if (s.weather === 'rain' && this.atmosphere.state.temp < 0.5) s.weather = 'snow';
+      else if (s.weather === 'snow' && this.atmosphere.state.temp > 2) s.weather = 'rain';
       s.weatherQueued = nextWeather(s.weather, this.season, this.loc.climate, Math.random);
+      // Прогноз тоже не обещает дождь в мороз.
+      if (s.weatherQueued === 'rain' && this.atmosphere.state.temp < 0.5) s.weatherQueued = 'snow';
       s.weatherNext = s.minutes + 120 + Math.random() * 240;
       s.wind = Math.min(1, Math.max(0, WEATHER_INFO[s.weather].wave * 0.35 + (Math.random() - 0.5) * 0.3));
       const noEvent = !this.activeEvents.some((e) => e.id !== "bottle");
@@ -1678,7 +1689,13 @@ export class Engine {
     if (c === "tropic" && w === "fog") this.s.weather = "cloudy";
     if (c === "polar" && w === "rain") this.s.weather = "snow";
     if (c === "temperate" && w === "snow" && this.season !== 3) this.s.weather = "cloudy";
+    // Последним — мороз: в минус дождь всё равно выпадает снегом, и подпись должна совпадать
+    // с тем, что реально падает за бортом.
+    if (this.s.weather === "rain" && this.atmosphere.state.temp < 0.5) this.s.weather = "snow";
+    else if (this.s.weather === "snow" && this.atmosphere.state.temp > 2) this.s.weather = "rain";
     this.s.weatherQueued = nextWeather(this.s.weather, this.season, c, Math.random);
+    if (this.s.weatherQueued === "rain" && this.atmosphere.state.temp < 0.5) this.s.weatherQueued = "snow";
+    else if (this.s.weatherQueued === "snow" && this.atmosphere.state.temp > 2) this.s.weatherQueued = "rain";
   }
 
   depart(to: LocId, spotId?: string, mode: TravelMode = "motor") {

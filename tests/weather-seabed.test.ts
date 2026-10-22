@@ -78,6 +78,28 @@ test("squall precipitation is named honestly without rewriting the base gameplay
   assert.equal(a.summary().weatherName, "Пасмурно");
   assert.equal(a.state.rain, 0);
 });
+test("rain at freezing point is labelled honestly: mixed slush, not a snowstorm", () => {
+  const a = new Atmosphere({ seed: 42, climate: "temperate" });
+  a.setWeather("rain", true);
+  a.update(20);
+  assert.equal(a.summary().weatherName, "Дождь");
+  assert.equal(a.summary().weatherId, "rain");
+  // 0 °C: примерно три четверти осадков выпадает снегом — это ещё не «Снегопад»,
+  // но и не чистый дождь: HUD обязан сказать «Мокрый снег» и оставить дождевую иконку.
+  a.state.temp = 0;
+  a.update(0);
+  assert.ok(a.state.snow > 0.3 && a.state.rain > 0.05, `snow=${a.state.snow} rain=${a.state.rain}`);
+  assert.equal(a.summary().weatherName, "Мокрый снег");
+  assert.equal(a.summary().weatherId, "rain");
+  // Ниже −1 °C снег уже весь — только тогда честный снегопад, снежная иконка и id snow.
+  a.state.temp = -8;
+  a.update(0);
+  assert.equal(a.state.rain, 0);
+  assert.equal(a.summary().weatherName, "Снегопад");
+  assert.equal(a.summary().weatherId, "snow");
+  assert.equal(a.summary().icon, "🌨️");
+});
+
 test("cold squall reports snow and a dry snow-free label never carries residual flakes", () => {
   const a = new Atmosphere({ seed: 42, climate: "polar" });
   a.setWeather("overcast", true);
@@ -374,4 +396,47 @@ test("distant rain follows liquid precipitation, including squalls, never a snow
     assert.equal(c.stats().calls > 0, expected);
     c.balanced();
   }
+});
+test("freezing rain is rendered and labelled as snow, never as a snowstorm over a rain forecast", () => {
+  const e = new Engine();
+  e.s.minutes = 13 * 60;
+  e.syncAtmosphere(0);
+  // Атмосфера зимой за 58° легко уходит в минус — ставим мороз явно, не полагаясь на дату.
+  e.atmosphere.state.temp = -1.2;
+  e.s.weather = "rain";
+  e.s.weatherQueued = "rain";
+  e.syncAtmosphere(0);
+  const sm = e.atmosphere.summary();
+  assert.equal(sm.weatherName, "Снег", "в мороз «дождь» обязан называться снегом");
+  assert.equal(sm.weatherId, "snow");
+  assert.equal(sm.icon, "🌨️");
+  assert.equal(e.atmosphere.state.kind, "snow", "цель атмосферы — снег, а не дождь");
+  // Даём осадкам дойти до цели: тогда в кадре именно снежинки.
+  for (let i = 0; i < 20; i++) e.atmosphere.update(0.25);
+  assert.equal(e.atmosphere.state.rain, 0);
+  assert.ok(e.atmosphere.state.snow > 0.3);
+});
+test("snow forecast carried into warm weather falls as rain, not as summer snowflakes", () => {
+  const a = new Atmosphere({ seed: 42, climate: "temperate" });
+  a.setWeather("snow", true);
+  a.update(60);
+  a.state.temp = 12; // зимняя погода, но на улице тепло
+  a.update(0);
+  assert.equal(a.state.snow, 0);
+  assert.ok(a.state.rain > 0.3);
+  assert.equal(a.summary().weatherName, "Дождь");
+  assert.equal(a.summary().weatherId, "rain");
+  assert.equal(a.summary().icon, "🌧️");
+});
+test("blizzard keeps its own icon but reports a snow WeatherId, not a storm one", () => {
+  const a = new Atmosphere({ seed: 7, climate: "polar" });
+  a.setWeather("blizzard" as never, true);
+  a.update(30);
+  a.state.temp = -14;
+  a.update(0);
+  const sm = a.summary();
+  assert.equal(sm.weatherName, "Метель");
+  assert.equal(sm.weatherId, "snow");
+  assert.equal(sm.icon, "❄️");
+  assert.equal(a.state.rain, 0);
 });

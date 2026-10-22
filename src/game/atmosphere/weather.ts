@@ -111,6 +111,10 @@ export function kindFromWeatherId(id: WeatherId, day: number, season: Season, te
     case 'cloudy':
       return h < 0.5 ? 'cloudy' : 'overcast';
     case 'rain':
+      // Игра выбирает «дождь» по сезонной таблице, не зная температуры. В мороз дождь
+      // физически невозможен: показываем и называем его снегом, иначе HUD писал
+      // «Снегопад» поверх «далее дождь» и снежинки над подписью «Дождь».
+      if (temp < 0.5) return h < 0.8 ? 'snow' : 'blizzard';
       return h < 0.3 ? 'drizzle' : h < 0.82 ? 'rain' : 'downpour';
     case 'storm':
       if (season === 3 || temp < 0) return 'blizzard';

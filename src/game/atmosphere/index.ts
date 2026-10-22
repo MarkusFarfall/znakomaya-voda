@@ -87,6 +87,8 @@ export class Atmosphere {
   private moonOffset = 0;
   private moonOverride: number | null = null;
   private gameWeather: WeatherId | null = null;
+  /** Было ли «морозно» в прошлом синке: пересечение нуля меняет вид осадков. */
+  private frozen = false;
   private fastBlend = 0;
   private windDirTarget = 1;
   private real = 0;
@@ -236,9 +238,14 @@ export class Atmosphere {
     this.state.T = Math.floor(yp * 365) * 1440 + g.minute;
     if (g.climate) this.climate = g.climate;
     this.moonOverride = g.moonPhase ?? null;
-    if (g.weather !== this.gameWeather) {
+    // Вид осадков зависит не только от погоды, но и от температуры: «дождь» в минус
+    // выпадает снегом. Поэтому цель пересчитываем и при переходе через ноль, иначе
+    // подпись/частицы остаются дождём, пока в сейве не сменится погода.
+    const frozen = this.state.temp < 0.5;
+    if (g.weather !== this.gameWeather || frozen !== this.frozen) {
       const first = this.gameWeather === null;
       this.gameWeather = g.weather;
+      this.frozen = frozen;
       this.target = kindFromWeatherId(g.weather, g.day, g.season, this.state.temp);
       this.fastBlend = 1;
       if (first) this.cur = { ...KINDS[this.target] };
@@ -339,6 +346,9 @@ export class Atmosphere {
     s.temp += (tempTarget - s.temp) * (1 - Math.exp(-dt / 3));
     let snowFrac = smooth(2, -1, s.temp);
     if (s.kind === 'snow' || s.kind === 'blizzard') snowFrac = 1;
+    // Обратный край: «снег» в тепле (сейв с зимней погодой, смена сезона на ходу,
+    // форс из отладки) физически выпадает дождём — при +10° снежинок не бывает.
+    if (snowFrac > 0 && s.temp > 2) snowFrac = 0;
     s.snow = s.precip * snowFrac;
     s.rain = s.precip * (1 - snowFrac);
 
@@ -417,16 +427,33 @@ export class Atmosphere {
     const h = Math.floor(s.hour);
     const m = Math.floor(s.minutes % 60);
     const mi = Math.round(s.moonPhase * 8) % 8;
-    let name = info.name;
-    const isRain = s.kind === 'drizzle' || s.kind === 'rain' || s.kind === 'downpour';
-    if (isRain && s.snow > s.rain * 1.5) name = 'Снегопад';
-    else if (isRain && s.snow > s.rain * 0.4) name = 'Мокрый снег';
+    // Доля снега в осадках. Раньше «Снегопад» включался уже при снег/дождь > 1.5
+    // (≈60 % снега) — при 0 °C HUD писал «Снегопад» в обычный дождь. Пороги честные:
+    // почти весь снег — снегопад, заметная примесь — мокрый снег.
+    const snowFrac = s.precip > 0.001 ? s.snow / s.precip : 0;
+    // Снежная погода в тепле показывается дождём — как и то, что реально падает.
+    const warmSnow = (s.kind === 'snow' || s.kind === 'blizzard') && s.precip > 0.001 && snowFrac < 0.4;
+    const isRain = s.kind === 'drizzle' || s.kind === 'rain' || s.kind === 'downpour' || warmSnow;
+    const snowKind = (s.kind === 'snow' || s.kind === 'blizzard') && !warmSnow;
+    const eff = warmSnow ? KINDS.rain : info;
+    let name = warmSnow ? 'Дождь' : info.name;
+    const snowing = (isRain || snowKind) && snowFrac >= 0.9;
+    if (isRain && snowing) name = 'Снегопад';
+    else if (isRain && snowFrac >= 0.4) name = 'Мокрый снег';
     // Events may legitimately bring rain into an otherwise dry forecast.
     // Describe that weather without changing the gameplay WeatherId or save.
     const squall = (this.mods.precip ?? 0) > 0.001;
     if (squall) name = s.snow > s.rain ? 'Снежный шквал' : 'Шквал · дождь';
-    const displayId: WeatherId = squall ? (s.snow > s.rain ? 'snow' : 'storm') : isRain && s.snow > s.rain ? 'snow' : this.weatherId;
-    const icon = squall ? (s.snow > s.rain ? '❄️' : '🌧️') : displayId === 'snow' ? '🌨️' : s.daylight < 0.3 && info.nightIcon ? info.nightIcon : info.icon;
+    // Иконка и id для интерфейса следуют тому, что реально падает: снегопад — 🌨️,
+    // смешанные осадки — 🌧️, метель остаётся ❄️, но с id «snow», а не «storm».
+    const displayId: WeatherId = squall
+      ? (s.snow > s.rain ? 'snow' : 'storm')
+      : isRain ? (snowing ? 'snow' : 'rain') : snowKind ? 'snow' : this.weatherId;
+    // У снега и метели свои иконки (🌨️ и ❄️) — берём их из KINDS, а не подменяем.
+    const icon = squall
+      ? (s.snow > s.rain ? '❄️' : '🌧️')
+      : isRain ? (snowing ? '🌨️' : eff.icon)
+      : s.daylight < 0.3 && eff.nightIcon ? eff.nightIcon : eff.icon;
     const dl = s.dayLength;
     return {
       time: `${pad(h)}:${pad(m)}`,

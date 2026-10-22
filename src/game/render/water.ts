@@ -91,7 +91,9 @@ export function drawSeaBand(f: Frame, reflect: () => void) {
   // но штрихи вне кадра не рисуются — на широкой карте их большинство.
   const band = sY - hY;
   const lightC = mix(mix(f.mid, rgbHex(f.atmo.palette.glow), 0.18), "#1a2438", night * 0.8);
-  const darkC = mix(water, "#000000", 0.35);
+  // Тёмная рябь — затемнение самой воды, а не чёрные полосы: на ярких тропических
+  // водах (мангры) чистый чёрный читался как «штрихи-артефакты» над ватерлинией.
+  const darkC = mix(water, "#06121a", 0.24);
   const rows = f.quality > 0 ? 34 : 14;
   const rippleView = horizontalRange(f, 40);
   // Блики ряби — сотни мелких прямоугольников в двух оттенках. Копим их в пути
@@ -110,11 +112,14 @@ export function drawSeaBand(f: Frame, reflect: () => void) {
       const x = (((seed * 97) % W) + t * spd + Math.sin(t * 0.8 + seed) * 6) % (W + 60) - 30;
       if (x + len < rippleView.left || x > rippleView.right) continue;
       const dark = k % 3 === 0;
-      const alpha = (dark ? 0.25 : 0.18) * (0.5 + p);
+      const alpha = (dark ? 0.17 : 0.2) * (0.5 + p);
       const key = (dark ? 0 : 1) * 1000 + Math.round(alpha * 50);
       const list = buckets.get(key);
-      if (list) list.push(x, y, len, th);
-      else buckets.set(key, [x, y, len, th]);
+      // Тёмные штрихи тоньше светлых: так они читаются как бороздки ряби,
+      // а не как плоские прямоугольники на воде.
+      const thick = dark ? th * 0.55 : th;
+      if (list) list.push(x, y, len, thick);
+      else buckets.set(key, [x, y, len, thick]);
     }
   }
   for (const [key, list] of buckets) {
