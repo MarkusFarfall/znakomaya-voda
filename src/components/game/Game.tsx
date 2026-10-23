@@ -100,8 +100,10 @@ export default function Game() {
     // Отладочные хуки — только в разработке. В проде `window.__zv` позволял править сохранение из консоли
     // и отправлять его на сервер — с ним рейтинг начинался с правки localStorage.
     if (process.env.NODE_ENV !== "production") {
-      const w = window as unknown as { __zv?: Engine; __zvAudio?: typeof GameAudio; __zvSound?: () => unknown };
+      const w = window as unknown as { __zv?: Engine; __zvAudio?: typeof GameAudio; __zvSound?: () => unknown; __zvScene?: Scene };
       w.__zv = engine;
+      // Сцена целиком — чтобы замеры фона (жизнь на горизонте, чанки) шли по живому состоянию.
+      w.__zvScene = sceneRef.current;
       w.__zvAudio = GameAudio;
       // Срез состояния звука — для поддержки и автотестов.
       w.__zvSound = () => ({ ...audioRef.current.debug(), audioFails: audioFails.current, frameFails: frameFails.current, streamedRegions: sceneRef.current.streamedRegions });

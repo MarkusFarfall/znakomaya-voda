@@ -48,16 +48,51 @@ const DUR: Record<Kind, number> = {
   flyingfish: 3, manta: 3, calving: 9, balloon: 50, fireworks: 14, meteor: 1.4, heron: 12, canoe: 40, lavaburst: 10, penguins: 18, storm: 12,
 };
 
+/**
+ * Скорость прохода в «мировых» px/с — до перспективы.
+ *
+ * Раньше значения были 120–260 px/с без учёта глубины: судно у горизонта
+ * проносилось через кадр за 9 секунд, как будто проплывало всю акваторию.
+ * Теперь базовая скорость умножается на масштаб плана (`sz`), поэтому
+ * далёкий контейнеровоз почти стоит, а стая дельфинов у лодки идёт
+ * заметно быстрее. Полный проход кадра — 40 секунд у дельфинов и до трёх
+ * минут у судов (проверка: `npx tsx scripts/ambientspeed.ts`).
+ */
 const CROSSING_SPEED: Partial<Record<Kind, number>> = {
-  cargo: 120, sailboat: 140, trawler: 130, canoe: 150,
-  birds: 100, plane: 260, heron: 70, balloon: 55,
-  orca: 130, dolphins: 150,
+  cargo: 20, sailboat: 26, trawler: 21, canoe: 24,
+  birds: 30, plane: 55, heron: 24, balloon: 12,
+  orca: 45, dolphins: 60,
 };
 const CROSSING_MARGIN: Partial<Record<Kind, number>> = {
   cargo: 140, sailboat: 60, trawler: 80, canoe: 30,
   birds: 80, plane: 40, heron: 30, balloon: 30,
   orca: 40, dolphins: 45,
 };
+
+/**
+ * Глубина плана p (0 — горизонт, 1 — у лодки) для каждого вида.
+ * Одна таблица на отрисовку и на скорость: раньше каждая функция считала
+ * свою глубину, и фоновая жизнь двигалась без связи с перспективой.
+ */
+const PERSP: Partial<Record<Kind, [number, number]>> = {
+  cargo: [0.22, 0.28], sailboat: [0.15, 0.35], trawler: [0.2, 0.3], canoe: [0.35, 0.35],
+  orca: [0.35, 0.35], dolphins: [0.4, 0.4], whale: [0.25, 0.3], seals: [0.45, 0.3],
+  fishjump: [0.55, 0.4], turtle: [0.6, 0.35], flyingfish: [0.5, 0.4], manta: [0.5, 0.4],
+  penguins: [0.35, 0.3],
+};
+
+/** Глубина плана истории: 0 — горизонт, 1 — у лодки. Одна точка правды для отрисовки и скорости. */
+export function perspDepth(kind: Kind, p: number) {
+  const [base, span] = PERSP[kind] ?? [0.3, 0.3];
+  return base + p * span;
+}
+
+/** Скорость хода фоновой истории, px/с: базовая × глубина плана × масштаб сцены. */
+export function passerSpeed(kind: Kind, p: number, sc: number) {
+  const base = CROSSING_SPEED[kind];
+  if (base === undefined) return undefined;
+  return base * (0.25 + perspDepth(kind, p) * 0.9) * sc;
+}
 
 export class AmbientLife {
   private list: Happening[] = [];
@@ -77,7 +112,7 @@ export class AmbientLife {
     }
     this.timer -= dt;
     if (this.timer <= 0 && this.list.length < 3) {
-      this.timer = 9 + this.random() * 16;
+      this.timer = 14 + this.random() * 22;
       const pool = POOL[e.s.location].filter((k) => this.allowed(f, k));
       if (pool.length) {
         const kind = pool[Math.floor(this.random() * pool.length)];
@@ -88,7 +123,7 @@ export class AmbientLife {
           const width = Math.max(1, Math.min(W, f.viewWidth ?? Math.min(W, 1200)));
           const left = clamp(f.viewLeft ?? (f.boatX ?? W * 0.5) - width * 0.5, 0, Math.max(0, W - width));
           const cameraSpeed = e.navigationMode && Number.isFinite(e.navigation.velocity) ? e.navigation.velocity : 0;
-          const pathSpeed = CROSSING_SPEED[kind];
+          const pathSpeed = passerSpeed(kind, p, f.sc);
           let x0: number;
           let vx = 0;
           let dur = DUR[kind] * (0.8 + this.random() * 0.4);
@@ -149,7 +184,8 @@ export class AmbientLife {
 
   /** На воде (полоса моря) */
   drawSea(f: Frame) {
-    const sorted = [...this.list].sort((a, b) => a.p - b.p);
+    // Порядок отрисовки — по настоящей глубине плана, а не по сырому seed-p.
+    const sorted = [...this.list].sort((a, b) => this.pOf(a) - this.pOf(b));
     for (const h of sorted) {
       const k = h.t / h.dur;
       switch (h.kind) {
@@ -176,6 +212,10 @@ export class AmbientLife {
   // ─── утилиты ───
   private y(f: Frame, p: number) { return f.hY + (f.sY - f.hY) * p * p; }
   private sz(f: Frame, p: number) { return (0.25 + p * 0.9) * f.sc; }
+  /** Та же перспектива, что и у скорости хода. */
+  private pOf(h: { kind: Kind; p: number }) {
+    return perspDepth(h.kind, h.p);
+  }
   private col(f: Frame, c: string, p: number) {
     const h = mix(c, f.hor, clamp(0.6 - p * 0.55 + f.fogK * 0.3, 0, 0.9));
     return mix(h, "#03060c", f.night * 0.8);
@@ -198,7 +238,7 @@ export class AmbientLife {
   // ─── суда ───
   private cargo(f: Frame, h: Happening, k: number) {
     const { ctx } = f;
-    const p = 0.22 + h.p * 0.28;
+    const p = this.pOf(h);
     const y = this.y(f, p) + 1, s = this.sz(f, p) * 1.6;
     const x = this.x(h);
     ctx.save();
@@ -229,7 +269,7 @@ export class AmbientLife {
 
   private sailboat(f: Frame, h: Happening, k: number) {
     const { ctx, t } = f;
-    const p = 0.15 + h.p * 0.35;
+    const p = this.pOf(h);
     const y = this.y(f, p) + 1, s = this.sz(f, p);
     const x = this.x(h);
     const heel = Math.sin(t * 0.8 + h.seed) * 0.05 - h.dir * 0.08;
@@ -252,7 +292,7 @@ export class AmbientLife {
 
   private trawler(f: Frame, h: Happening, k: number) {
     const { ctx, t } = f;
-    const p = 0.2 + h.p * 0.3;
+    const p = this.pOf(h);
     const y = this.y(f, p) + 1, s = this.sz(f, p) * 1.2;
     const x = this.x(h);
     ctx.save();
@@ -279,7 +319,7 @@ export class AmbientLife {
 
   private canoe(f: Frame, h: Happening, k: number) {
     const { ctx, t } = f;
-    const p = 0.35 + h.p * 0.35;
+    const p = this.pOf(h);
     const y = this.y(f, p) + 1, s = this.sz(f, p);
     const x = this.x(h);
     const stroke = Math.sin(t * 2.4 + h.seed);
@@ -301,7 +341,7 @@ export class AmbientLife {
   // ─── животные ───
   private whale(f: Frame, h: Happening, k: number) {
     const { ctx } = f;
-    const p = 0.25 + h.p * 0.3;
+    const p = this.pOf(h);
     const y = this.y(f, p), s = this.sz(f, p) * 1.8;
     const x = h.x0;
     const col = this.col(f, "#2a3440", p);
@@ -340,7 +380,7 @@ export class AmbientLife {
 
   private orca(f: Frame, h: Happening, k: number) {
     const { ctx, t } = f;
-    const p = 0.35 + h.p * 0.35;
+    const p = this.pOf(h);
     const y = this.y(f, p), s = this.sz(f, p) * 1.3;
     const base = this.x(h);
     for (let i = 0; i < 3; i++) {
@@ -363,7 +403,7 @@ export class AmbientLife {
 
   private dolphins(f: Frame, h: Happening, k: number) {
     const { ctx } = f;
-    const p = 0.4 + h.p * 0.4;
+    const p = this.pOf(h);
     const y0 = this.y(f, p), s = this.sz(f, p);
     const base = this.x(h);
     for (let i = 0; i < 4; i++) {
@@ -386,7 +426,7 @@ export class AmbientLife {
 
   private seals(f: Frame, h: Happening, k: number) {
     const { ctx, t } = f;
-    const p = 0.45 + h.p * 0.3;
+    const p = this.pOf(h);
     const y = this.y(f, p), s = this.sz(f, p);
     const a = this.fade(k, 0.15);
     for (let i = 0; i < 3; i++) {
@@ -405,7 +445,7 @@ export class AmbientLife {
 
   private fishJump(f: Frame, h: Happening, k: number) {
     const { ctx } = f;
-    const p = 0.55 + h.p * 0.4;
+    const p = this.pOf(h);
     const y0 = this.y(f, p), s = this.sz(f, p);
     const x = h.x0 + h.dir * (k - 0.5) * 24 * s;
     const y = y0 - Math.sin(k * Math.PI) * 14 * s;
@@ -423,7 +463,7 @@ export class AmbientLife {
 
   private turtle(f: Frame, h: Happening, k: number) {
     const { ctx } = f;
-    const p = 0.6 + h.p * 0.35;
+    const p = this.pOf(h);
     const y = this.y(f, p), s = this.sz(f, p);
     const up = Math.sin(k * Math.PI);
     const x = h.x0 + h.dir * k * 30 * s;
@@ -436,7 +476,7 @@ export class AmbientLife {
 
   private flyingFish(f: Frame, h: Happening, k: number) {
     const { ctx } = f;
-    const p = 0.5 + h.p * 0.4;
+    const p = this.pOf(h);
     const y0 = this.y(f, p), s = this.sz(f, p);
     for (let i = 0; i < 5; i++) {
       const q = clamp((k - i * 0.06) / 0.7, 0, 1);
@@ -452,7 +492,7 @@ export class AmbientLife {
 
   private manta(f: Frame, h: Happening, k: number) {
     const { ctx } = f;
-    const p = 0.5 + h.p * 0.4;
+    const p = this.pOf(h);
     const y0 = this.y(f, p), s = this.sz(f, p) * 1.3;
     const x = h.x0 + h.dir * (k - 0.5) * 20 * s;
     const y = y0 - Math.sin(k * Math.PI) * 24 * s;
@@ -527,7 +567,7 @@ export class AmbientLife {
 
   private penguins(f: Frame, h: Happening, k: number) {
     const { ctx, t } = f;
-    const p = 0.35 + h.p * 0.3;
+    const p = this.pOf(h);
     const y0 = this.y(f, p), s = this.sz(f, p);
     for (let i = 0; i < 6; i++) {
       const ph = (t * 1.6 + i * 0.9 + h.seed) % (Math.PI * 2);

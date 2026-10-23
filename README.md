@@ -6,6 +6,10 @@
 **Стек:** Next.js 16 (App Router, Turbopack) · React 19 · TypeScript 5.9 · Tailwind CSS 4 ·
 Postgres через Drizzle ORM · canvas-рендер сцены и WebAudio-звук.
 
+**Для ИИ-агентов:** правила работы — [`AGENTS.md`](AGENTS.md) (язык, гейты, неизменность мира,
+доказательства, коммиты); устройство проекта — [`docs/ai-project.md`](docs/ai-project.md)
+(доменная модель, кадр и координаты, фоновая жизнь, события, инварианты).
+
 **Играть:** https://znakomaya-voda.vercel.app — прод собирается автоматически из ветки `main`
 (проект Vercel `water-import`, корень репозитория `znakomaya-voda`).
 
@@ -151,6 +155,9 @@ npx tsx scripts/render-auth-scene.tsx   # соберёт автономный au
 ```bash
 npm test                                                # движок, экономика, друзья, санитайзер сейва и схема
 npm run prices                                          # экономика улова
+npx tsx scripts/ambientspeed.ts                         # темп фоновой жизни: секунды на проход кадра
+npx tsx scripts/fxspeed.ts                              # темп эффектов событий
+npx tsx scripts/worldsignature.ts                       # подпись мира — не должна меняться от правок рендера
 BASE_URL=http://localhost:3000 bash scripts/smoke.sh   # 26 сквозных проверок по HTTP (нужна БД)
 ```
 
