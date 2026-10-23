@@ -289,7 +289,8 @@ test("a near-seam cast samples the neighboring habitat and the same world depth"
 });
 
 test("cast and sonar HUD sample actual boat/cast positions, including left-facing seam casts", async () => {
-  const { drawPower, drawSonar } = await import("../src/game/render/hud");
+  const { drawPower } = await import("../src/game/render/hud");
+  const { drawSonar } = await import("../src/game/render/sonar");
   const ctx = new Proxy(
     {},
     {

@@ -14,7 +14,8 @@ import { BAIT_BY_ID, BOATS } from "../world";
 import { BOAT_SPECS, drawBoat, drawFleetBoat } from "./boat";
 import { Boat3D } from "./boats3d/boat3d";
 import { hasActiveEvent, horizontalRange, type Frame } from "./frame";
-import { drawBobberPointer, drawFightPanel, drawPower, drawRuler, drawSonar } from "./hud";
+import { drawBobberPointer, drawFightPanel, drawPower, drawRuler } from "./hud";
+import { drawSonar } from "./sonar";
 import { LandRenderer } from "./land";
 import { AmbientLife } from "./ambient";
 import { SeabedRenderer } from "./seabed";
@@ -429,7 +430,7 @@ export class Scene {
     this.sonarT -= dt;
     if (this.sonarT <= 0) {
       this.sonarT = 0.6;
-      this.sonar = e.s.sonar > 0 ? e.sonarScan() : [];
+      this.sonar = e.sonarActive && e.s.sonarMode !== "bottom" ? e.sonarScan() : [];
     }
     drawSonar(screen, this.sonar);
     drawPower(screen);

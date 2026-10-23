@@ -1,4 +1,6 @@
 import { LocalNavigation, normalizeLocalPosition } from "./navigation";
+import { depthToU, uToDepth } from "./depth";
+import { nextSonarMode, normalizeSonarEnabled, normalizeSonarLevel, normalizeSonarMode, scanSonarBands, sonarIsActive, SONAR_MODE_LABEL, type SonarBand, type SonarMode } from "./sonar";
 import { normalizeWaterPosition, regionAt, regionDestination, waterWidth, waterBedAt, waterSwell } from "./aquatory";
 import { currentAt } from "./waterPhysics";
 import { FISH, FISH_BY_ID, RARITY_INFO, VARIANT_INFO } from "./fish";
@@ -104,13 +106,7 @@ export interface CatchResult {
   perfect: boolean;
 }
 
-export interface SonarBand {
-  depth: number;
-  count: number;
-  fresh: number;
-  best: Rarity | null;
-  legend: boolean;
-}
+export type { SonarBand } from "./sonar";
 
 export const JUMP_TIME = 1.25;
 const JUMPERS = new Set([
@@ -140,6 +136,8 @@ export function newSave(name = "Рыбак"): SaveData {
     daily: newDaily(),
     lastRest: -99999,
     sonar: 0,
+    sonarEnabled: true,
+    sonarMode: "full",
     rod: 0,
     reel: 0,
     line: 0,
@@ -233,7 +231,11 @@ export function migrateSave(raw: unknown): SaveData | null {
   s.flags = Array.isArray(s.flags) ? s.flags : [];
   s.hints = Array.isArray(s.hints) ? s.hints : [];
   s.milestones = Array.isArray(s.milestones) ? s.milestones : [];
-  s.sonar = 0; // эхолот отключён полностью
+  // Класс, питание и режим прибора сохраняются независимо. У старых сохранений
+  // полей питания/режима нет: купленный эхолот включаем в общем режиме.
+  s.sonar = normalizeSonarLevel(s.sonar);
+  s.sonarEnabled = normalizeSonarEnabled(r.sonarEnabled, true);
+  s.sonarMode = normalizeSonarMode(r.sonarMode);
   // флот: миграция со старой линейки из пяти судов
   const ver = typeof r.version === "number" ? r.version : 1;
   if (ver < 3) {
@@ -281,8 +283,7 @@ export function migrateSave(raw: unknown): SaveData | null {
   return s;
 }
 
-export const depthToU = (d: number) => Math.log(1 + d / 8);
-export const uToDepth = (u: number) => (Math.exp(u) - 1) * 8;
+export { depthToU, uToDepth } from "./depth";
 const rid = () => Math.random().toString(36).slice(2, 10);
 const ri = (n: number) => Math.floor(Math.random() * n);
 
@@ -540,6 +541,34 @@ export class Engine {
   get reel() { return REELS[this.s.reel]; }
   get line() { return LINES[this.s.line]; }
   get sonar() { return SONARS[this.s.sonar]; }
+  /** Работает только купленный и включённый прибор; в порту сканирование не идёт. */
+  get sonarActive() { return !this.s.atPort && sonarIsActive(this.s.sonar, this.s.sonarEnabled); }
+  setSonarEnabled(on: boolean) {
+    if (this.s.sonar <= 0) {
+      this.toast("Сначала купите эхолот в порту", "info");
+      return false;
+    }
+    const enabled = normalizeSonarEnabled(on, false);
+    if (this.s.sonarEnabled === enabled) return true;
+    this.s.sonarEnabled = enabled;
+    this.markDirty();
+    this.toast(enabled ? "Эхолот включён" : "Эхолот выключен", "info", enabled ? `${SONAR_MODE_LABEL[this.s.sonarMode]} · B — питание` : "Прибор и режим сохранены");
+    return true;
+  }
+  toggleSonar() { return this.setSonarEnabled(!this.s.sonarEnabled); }
+  setSonarMode(mode: SonarMode) {
+    if (this.s.sonar <= 0) {
+      this.toast("Сначала купите эхолот в порту", "info");
+      return false;
+    }
+    const normalized = normalizeSonarMode(mode);
+    if (this.s.sonarMode === normalized) return true;
+    this.s.sonarMode = normalized;
+    this.markDirty();
+    this.toast(`Эхолот: ${SONAR_MODE_LABEL[normalized].toLowerCase()}`, "info", "Shift+B — следующий режим");
+    return true;
+  }
+  cycleSonarMode() { return this.setSonarMode(nextSonarMode(this.s.sonarMode)); }
   get maxDepth() { return Math.min(this.loc.maxDepth, this.line.value); }
   get timeOfDay(): "night" | "twilight" | "day" {
     // Игровые окна для рыбы и событий остаются прежними; атмосферные сумерки
@@ -992,23 +1021,13 @@ export class Engine {
   }
 
   sonarScan(bands = 18): SonarBand[] {
-    const out: SonarBand[] = [];
-    const maxU = depthToU(this.loc.maxDepth);
-    const order: Rarity[] = ["common", "uncommon", "rare", "epic", "legendary"];
-    for (let i = 0; i < bands; i++) {
-      const d = uToDepth((maxU * (i + 0.5)) / bands);
-      const c = this.candidates(d);
-      let best: Rarity | null = null;
-      let fresh = 0;
-      let legend = false;
-      for (const x of c) {
-        if (!this.s.codex[x.fish.id]) fresh++;
-        if (x.fish.rarity === "legendary") legend = true;
-        else if (!best || order.indexOf(x.fish.rarity) > order.indexOf(best)) best = x.fish.rarity;
-      }
-      out.push({ depth: d, count: c.length, fresh, best, legend });
-    }
-    return out;
+    return scanSonarBands(this.loc.maxDepth, bands, (depth) =>
+      this.candidates(depth).map(({ fish }) => ({
+        id: fish.id,
+        rarity: fish.rarity,
+        known: !!this.s.codex[fish.id],
+      })),
+    );
   }
 
   private tryBite() {
@@ -2150,6 +2169,11 @@ export class Engine {
     this.dailyEvent({ k: "buy", amount: this.gearPrice(kind) });
     this.s.money -= this.gearPrice(kind);
     this.s[kind]++;
+    if (kind === "sonar") {
+      // Новый прибор сразу готов к работе; дальше питание управляет игрок.
+      this.s.sonarEnabled = true;
+      this.s.sonarMode = "full";
+    }
     this.sfx.push("buy");
     this.checkProgress();
     this.markDirty();

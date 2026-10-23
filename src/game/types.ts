@@ -256,6 +256,10 @@ export interface SaveData {
   /** проданное сегодня по видам и портам — насыщение рынка */
   market: { day: number; sold: Record<string, number>; byPort?: Partial<Record<PortId, Record<string, number>>> };
   sonar: number;
+  /** Питание прибора сохраняется отдельно от его класса. */
+  sonarEnabled: boolean;
+  /** Обзор, только рыба или только рельеф дна. */
+  sonarMode: import("./sonar").SonarMode;
   orders: Order[];
   /** Обновления заказов: остаток отказов на текущий день. */
   orderDeclines?: { day: number; left: number };

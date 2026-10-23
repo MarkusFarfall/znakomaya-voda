@@ -1,5 +1,6 @@
 import { normalizeWaterPosition, regionAt, waterWidth } from "@/game/aquatory";
 import { normalizeLocalPosition } from "@/game/navigation";
+import { normalizeSonarEnabled, normalizeSonarLevel, normalizeSonarMode } from "@/game/sonar";
 import { FISH_BY_ID } from "@/game/fish";
 import { EventDirector } from "@/game/events";
 import type { DirectorSave } from "@/game/events/types";
@@ -157,7 +158,21 @@ export function sanitizeSave(data: Record<string, unknown>, options: SanitizeOpt
     out.finds = finds;
   }
   put("ordersDone", 99_999);
-  if (out.sonar !== undefined) put("sonar", 0); // эхолот отключён
+  if (out.sonar !== undefined) {
+    const level = normalizeSonarLevel(out.sonar);
+    if (level !== out.sonar) clamped.push("sonar");
+    out.sonar = level;
+  }
+  if (out.sonarEnabled !== undefined) {
+    const enabled = normalizeSonarEnabled(out.sonarEnabled, true);
+    if (enabled !== out.sonarEnabled) clamped.push("sonarEnabled");
+    out.sonarEnabled = enabled;
+  }
+  if (out.sonarMode !== undefined) {
+    const mode = normalizeSonarMode(out.sonarMode);
+    if (mode !== out.sonarMode) clamped.push("sonarMode");
+    out.sonarMode = mode;
+  }
 
   // ── кодекс: только существующие виды, вес не выше максимума вида ──
   const codexRaw = data.codex && typeof data.codex === "object" && !Array.isArray(data.codex) ? (data.codex as Record<string, unknown>) : {};

@@ -1,8 +1,7 @@
-import { depthToU, type SonarBand } from "../engine";
 import { RARITY_INFO } from "../fish";
 import { FIGHT_PANEL_HEIGHT, SURGE_WARNING_TIME } from "../fishing";
 import type { Frame } from "./frame";
-import { clamp, FONTS, hash1, roundRect } from "./util";
+import { clamp, FONTS, roundRect } from "./util";
 
 const INK = "#e6e1d6";
 const MUTED = "rgba(230,225,214,0.55)";
@@ -224,107 +223,6 @@ export function drawFightPanel(f: Frame) {
       ctx.lineTo(ox - dir * 3, y0 + (slim ? 59 : 79));
       ctx.stroke();
     }
-  }
-  ctx.restore();
-}
-
-export function drawSonar(f: Frame, bands: SonarBand[]) {
-  const { ctx, W, H, e, t } = f;
-  const lvl = e.s.sonar;
-  if (lvl <= 0 || !bands.length) return;
-  if (f.compact && (e.phase === "fight" || e.phase === "charging")) return;
-  const w = f.compact ? 140 : 190, h = f.compact ? Math.min(150, H * 0.32) : Math.min(220, H * 0.3);
-  const x0 = W - w - (f.compact ? 60 : 64), y0 = H - h - f.botRes - (f.compact ? 8 : -32);
-  if (y0 < f.topRes) return;
-  ctx.save();
-  panel(ctx, x0, y0, w, h);
-  label(ctx, "Эхолот", x0 + 12, y0 + 17);
-  label(ctx, ["", "I", "II", "III"][lvl], x0 + w - 12, y0 + 17, "right", BRASS);
-  const px0 = x0 + 10, py0 = y0 + 26, pw = w - 44, pht = h - 36;
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(px0, py0, pw, pht);
-  ctx.clip();
-  ctx.fillStyle = "#03070c";
-  ctx.fillRect(px0, py0, pw, pht);
-  const maxU = depthToU(f.loc.maxDepth);
-  const near=e.navigation.nx,far=e.castNX(1),left=Math.min(near,far),span=Math.max(.0001,Math.abs(far-near));
-  const dy = (d: number) => py0 + (depthToU(d) / maxU) * pht * 0.96;
-  ctx.strokeStyle = "rgba(143,179,200,0.07)";
-  ctx.lineWidth = 1;
-  for (let i = 1; i < 6; i++) {
-    ctx.beginPath();
-    ctx.moveTo(px0, py0 + (i / 6) * pht);
-    ctx.lineTo(px0 + pw, py0 + (i / 6) * pht);
-    ctx.stroke();
-  }
-  const scroll = t * 12;
-  bands.forEach((b, i) => {
-    if (!b.count) return;
-    const y = dy(b.depth);
-    const n = Math.min(5, b.count);
-    for (let k = 0; k < n; k++) {
-      const hx = ((hash1(i * 17 + k * 3.1) * pw * 2 - scroll * (0.6 + hash1(k + i) * 0.6)) % pw + pw) % pw;
-      const fresh = lvl >= 2 && k < b.fresh;
-      ctx.strokeStyle = fresh ? BRASS : lvl >= 2 && b.best ? RARITY_INFO[b.best].color : "rgba(180,210,225,0.8)";
-      ctx.lineWidth = fresh ? 1.8 : 1.3;
-      ctx.beginPath();
-      ctx.arc(px0 + hx, y + 3, 3.6, Math.PI * 1.15, Math.PI * 1.85);
-      ctx.stroke();
-    }
-    if (lvl >= 3 && b.legend) {
-      ctx.strokeStyle = `rgba(215,180,110,${0.55 + Math.sin(t * 4) * 0.35})`;
-      ctx.lineWidth = 2.2;
-      ctx.beginPath();
-      ctx.arc(px0 + pw * 0.7, y + 6, 8, Math.PI * 1.1, Math.PI * 1.9);
-      ctx.stroke();
-    }
-  });
-  ctx.beginPath();
-  ctx.moveTo(px0, py0 + pht);
-  for (let i = 0; i <= 40; i++) ctx.lineTo(px0 + (i / 40) * pw, dy(e.bedAt(left+(i/40)*span)));
-  ctx.lineTo(px0 + pw, py0 + pht);
-  ctx.closePath();
-  const g = ctx.createLinearGradient(0, py0, 0, py0 + pht);
-  g.addColorStop(0, "rgba(200,164,106,0.75)");
-  g.addColorStop(1, "rgba(90,60,30,0.85)");
-  ctx.fillStyle = g;
-  ctx.fill();
-  if (e.line.value < f.loc.maxDepth) {
-    const ly = dy(e.line.value);
-    ctx.setLineDash([2, 3]);
-    ctx.strokeStyle = "rgba(201,115,92,0.8)";
-    ctx.beginPath();
-    ctx.moveTo(px0, ly);
-    ctx.lineTo(px0 + pw, ly);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-  const ty = dy(Math.min(e.s.targetDepth, e.maxDepth));
-  ctx.strokeStyle = "rgba(230,225,214,0.45)";
-  ctx.beginPath();
-  ctx.moveTo(px0, ty);
-  ctx.lineTo(px0 + pw, ty);
-  ctx.stroke();
-  const nx2px = (nx: number) => px0 + ((nx-left)/span) * pw;
-  ctx.fillStyle = "rgba(230,225,214,0.04)";
-  ctx.fillRect(nx2px(e.castNX(0.15)), py0, nx2px(e.castNX(1)) - nx2px(e.castNX(0.15)), pht);
-  if (["sinking", "waiting", "bite", "fight"].includes(e.phase)) {
-    ctx.fillStyle = "#f4eee0";
-    ctx.beginPath();
-    ctx.arc(nx2px(e.castNX()), dy(e.hookDepth), 2.5, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  const sx = px0 + ((t * 40) % pw);
-  ctx.fillStyle = "rgba(143,179,200,0.06)";
-  ctx.fillRect(sx - 12, py0, 12, pht);
-  ctx.restore();
-  ctx.font = `500 9px ${FONTS.sans}`;
-  ctx.fillStyle = DIM;
-  ctx.textAlign = "left";
-  for (const d of [0, f.loc.maxDepth * 0.1, f.loc.maxDepth * 0.4, f.loc.maxDepth]) {
-    const y = d === 0 ? py0 + 7 : dy(d);
-    ctx.fillText(`${Math.round(d)}`, px0 + pw + 4, Math.min(py0 + pht, y + 3));
   }
   ctx.restore();
 }

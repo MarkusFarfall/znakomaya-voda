@@ -26,6 +26,7 @@ import { ensureSprite } from "@/game/render/boats/sprites";
 import type { FriendsState } from "./friendsHook";
 import { useFriends } from "./friendsHook";
 import { MobileFishing } from "./MobileFishing";
+import { SonarControls } from "./SonarControls";
 import { LocalNavigationPanel } from "./LocalNavigation";
 import { PortHub } from "./PortHub";
 
@@ -693,6 +694,7 @@ export default function Game() {
       else if (ev.code === "KeyJ") openPanel("journal");
       else if (ev.code === "KeyF") openPanel("friends");
       else if (ev.code === "KeyP" && !panel) openPort();
+      else if (ev.code === "KeyB" && !panel && !ev.repeat) { if (ev.shiftKey) engine.cycleSonarMode(); else engine.toggleSonar(); }
       else if (ev.code === "KeyV" && !panel) cycleCam();
       else if (ev.code === "KeyM") setSettings({ ...settings, sound: !settings.sound });
       else if (ev.code === "Escape") { if (authOpen) setAuthOpen(null); else if (tripReq) setTripReq(null); else if (panel) closePanel(); else if (engine.navigationMode) { if (engine.navigation.moving) engine.stopNavigation(); else engine.setNavigationMode(false); } setLetter(null); }
@@ -987,6 +989,7 @@ export default function Game() {
               <button className="iconbtn" onClick={() => openPanel("friends")} title="Друзья [F]"><Icon name="friends" size={16} />{friends.pending > 0 && <span className="dot" />}</button>
               <button className="iconbtn" onClick={openPort} title={`В порт ${PORT_BY_ID[engine.nearestPort()].name} [P]`}><Icon name="anchor" size={16} /><span className="normal-case tracking-normal">{PORT_BY_ID[engine.nearestPort()].name}</span></button>
             </div>
+            <SonarControls engine={engine} />
           </div>
 
             </>
@@ -1023,6 +1026,7 @@ export default function Game() {
                       title="Просмотреть улов и отпустить выбранную рыбу"
                     ><Icon name="basket" size={12} />{s.cooler.length}/{engine.coolerCap}</button>
                   </div>
+                  <SonarControls engine={engine} compact />
                 </div>
               </div>
               {info && (
@@ -1157,7 +1161,7 @@ export default function Game() {
                 />
                 <span className="num w-14 text-right text-[16px] text-[#f1ebdd]">{Math.min(s.targetDepth, maxD)}<span className="ml-0.5 text-[11px] dim">м</span></span>
                 <span className="hidden w-[190px] shrink-0 text-[11px] leading-tight dim lg:block">
-                  {cands.length === 0 ? <span className="text-[var(--color-bad)]">На этой глубине сейчас пусто</span> : s.sonar === 0 ? "Рыба здесь есть" : <>Видов на горизонте: <span className="num text-[#ece6d8]">{cands.length}</span>{s.sonar >= 2 && newCands > 0 && <span className="text-[var(--brass)]"> · новых {newCands}</span>}</>}
+                  {cands.length === 0 ? <span className="text-[var(--color-bad)]">На этой глубине сейчас пусто</span> : !engine.sonarActive ? "Рыба здесь есть" : <>Видов на горизонте: <span className="num text-[#ece6d8]">{cands.length}</span>{engine.sonarActive && s.sonar >= 2 && newCands > 0 && <span className="text-[var(--brass)]"> · новых {newCands}</span>}</>}
                   {engine.maxDepth < engine.spot.maxDepth && <><br /><span className="text-[var(--color-bad)]/80">Леска до {engine.line.value} м</span></>}
                 </span>
               </div>
@@ -1221,7 +1225,7 @@ export default function Game() {
                 <div className="glass px-3 pb-2 pt-2.5">
                   <div className="flex items-baseline justify-between gap-3">
                     <span className={`truncate text-[13px] ${engine.phase === "bite" ? "pulse-soft font-semibold uppercase tracking-[0.12em] text-[var(--brass-2,#e3c996)]" : "text-[#f1ebdd]"}`}>{stTitle}</span>
-                    <span className="truncate text-[10px] dim">{cands.length === 0 ? "здесь сейчас пусто" : s.sonar >= 1 ? `видов: ${cands.length}` : ""}</span>
+                    <span className="truncate text-[10px] dim">{cands.length === 0 ? "здесь сейчас пусто" : engine.sonarActive ? `видов: ${cands.length}` : ""}</span>
                   </div>
                   <div className="mt-2 flex items-center gap-3">
                     <span className="label shrink-0">Глубина</span>
