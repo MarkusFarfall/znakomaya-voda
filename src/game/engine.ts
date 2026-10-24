@@ -714,10 +714,11 @@ export class Engine {
     this.dirty = true;
   }
 
-  // ─────────── main loop ───────────
-  update(dt: number) {
+  // dt — шаг симуляции; presentationDt — фактическое время показа переходов.
+  update(dt: number, presentationDt = dt) {
     this.time += dt;
-    this.fade = Math.max(0, this.fade - dt * 0.8);
+    const visualDt = Number.isFinite(presentationDt) ? Math.max(0, presentationDt) : dt;
+    this.fade = Math.max(0, this.fade - visualDt * 0.8);
     this.lightning = Math.max(0, this.lightning - dt * 2.5);
     this.splash = Math.max(0, this.splash - dt * 1.5);
     this.shake = Math.max(0, this.shake - dt * 2);

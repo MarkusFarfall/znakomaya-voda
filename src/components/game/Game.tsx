@@ -14,7 +14,7 @@ import { AuthScreen } from "./AuthScreen";
 import { MILESTONES } from "@/game/world";
 import { CAM_MODES, Scene, type CamMode } from "@/game/render/scene";
 import { PortScene, type Building } from "@/game/render/port";
-import { installCanvasGuards, setFonts } from "@/game/render/util";
+import { frameDeltaSeconds, installCanvasGuards, setFonts } from "@/game/render/util";
 import type { BaitId, SaveData } from "@/game/types";
 import { BAITS, PORT_BY_ID, SEASONS, WEATHER_INFO, spotsOf } from "@/game/world";
 import { BaitIcon, Icon, MoonIcon } from "./Icons";
@@ -94,6 +94,8 @@ export default function Game() {
   /** Сбои звука и рендера: кадр обязан выжить, иначе игра замирает навсегда. */
   const audioFails = useRef(0);
   const frameFails = useRef(0);
+  const [sceneReady, setSceneReady] = useState(false);
+  const sceneReadyRef = useRef(false);
 
   const engine = engine0;
   const audio = audio0;
@@ -535,7 +537,8 @@ export default function Game() {
     window.addEventListener("resize", resize);
     loop = (now: number) => {
       raf = null;
-      const dt = Math.min(0.05, (now - last) / 1000);
+      const elapsed = frameDeltaSeconds(now, last, Number.POSITIVE_INFINITY);
+      const dt = Math.min(0.05, elapsed);
       last = now;
       const e = engineRef.current;
       const a = audioRef.current;
@@ -589,9 +592,13 @@ export default function Game() {
         // Исключение в кадре раньше обрывало requestAnimationFrame навсегда:
         // игра замирала, а звук пропадал до перезагрузки страницы.
         try {
-          e.update(dt);
+          e.update(dt, elapsed);
           if (e.s.atPort) portSceneRef.current.render(ctx, e, W, H, dt);
           else scene.render(ctx, e, W, H, dt);
+          if (!sceneReadyRef.current) {
+            sceneReadyRef.current = true;
+            setSceneReady(true);
+          }
           frameFails.current = 0;
         } catch (err) {
           if (++frameFails.current <= 3) console.warn("[render] кадр пропущен", err);
@@ -721,6 +728,8 @@ export default function Game() {
     if (startGuard.current) return;
     startGuard.current = true;
     setStarting(true);
+    sceneReadyRef.current = false;
+    setSceneReady(false);
     try {
       // Keep the first game frame gesture-unlocked, then prepare only the boat the player will see.
       unlockAudio();
@@ -808,6 +817,8 @@ export default function Game() {
       {safeStart && boot.state === "title" && !playing && <a href="/recover.html" className="absolute bottom-3 left-0 right-0 z-[80] text-center text-xs text-[#bfa777]">Безопасный запуск · восстановление</a>}
       <canvas
         ref={canvasRef}
+        aria-busy={playing && !sceneReady}
+        data-scene-ready={sceneReady ? "true" : "pending"}
         className={`absolute inset-0 h-full w-full touch-none ${engine.navigationMode ? "cursor-crosshair" : ""}`}
         onPointerDown={(e) => {
           if (e.button === 0 && playing && !engine.paused && !panel && !letter && !engine.lastCatch && !engine.lastFind && !engine.s.atPort) {
@@ -840,6 +851,14 @@ export default function Game() {
         onPointerLeave={(e) => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) (!buttonFishing&&!engine.navigationMode)&&engine.cancelInput(); }}
         onContextMenu={(e) => e.preventDefault()}
       />
+      {playing && !sceneReady && !startupError && (
+        <div data-scene-pending role="status" aria-live="polite" className="pointer-events-none absolute left-1/2 top-1/2 z-[65] -translate-x-1/2 -translate-y-1/2">
+          <div className="glass flex items-center gap-3 px-4 py-3 text-[12px] text-[#e6e1d6] shadow-2xl">
+            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[var(--brass)]" aria-hidden="true" />
+            <span>Подготавливаем море…</span>
+          </div>
+        </div>
+      )}
 
       {/* ───────── ТИТУЛ ───────── */}
       {!playing && boot.state !== "auth" && (

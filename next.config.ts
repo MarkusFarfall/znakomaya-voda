@@ -32,8 +32,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  // Arena/Vercel preview proxies use a generated subdomain; allow it in dev for HMR and route requests.
-  allowedDevOrigins: ["*.e2b.app"],
+  // Preview-прокси и оба обычных адреса локального стенда; только для dev/HMR.
+  allowedDevOrigins: ["*.e2b.app", "127.0.0.1", "localhost"],
   // Круглый значок Next.js в левом нижнем углу перекрывал кнопки HUD и попадал
   // во все скриншоты интерфейса. В продакшене его нет — убираем и в dev.
   devIndicators: false,
