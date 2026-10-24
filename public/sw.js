@@ -1,11 +1,11 @@
 /* Only immutable game assets and navigation pages. Never player data. */
-const CACHE = "zv-assets-v2";
+const CACHE = "zv-assets-v3";
 const OFFLINE = "/offline";
 const PRECACHE = [
   "/", OFFLINE, "/recover.html", "/manifest.webmanifest", "/icon.svg", "/icon-192.png", "/icon-512.png", "/apple-icon.png",
-  // Keep every hull available offline; processing into transparent sprite canvases remains on demand.
-  "/boats/row.jpg", "/boats/kayak.jpg", "/boats/dinghy.jpg", "/boats/barkas.jpg", "/boats/cutter.jpg",
-  "/boats/yacht.jpg", "/boats/seiner.jpg", "/boats/trawler.jpg", "/boats/research.jpg",
+  // Прозрачные корпуса доступны офлайн сразу, без обработки исходного JPG.
+  "/boats/row.webp", "/boats/kayak.webp", "/boats/dinghy.webp", "/boats/barkas.webp", "/boats/cutter.webp",
+  "/boats/yacht.webp", "/boats/seiner.webp", "/boats/trawler.webp", "/boats/research.webp",
 ];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => Promise.all(PRECACHE.map(url => cache.add(url).catch(() => {})))).then(() => self.skipWaiting()));

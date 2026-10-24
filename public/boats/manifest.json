@@ -1,0 +1,87 @@
+{
+  "algorithm": "magenta-key-v1-master-1024",
+  "boats": {
+    "barkas": {
+      "bytes": 307292,
+      "file": "/boats/barkas.webp",
+      "height": 455,
+      "sha256": "de42ed72b8f0ddcd5b3bbddaeea7bb510d73e9b29ba8c4dfe2712c69dc3889b4",
+      "source": "assets/boats/barkas.jpg",
+      "sourceSha256": "c13929cab8bcc76a7289bd20504ab0592f6d3cb49937c2cb35a6a3fa3846d21a",
+      "width": 1024
+    },
+    "cutter": {
+      "bytes": 354426,
+      "file": "/boats/cutter.webp",
+      "height": 484,
+      "sha256": "637faee27e142ed8c076daec7a0ab2d7212763a1fa2f154d0d1df33bc513d813",
+      "source": "assets/boats/cutter.jpg",
+      "sourceSha256": "864012421044ad976048ad44d7d85f5114bfb36a32b76f2949d428638764df5b",
+      "width": 1024
+    },
+    "dinghy": {
+      "bytes": 167552,
+      "file": "/boats/dinghy.webp",
+      "height": 336,
+      "sha256": "c71182453d581933e66f9d2d44266374813bfc973416cc2eb743c2a5d9741f67",
+      "source": "assets/boats/dinghy.jpg",
+      "sourceSha256": "50aa87d7ba265d48009a10b586b5b7ebad71be237800b9a2611588fd5d303e00",
+      "width": 1024
+    },
+    "kayak": {
+      "bytes": 98730,
+      "file": "/boats/kayak.webp",
+      "height": 93,
+      "sha256": "1c8c1682eeb0265a4d73f0f3bd1497db67c53e6f4efe7405a06988e000781658",
+      "source": "assets/boats/kayak.jpg",
+      "sourceSha256": "1a94e9e19e18465a5ab5d992a20fda115f13025b3567b16e4b065d758f51719a",
+      "width": 1024
+    },
+    "research": {
+      "bytes": 297194,
+      "file": "/boats/research.webp",
+      "height": 421,
+      "sha256": "e2dc1d4f845917d1a258e55348957cbd58d147d84f731e90ec3874fa2634e79c",
+      "source": "assets/boats/research.jpg",
+      "sourceSha256": "6423044ac00f2c00627a729239132b08b343950d10eac4fd9c8050d4dd3b3c35",
+      "width": 1024
+    },
+    "row": {
+      "bytes": 240748,
+      "file": "/boats/row.webp",
+      "height": 263,
+      "sha256": "af99bb998c7658547bcf112b138494c7b333c2c2248b4c4dd618ade80061662d",
+      "source": "assets/boats/row.jpg",
+      "sourceSha256": "85c2ad3ee898d9a9724a033b2edd7582993de5337aea44ca6a401efb28c8f0a9",
+      "width": 1024
+    },
+    "seiner": {
+      "bytes": 433332,
+      "file": "/boats/seiner.webp",
+      "height": 432,
+      "sha256": "f326cbac0fd1ebb9094e4bbb6705f8e1ce28ed73df68c9660485f3caf462d08b",
+      "source": "assets/boats/seiner.jpg",
+      "sourceSha256": "80022b0e3ca703dbcaf56bc092d4fd2856305746ede81878d9a179e82becde19",
+      "width": 1024
+    },
+    "trawler": {
+      "bytes": 383800,
+      "file": "/boats/trawler.webp",
+      "height": 423,
+      "sha256": "5d422eb181c8bf87a3c7bbc08ae9aaaf093226d60b538110c55a2b95dd5cd5f1",
+      "source": "assets/boats/trawler.jpg",
+      "sourceSha256": "c351a07d73dfaf143d1ef50ace4f82f2374b1a67d570ce5f5267a5d79cda120d",
+      "width": 1024
+    },
+    "yacht": {
+      "bytes": 279100,
+      "file": "/boats/yacht.webp",
+      "height": 1024,
+      "sha256": "76963db07c0e9faf7974ebf0ce40e39d6e7157cef6ea216d9fa6648ce2d759cb",
+      "source": "assets/boats/yacht.jpg",
+      "sourceSha256": "4cf982ea36306fbb44a8ca00ea3cbb39f3ebbbba8026762eecd33b93db79460d",
+      "width": 716
+    }
+  },
+  "version": 1
+}

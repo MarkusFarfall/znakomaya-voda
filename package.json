@@ -9,6 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "prices": "tsx scripts/check-prices.ts",
+    "boats": "python3 scripts/prepare-boats.py",
+    "boats:check": "python3 scripts/prepare-boats.py --check",
     "db:migrate": "node scripts/db-migrate.mjs"
   },
   "dependencies": {

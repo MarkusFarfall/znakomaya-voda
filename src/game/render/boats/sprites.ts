@@ -1,9 +1,10 @@
 /**
  * Рисунки судов.
  *
- * 1) Загрузка. Если у картинки уже есть прозрачность (PNG) — берём как есть. Если фон пурпурный (#FF00FF) —
- *    вырезаем его с очисткой краёв: цвет краевого пикселя освобождается от примеси фона и от пурпурного ореола.
- * 2) Масштаб. Рисунок ~1500 px, на экране судно 200–400 px. Прямое сжатие в 4–7 раз даёт «лесенку» и мерцание,
+ * 1) Загрузка. Production WebP уже прозрачный: просто копируем bitmap, без
+ *    getImageData и попиксельной работы. Старый JPG/PNG с пурпурным фоном
+ *    обрабатывается только как резервный путь совместимости.
+ * 2) Масштаб. Рисунок ~1024 px, на экране судно 200–400 px. Прямое сжатие даёт «лесенку» и мерцание,
  *    поэтому для каждого судна строится цепочка копий (в 2, 4, 8… раз меньше), и рисуется та, что не меньше
  *    экранного размера: итоговое сжатие всегда меньше чем в 2 раза.
  * 3) Подкраска (ночь, закат, подводная часть) делается на том же уровне цепочки и кэшируется.
@@ -23,6 +24,15 @@ const sprites = new Map<BoatStyle, Sprite>();
 const loading = new Map<BoatStyle, Promise<Sprite | null>>();
 const failed = new Set<BoatStyle>();
 const tints = new Map<string, HTMLCanvasElement>();
+
+/** Production-спрайт: альфа и обрезка уже сделаны заранее, пиксели не читаем. */
+function fromProcessedImage(img: HTMLImageElement): Sprite {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const out = makeCanvas(w, h);
+  ctx2d(out).drawImage(img, 0, 0);
+  return { mips: [out], w, h };
+}
 
 function process(img: HTMLImageElement): Sprite {
   const w = img.naturalWidth;
@@ -118,7 +128,7 @@ function load(style: BoatStyle): Promise<Sprite | null> {
     };
     img.onload = () => {
       try {
-        const sprite = process(img);
+        const sprite = BOAT_IMAGES[style].endsWith(".webp") ? fromProcessedImage(img) : process(img);
         sprites.set(style, sprite);
         finish(sprite);
       } catch (err) {

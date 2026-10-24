@@ -33,7 +33,7 @@ test('immutable JavaScript is cached, but a server HTML fallback is rejected', a
 test('worker activation only deletes game-owned obsolete caches', async () => {
   const w = sw(); let pending: Promise<unknown> | undefined;
   w.handlers.activate({ waitUntil(p) { pending = p; } }); await pending;
-  assert.deepEqual(w.deleted, ['zv-zv-v1']);
+  assert.deepEqual(w.deleted, ['zv-zv-v1', 'zv-assets-v2']);
 });
 test('cloud API and RSC requests never use an offline document', async () => {
   const w = sw(new Response('<html>offline</html>'));
